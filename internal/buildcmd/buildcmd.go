@@ -404,7 +404,18 @@ func readAsset(srcRoot, ref string) ([]byte, string, error) {
 	if !strings.HasPrefix(fullPath, filepath.Clean(srcRoot)+string(filepath.Separator)) && fullPath != filepath.Clean(srcRoot) {
 		return nil, "", fmt.Errorf("asset path escapes source root: %s", ref)
 	}
-	content, err := os.ReadFile(fullPath)
+	realPath, err := filepath.EvalSymlinks(fullPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolving asset path %s: %w", ref, err)
+	}
+	realRoot, err := filepath.EvalSymlinks(filepath.Clean(srcRoot))
+	if err != nil {
+		return nil, "", fmt.Errorf("resolving source root: %w", err)
+	}
+	if !strings.HasPrefix(realPath, realRoot+string(filepath.Separator)) && realPath != realRoot {
+		return nil, "", fmt.Errorf("asset path escapes source root via symlink: %s", ref)
+	}
+	content, err := os.ReadFile(realPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("reading asset %s: %w", ref, err)
 	}
