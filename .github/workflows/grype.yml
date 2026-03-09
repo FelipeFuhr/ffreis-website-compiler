@@ -19,10 +19,15 @@ jobs:
           path: ./
           output-format: sarif
           output-file: grype.sarif
+      - name: Validate SARIF output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s grype.sarif || (echo "grype.sarif was not generated or is empty" && exit 1)
       - uses: actions/upload-artifact@v4
         with:
           name: grype-sarif
           path: grype.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: grype.sarif

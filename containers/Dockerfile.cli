@@ -1,21 +1,23 @@
-FROM docker.io/library/golang:1.23-bookworm AS builder
+ARG BUILDER_IMAGE=golang:1.25.8-bookworm
+FROM ${BUILDER_IMAGE} AS builder
 
 WORKDIR /src/ffreis-website-compiler
 
-COPY ffreis-website-compiler/go.mod ./
-COPY ffreis-website-compiler/cmd ./cmd
-COPY ffreis-website-compiler/internal ./internal
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" -o /out/website-compiler ./cmd/website-compiler
 
-FROM docker.io/library/debian:bookworm-slim
+ARG RUNTIME_IMAGE=debian:bookworm-slim
+FROM ${RUNTIME_IMAGE}
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace/ffreis-website-compiler
+WORKDIR /workspace
 
 COPY --from=builder /out/website-compiler /usr/local/bin/website-compiler
 

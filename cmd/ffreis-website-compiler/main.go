@@ -52,7 +52,7 @@ Commands:
   serve, web       Start local website server
 
 Examples:
-  website-compiler build -out ffreis-website-compiler/dist
+  website-compiler build -out dist
   website-compiler serve -addr :8080
 `)
 }

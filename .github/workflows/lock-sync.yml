@@ -26,4 +26,8 @@ jobs:
         run: |
           go mod tidy
           go mod verify
-          git diff --exit-code go.mod go.sum
+          files=(go.mod)
+          if [ -f go.sum ]; then
+            files+=(go.sum)
+          fi
+          git diff --exit-code -- "${files[@]}" || (echo 'go.mod/go.sum not tidy' && exit 1)

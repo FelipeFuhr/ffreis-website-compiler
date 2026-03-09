@@ -26,10 +26,15 @@ jobs:
           scan-ref: ./
           format: sarif
           output: trivy.sarif
+      - name: Validate SARIF output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s trivy.sarif || (echo "trivy.sarif was not generated or is empty" && exit 1)
       - uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif
           path: trivy.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy.sarif

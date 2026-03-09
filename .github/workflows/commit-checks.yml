@@ -23,7 +23,12 @@ jobs:
       - name: go mod tidy is clean
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum || (echo 'go.mod/go.sum not tidy' && exit 1)
+          go mod verify
+          files=(go.mod)
+          if [ -f go.sum ]; then
+            files+=(go.sum)
+          fi
+          git diff --exit-code -- "${files[@]}" || (echo 'go.mod/go.sum not tidy' && exit 1)
       - name: Format Check
         run: |
           test -z "$(gofmt -l .)"

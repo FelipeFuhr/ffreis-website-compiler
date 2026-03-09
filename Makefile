@@ -13,11 +13,14 @@ LEFTHOOK_BIN ?= $(LEFTHOOK_DIR)/lefthook
 PREFIX ?= ffreis
 IMAGE_PROVIDER ?=
 IMAGE_TAG ?= local
+COMPILER_IMAGE_NAME ?= website-compiler-cli
 IMAGE_PREFIX := $(if $(IMAGE_PROVIDER),$(IMAGE_PROVIDER)/,)$(PREFIX)
 IMAGE_ROOT := $(IMAGE_PREFIX)
-WEBSITE_COMPILER_IMAGE ?= $(IMAGE_ROOT)/website-compiler-cli:$(IMAGE_TAG)
+WEBSITE_COMPILER_IMAGE ?= $(IMAGE_ROOT)/$(COMPILER_IMAGE_NAME):$(IMAGE_TAG)
+WEBSITE_COMPILER_BUILDER_IMAGE ?= golang:1.25.8-bookworm
+WEBSITE_COMPILER_RUNTIME_IMAGE ?= debian:bookworm-slim
 
-export CONTAINER_COMMAND PREFIX IMAGE_PROVIDER IMAGE_TAG IMAGE_PREFIX IMAGE_ROOT WEBSITE_COMPILER_IMAGE
+export CONTAINER_COMMAND PREFIX IMAGE_PROVIDER IMAGE_TAG COMPILER_IMAGE_NAME IMAGE_PREFIX IMAGE_ROOT WEBSITE_COMPILER_IMAGE WEBSITE_COMPILER_BUILDER_IMAGE WEBSITE_COMPILER_RUNTIME_IMAGE
 
 WC := ./website-compiler
 WEBSITE_ROOT ?=
@@ -41,8 +44,11 @@ info: ## Print effective variables
 	@echo "PREFIX=$(PREFIX)"
 	@echo "IMAGE_PROVIDER=$(IMAGE_PROVIDER)"
 	@echo "IMAGE_TAG=$(IMAGE_TAG)"
+	@echo "COMPILER_IMAGE_NAME=$(COMPILER_IMAGE_NAME)"
 	@echo "IMAGE_ROOT=$(IMAGE_ROOT)"
 	@echo "WEBSITE_COMPILER_IMAGE=$(WEBSITE_COMPILER_IMAGE)"
+	@echo "WEBSITE_COMPILER_BUILDER_IMAGE=$(WEBSITE_COMPILER_BUILDER_IMAGE)"
+	@echo "WEBSITE_COMPILER_RUNTIME_IMAGE=$(WEBSITE_COMPILER_RUNTIME_IMAGE)"
 
 install: ## Install website-compiler in GOPATH/bin
 	go install ./cmd/website-compiler
@@ -129,7 +135,11 @@ hook-generated-drift: ## Run generate target if present and fail on drift
 
 container-build: ## Build CLI container image
 	@if [ -f containers/Dockerfile.cli ]; then \
-		$(CONTAINER_COMMAND) build -t "$(WEBSITE_COMPILER_IMAGE)" -f containers/Dockerfile.cli .; \
+		$(CONTAINER_COMMAND) build \
+			--build-arg BUILDER_IMAGE="$(WEBSITE_COMPILER_BUILDER_IMAGE)" \
+			--build-arg RUNTIME_IMAGE="$(WEBSITE_COMPILER_RUNTIME_IMAGE)" \
+			-t "$(WEBSITE_COMPILER_IMAGE)" \
+			-f containers/Dockerfile.cli .; \
 	else \
 		echo "containers/Dockerfile.cli not found"; \
 	fi
