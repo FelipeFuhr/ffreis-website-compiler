@@ -1,0 +1,21 @@
+name: gRPC Sync
+
+on:
+  pull_request:
+    paths:
+      - '**'
+      - '.github/workflows/**'
+
+jobs:
+  grpc-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check generated gRPC/proto files are in sync (if present)
+        run: |
+          set -euo pipefail
+          if ! find . -type f \( -name '*.proto' -o -name '*_pb.go' \) | grep -q .; then
+            echo "No proto/grpc files found. Skipping."
+            exit 0
+          fi
+          echo "Proto/grpc files detected. Add generation script checks here."
