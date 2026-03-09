@@ -147,7 +147,7 @@ container-build: ## Build CLI container image
 docker-build: container-build ## Backward-compatible alias
 
 lefthook-bootstrap: ## Download lefthook binary into ./.bin
-	LEFTHOOK_VERSION="$(LEFTHOOK_VERSION)" BIN_DIR="$(LEFTHOOK_DIR)" ./scripts/bootstrap_lefthook.sh
+	LEFTHOOK_VERSION="$(LEFTHOOK_VERSION)" BIN_DIR="$(LEFTHOOK_DIR)" bash ./scripts/bootstrap_lefthook.sh
 
 lefthook-install: lefthook-bootstrap ## Install git hooks if missing
 	@if [ -x "$(LEFTHOOK_BIN)" ] && [ -x ".git/hooks/pre-commit" ] && [ -x ".git/hooks/pre-push" ] && [ -x ".git/hooks/commit-msg" ]; then \

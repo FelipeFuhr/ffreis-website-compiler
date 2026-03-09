@@ -37,6 +37,9 @@ jobs:
           WEBSITE_COMPILER_IMAGE="${WEBSITE_COMPILER_IMAGE:-${IMAGE_ROOT}/${COMPILER_IMAGE_NAME}:${IMAGE_TAG}}"
           WEBSITE_COMPILER_BUILDER_IMAGE="${WEBSITE_COMPILER_BUILDER_IMAGE:-golang:1.25.8-bookworm}"
           WEBSITE_COMPILER_RUNTIME_IMAGE="${WEBSITE_COMPILER_RUNTIME_IMAGE:-debian:bookworm-slim}"
+          : "${WEBSITE_COMPILER_IMAGE:?WEBSITE_COMPILER_IMAGE must not be empty}"
+          : "${WEBSITE_COMPILER_BUILDER_IMAGE:?WEBSITE_COMPILER_BUILDER_IMAGE must not be empty}"
+          : "${WEBSITE_COMPILER_RUNTIME_IMAGE:?WEBSITE_COMPILER_RUNTIME_IMAGE must not be empty}"
 
           if [ -f containers/Dockerfile.cli ]; then
             ${ENGINE} build \
