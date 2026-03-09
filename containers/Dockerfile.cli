@@ -1,0 +1,24 @@
+ARG BUILDER_IMAGE=golang:1.25.8-bookworm
+ARG RUNTIME_IMAGE=debian:bookworm-slim
+FROM ${BUILDER_IMAGE} AS builder
+
+WORKDIR /src/ffreis-website-compiler
+
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" -o /out/website-compiler ./cmd/website-compiler
+
+FROM ${RUNTIME_IMAGE}
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY --from=builder /out/website-compiler /usr/local/bin/website-compiler
+
+ENTRYPOINT ["/usr/local/bin/website-compiler"]

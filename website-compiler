@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="$(pwd)"
+
+if [[ -n "${CONTAINER_COMMAND:-}" ]]; then
+  ENGINE="${CONTAINER_COMMAND}"
+elif [[ -n "${CONTAINER_ENGINE:-}" ]]; then
+  ENGINE="${CONTAINER_ENGINE}"
+elif command -v podman >/dev/null 2>&1; then
+  ENGINE="podman"
+elif command -v docker >/dev/null 2>&1; then
+  ENGINE="docker"
+else
+  echo "Neither podman nor docker was found in PATH (or set CONTAINER_COMMAND)." >&2
+  exit 1
+fi
+
+PREFIX="${PREFIX:-ffreis}"
+IMAGE_PROVIDER="${IMAGE_PROVIDER:-}"
+IMAGE_TAG="${IMAGE_TAG:-local}"
+IMAGE_PREFIX="${IMAGE_PREFIX:-}"
+COMPILER_IMAGE_NAME="${COMPILER_IMAGE_NAME:-website-compiler-cli}"
+if [[ -z "${IMAGE_PREFIX}" ]]; then
+  if [[ -n "${IMAGE_PROVIDER}" ]]; then
+    IMAGE_PREFIX="${IMAGE_PROVIDER}/${PREFIX}"
+  else
+    IMAGE_PREFIX="${PREFIX}"
+  fi
+fi
+IMAGE_ROOT="${IMAGE_ROOT:-${IMAGE_PREFIX}}"
+
+DEFAULT_WEBSITE_COMPILER_IMAGE="${IMAGE_ROOT}/${COMPILER_IMAGE_NAME}:${IMAGE_TAG}"
+WEBSITE_COMPILER_IMAGE="${WEBSITE_COMPILER_IMAGE:-${DEFAULT_WEBSITE_COMPILER_IMAGE}}"
+WEBSITE_COMPILER_BUILDER_IMAGE="${WEBSITE_COMPILER_BUILDER_IMAGE:-golang:1.25.8-bookworm}"
+WEBSITE_COMPILER_RUNTIME_IMAGE="${WEBSITE_COMPILER_RUNTIME_IMAGE:-debian:bookworm-slim}"
+DO_BUILD="${WEBSITE_COMPILER_BUILD_IMAGE:-true}"
+
+if [[ "${DO_BUILD}" == "true" ]]; then
+  CONTAINERFILE="${SCRIPT_DIR}/containers/Dockerfile.cli"
+  "${ENGINE}" build \
+    --build-arg "BUILDER_IMAGE=${WEBSITE_COMPILER_BUILDER_IMAGE}" \
+    --build-arg "RUNTIME_IMAGE=${WEBSITE_COMPILER_RUNTIME_IMAGE}" \
+    -f "${CONTAINERFILE}" \
+    -t "${WEBSITE_COMPILER_IMAGE}" \
+    "${SCRIPT_DIR}" >/dev/null
+fi
+
+exec "${ENGINE}" run --rm \
+  -v "${WORKSPACE_DIR}:/workspace" \
+  -w /workspace \
+  "${WEBSITE_COMPILER_IMAGE}" "$@"

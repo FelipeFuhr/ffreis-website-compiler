@@ -1,0 +1,27 @@
+name: Examples
+
+on:
+  pull_request:
+    paths:
+      - '**'
+      - 'examples/**'
+      - '.github/workflows/**'
+
+jobs:
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.8'
+          cache: true
+      - name: Default path build
+        run: go run ./cmd/build-static -website-root ./examples/hello-world -out /tmp/example-default
+      - name: Explicit path build
+        run: |
+          go run ./cmd/build-static \
+            -website-root ./examples/hello-world \
+            -templates-dir ./examples/hello-world/src/templates \
+            -assets-dir ./examples/hello-world/src/assets \
+            -out /tmp/example-explicit
