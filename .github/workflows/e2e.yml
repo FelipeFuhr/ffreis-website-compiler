@@ -1,0 +1,32 @@
+name: E2E Build Smoke
+
+on:
+  pull_request:
+    paths:
+      - '**'
+      - 'examples/**'
+      - '.github/workflows/**'
+  push:
+    branches: [main, master]
+    paths:
+      - '**'
+      - 'examples/**'
+      - '.github/workflows/**'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build static site
+        run: |
+          go run ./cmd/build-static -website-root ./examples/hello-world -out /tmp/dist
+          test -f /tmp/dist/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: built-site
+          path: /tmp/dist

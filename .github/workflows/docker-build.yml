@@ -1,0 +1,30 @@
+name: Docker Build
+
+on:
+  pull_request:
+    paths:
+      - '**'
+      - '.github/workflows/**'
+  push:
+    branches: [main, master]
+    paths:
+      - '**'
+      - '.github/workflows/**'
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image
+        run: |
+          if command -v podman >/dev/null 2>&1; then
+            ENGINE="podman"
+          else
+            ENGINE="docker"
+          fi
+          if [ -f containers/Dockerfile.cli ]; then
+            ${ENGINE} build -t ffreis-website-compiler:ci -f containers/Dockerfile.cli .
+          else
+            echo "No Dockerfile found, skipping."
+          fi
