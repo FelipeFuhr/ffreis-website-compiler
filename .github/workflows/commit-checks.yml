@@ -31,4 +31,8 @@ jobs:
           git diff --exit-code -- "${files[@]}" || (echo 'go.mod/go.sum not tidy' && exit 1)
       - name: Format Check
         run: |
-          test -z "$(gofmt -l .)"
+          out="$(gofmt -l .)"
+          if [ -n "${out}" ]; then
+            echo "${out}"
+            exit 1
+          fi

@@ -160,7 +160,7 @@ lefthook-run: lefthook-bootstrap ## Run hooks (pre-commit + commit-msg + pre-pus
 	LEFTHOOK="$(LEFTHOOK_BIN)" "$(LEFTHOOK_BIN)" run pre-commit
 	@tmp_msg="$$(mktemp)"; \
 	echo "chore(hooks): validate commit-msg hook" > "$$tmp_msg"; \
-	LEFTHOOK="$(LEFTHOOK_BIN)" "$(LEFTHOOK_BIN)" run commit-msg --commit-msg-file "$$tmp_msg"; \
+	LEFTHOOK="$(LEFTHOOK_BIN)" "$(LEFTHOOK_BIN)" run commit-msg -- "$$tmp_msg"; \
 	rm -f "$$tmp_msg"
 	LEFTHOOK="$(LEFTHOOK_BIN)" "$(LEFTHOOK_BIN)" run pre-push
 

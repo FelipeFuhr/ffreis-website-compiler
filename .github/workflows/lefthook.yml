@@ -48,4 +48,4 @@ jobs:
           set -euo pipefail
           msg_file="$(mktemp)"
           echo "ci(hooks): validate commit-msg hook" > "${msg_file}"
-          LEFTHOOK=.bin/lefthook ./.bin/lefthook run commit-msg --commit-msg-file "${msg_file}"
+          LEFTHOOK=.bin/lefthook ./.bin/lefthook run commit-msg -- "${msg_file}"
