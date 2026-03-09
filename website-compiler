@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+if [[ -n "${CONTAINER_COMMAND:-}" ]]; then
+  ENGINE="${CONTAINER_COMMAND}"
+elif [[ -n "${CONTAINER_ENGINE:-}" ]]; then
+  ENGINE="${CONTAINER_ENGINE}"
+elif command -v podman >/dev/null 2>&1; then
+  ENGINE="podman"
+elif command -v docker >/dev/null 2>&1; then
+  ENGINE="docker"
+else
+  echo "Neither podman nor docker was found in PATH (or set CONTAINER_COMMAND)." >&2
+  exit 1
+fi
+
+PREFIX="${PREFIX:-ffreis}"
+IMAGE_PROVIDER="${IMAGE_PROVIDER:-}"
+IMAGE_TAG="${IMAGE_TAG:-local}"
+IMAGE_PREFIX="${IMAGE_PREFIX:-}"
+if [[ -z "${IMAGE_PREFIX}" ]]; then
+  if [[ -n "${IMAGE_PROVIDER}" ]]; then
+    IMAGE_PREFIX="${IMAGE_PROVIDER}/${PREFIX}"
+  else
+    IMAGE_PREFIX="${PREFIX}"
+  fi
+fi
+IMAGE_ROOT="${IMAGE_ROOT:-${IMAGE_PREFIX}}"
+
+DEFAULT_WEBSITE_COMPILER_IMAGE="${IMAGE_ROOT}/website-compiler-cli:${IMAGE_TAG}"
+WEBSITE_COMPILER_IMAGE="${WEBSITE_COMPILER_IMAGE:-${DEFAULT_WEBSITE_COMPILER_IMAGE}}"
+DO_BUILD="${WEBSITE_COMPILER_BUILD_IMAGE:-true}"
+
+if [[ "${DO_BUILD}" == "true" ]]; then
+  CONTAINERFILE="${ROOT_DIR}/ffreis-website-compiler/containers/Dockerfile.cli"
+  "${ENGINE}" build \
+    -f "${CONTAINERFILE}" \
+    -t "${WEBSITE_COMPILER_IMAGE}" \
+    "${ROOT_DIR}" >/dev/null
+fi
+
+exec "${ENGINE}" run --rm \
+  -v "${ROOT_DIR}:/workspace" \
+  -w /workspace/ffreis-website-compiler \
+  "${WEBSITE_COMPILER_IMAGE}" "$@"

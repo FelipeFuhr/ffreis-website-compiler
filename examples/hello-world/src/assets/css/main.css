@@ -1,0 +1,14 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 2rem;
+}
+
+header,
+footer {
+  margin-bottom: 1rem;
+}
+
+main {
+  padding: 1rem;
+  border: 1px solid #ccc;
+}
