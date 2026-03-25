@@ -13,40 +13,13 @@ on:
 
 jobs:
   docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build container image
-        run: |
-          set -euo pipefail
-          if command -v podman >/dev/null 2>&1; then
-            ENGINE="podman"
-          else
-            ENGINE="docker"
-          fi
-
-          PREFIX="${PREFIX:-ffreis}"
-          IMAGE_PROVIDER="${IMAGE_PROVIDER:-}"
-          IMAGE_TAG="${IMAGE_TAG:-local}"
-          COMPILER_IMAGE_NAME="${COMPILER_IMAGE_NAME:-website-compiler-cli}"
-          if [ -n "${IMAGE_PROVIDER}" ]; then
-            IMAGE_ROOT="${IMAGE_PROVIDER}/${PREFIX}"
-          else
-            IMAGE_ROOT="${PREFIX}"
-          fi
-          WEBSITE_COMPILER_IMAGE="${WEBSITE_COMPILER_IMAGE:-${IMAGE_ROOT}/${COMPILER_IMAGE_NAME}:${IMAGE_TAG}}"
-          WEBSITE_COMPILER_BUILDER_IMAGE="${WEBSITE_COMPILER_BUILDER_IMAGE:-golang:1.25.8-bookworm}"
-          WEBSITE_COMPILER_RUNTIME_IMAGE="${WEBSITE_COMPILER_RUNTIME_IMAGE:-debian:bookworm-slim}"
-          : "${WEBSITE_COMPILER_IMAGE:?WEBSITE_COMPILER_IMAGE must not be empty}"
-          : "${WEBSITE_COMPILER_BUILDER_IMAGE:?WEBSITE_COMPILER_BUILDER_IMAGE must not be empty}"
-          : "${WEBSITE_COMPILER_RUNTIME_IMAGE:?WEBSITE_COMPILER_RUNTIME_IMAGE must not be empty}"
-
-          if [ -f containers/Dockerfile.cli ]; then
-            ${ENGINE} build \
-              --build-arg BUILDER_IMAGE="${WEBSITE_COMPILER_BUILDER_IMAGE}" \
-              --build-arg RUNTIME_IMAGE="${WEBSITE_COMPILER_RUNTIME_IMAGE}" \
-              -t "${WEBSITE_COMPILER_IMAGE}" \
-              -f containers/Dockerfile.cli .
-          else
-            echo "No Dockerfile found, skipping."
-          fi
+    uses: FelipeFuhr/ffreis-workflows-container/.github/workflows/container-build.yml@main
+    with:
+      image: "website-compiler-cli"
+      containerfile: "containers/Dockerfile.cli"
+      context: "."
+      skip-if-missing: true
+      push: false
+      build-args: |-
+        BUILDER_IMAGE=${{ vars.WEBSITE_COMPILER_BUILDER_IMAGE || 'golang:1.25.8-bookworm' }}
+        RUNTIME_IMAGE=${{ vars.WEBSITE_COMPILER_RUNTIME_IMAGE || 'debian:bookworm-slim' }}
