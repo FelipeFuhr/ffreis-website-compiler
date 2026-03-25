@@ -1,12 +1,22 @@
 package sitegen
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // PageTemplate associates a page name (without extension) to its parsed template.
@@ -14,6 +24,42 @@ type PageTemplate struct {
 	Name string
 	Tmpl *template.Template
 }
+
+type SiteDataLoadResult struct {
+	Data             map[string]any
+	Source           string
+	Layers           []string
+	DefaultPath      string
+	UsedOverride     bool
+	DefaultPathFound bool
+}
+
+type SiteDataContract struct {
+	Required []string `yaml:"required"`
+	Allowed  []string `yaml:"allowed"`
+}
+
+type SiteDataContractLoadResult struct {
+	Contract    SiteDataContract
+	Source      string
+	DefaultPath string
+}
+
+type tracedMap map[string]any
+type tracedSlice []any
+
+type accessTracer struct {
+	mu         sync.Mutex
+	used       map[string]struct{}
+	registered []uintptr
+}
+
+type traceMetadata struct {
+	path   string
+	tracer *accessTracer
+}
+
+var traceRegistry sync.Map
 
 // LoadPageTemplatesFromRoot parses the shared layout/partials plus each page template.
 // templatesRoot is expected to contain: layout/, partials/, pages/.
@@ -39,6 +85,8 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 			"dict":     dict,
 			"list":     list,
 			"safeHTML": safeHTML,
+			"dig":      dig,
+			"required": required,
 		}).ParseFiles(parseFiles...)
 		if err != nil {
 			return nil, err
@@ -60,6 +108,328 @@ func LoadPageTemplates(_ string) ([]PageTemplate, error) {
 		return LoadPageTemplatesFromRoot(newRoot)
 	}
 	return LoadPageTemplatesFromRoot("templates")
+}
+
+func LoadSiteDataFromTemplatesRoot(templatesRoot string) (map[string]any, error) {
+	result, err := LoadSiteData(templatesRoot, "")
+	if err != nil {
+		return nil, err
+	}
+	return result.Data, nil
+}
+
+func LoadSiteData(templatesRoot, overrideSource string) (SiteDataLoadResult, error) {
+	defaultPath := filepath.Join(filepath.Dir(templatesRoot), "data", "site.yaml")
+	defaultFound, err := fileExists(defaultPath)
+	if err != nil {
+		return SiteDataLoadResult{}, fmt.Errorf("stat default site data: %w", err)
+	}
+
+	source := strings.TrimSpace(overrideSource)
+	if source != "" {
+		if isLocalDirSource(source) {
+			layers, err := listYAMLLayersInDir(source)
+			if err != nil {
+				return SiteDataLoadResult{}, err
+			}
+			merged, err := loadAndMergeSiteDataLayers(layers)
+			if err != nil {
+				return SiteDataLoadResult{}, err
+			}
+			return SiteDataLoadResult{
+				Data:             merged,
+				Source:           source,
+				Layers:           layers,
+				DefaultPath:      defaultPath,
+				UsedOverride:     true,
+				DefaultPathFound: defaultFound,
+			}, nil
+		}
+
+		raw, err := readDataSource(source)
+		if err != nil {
+			return SiteDataLoadResult{}, err
+		}
+		siteData, err := parseSiteData(raw)
+		if err != nil {
+			return SiteDataLoadResult{}, err
+		}
+		return SiteDataLoadResult{
+			Data:             siteData,
+			Source:           source,
+			Layers:           []string{source},
+			DefaultPath:      defaultPath,
+			UsedOverride:     true,
+			DefaultPathFound: defaultFound,
+		}, nil
+	}
+
+	overlayDir := filepath.Join(filepath.Dir(templatesRoot), "data", "site.d")
+	overlayLayers, err := listYAMLLayersInDirIfExists(overlayDir)
+	if err != nil {
+		return SiteDataLoadResult{}, err
+	}
+
+	if !defaultFound && len(overlayLayers) == 0 {
+		return SiteDataLoadResult{
+			Data:             map[string]any{},
+			DefaultPath:      defaultPath,
+			DefaultPathFound: false,
+		}, nil
+	}
+
+	var base map[string]any
+	var layers []string
+	baseOrigin := ""
+	if defaultFound {
+		raw, err := readDataSource(defaultPath)
+		if err != nil {
+			return SiteDataLoadResult{}, err
+		}
+		siteData, err := parseSiteData(raw)
+		if err != nil {
+			return SiteDataLoadResult{}, err
+		}
+		base = siteData
+		layers = append(layers, defaultPath)
+		baseOrigin = defaultPath
+	} else {
+		base = map[string]any{}
+	}
+	layers = append(layers, overlayLayers...)
+
+	merged, err := mergeSiteDataStrict(base, overlayLayers, baseOrigin)
+	if err != nil {
+		return SiteDataLoadResult{}, err
+	}
+
+	resultSource := ""
+	if defaultFound {
+		resultSource = defaultPath
+	}
+	return SiteDataLoadResult{
+		Data:             merged,
+		Source:           resultSource,
+		Layers:           layers,
+		DefaultPath:      defaultPath,
+		UsedOverride:     false,
+		DefaultPathFound: defaultFound,
+	}, nil
+}
+
+func LoadSiteDataContract(templatesRoot string) (SiteDataContractLoadResult, error) {
+	defaultPath := filepath.Join(filepath.Dir(templatesRoot), "data", "site.contract.yaml")
+	defaultFound, err := fileExists(defaultPath)
+	if err != nil {
+		return SiteDataContractLoadResult{}, fmt.Errorf("stat default site data contract: %w", err)
+	}
+	if !defaultFound {
+		return SiteDataContractLoadResult{}, fmt.Errorf(
+			"required site data contract not found: %s",
+			defaultPath,
+		)
+	}
+
+	raw, err := readDataSource(defaultPath)
+	if err != nil {
+		return SiteDataContractLoadResult{}, err
+	}
+
+	contract, err := parseSiteDataContract(raw)
+	if err != nil {
+		return SiteDataContractLoadResult{}, err
+	}
+
+	return SiteDataContractLoadResult{
+		Contract:    contract,
+		Source:      defaultPath,
+		DefaultPath: defaultPath,
+	}, nil
+}
+
+func ValidateSiteData(siteData map[string]any, contract SiteDataContract) error {
+	requiredPatterns, err := normalizePatterns(contract.Required)
+	if err != nil {
+		return err
+	}
+	allowedPatterns, err := normalizePatterns(contract.Allowed)
+	if err != nil {
+		return err
+	}
+
+	if len(requiredPatterns) == 0 && len(allowedPatterns) == 0 {
+		return nil
+	}
+
+	allPaths, leafPaths := collectPaths(siteData)
+	var validationErrors []string
+
+	for _, pattern := range requiredPatterns {
+		if !anyPathMatches(allPaths, pattern) {
+			validationErrors = append(validationErrors, fmt.Sprintf("missing required site data path: %s", pattern))
+		}
+	}
+
+	if len(allowedPatterns) > 0 {
+		for _, path := range leafPaths {
+			if !anyPatternMatches(path, allowedPatterns) {
+				validationErrors = append(validationErrors, fmt.Sprintf("dangling site data path not declared in contract: %s", path))
+			}
+		}
+	}
+
+	if len(validationErrors) > 0 {
+		return errors.New(strings.Join(validationErrors, "; "))
+	}
+	return nil
+}
+
+func ValidateSiteDataContractUsage(contract SiteDataContract, usedPaths []string) error {
+	requiredPatterns, err := normalizePatterns(contract.Required)
+	if err != nil {
+		return err
+	}
+	allowedPatterns, err := normalizePatterns(contract.Allowed)
+	if err != nil {
+		return err
+	}
+
+	if len(requiredPatterns) == 0 && len(allowedPatterns) == 0 {
+		return nil
+	}
+
+	var validationErrors []string
+	for _, path := range usedPaths {
+		if len(allowedPatterns) == 0 && len(requiredPatterns) == 0 {
+			continue
+		}
+		if !anyPatternMatches(path, allowedPatterns) && !anyPatternMatches(path, requiredPatterns) {
+			validationErrors = append(validationErrors, fmt.Sprintf("site data path used by templates but not declared in contract: %s", path))
+		}
+	}
+	for _, pattern := range requiredPatterns {
+		if !anyPathMatches(usedPaths, pattern) {
+			validationErrors = append(validationErrors, fmt.Sprintf("required contract path not used by templates: %s", pattern))
+		}
+	}
+	for _, pattern := range allowedPatterns {
+		if !anyPathMatches(usedPaths, pattern) {
+			validationErrors = append(validationErrors, fmt.Sprintf("allowed contract path not used by templates: %s", pattern))
+		}
+	}
+	if len(validationErrors) > 0 {
+		return errors.New(strings.Join(validationErrors, "; "))
+	}
+	return nil
+}
+
+func TraceSiteDataUsage(pages []PageTemplate, siteData map[string]any) ([]string, error) {
+	tracer := &accessTracer{
+		used: make(map[string]struct{}),
+	}
+	defer tracer.cleanup()
+	tracedData := wrapTracedValue(siteData, tracer, "")
+
+	for _, page := range pages {
+		if err := page.Tmpl.ExecuteTemplate(io.Discard, "layout", NewTemplateData(page.Name, tracedData)); err != nil {
+			return nil, fmt.Errorf("rendering %s for site data trace: %w", page.Name, err)
+		}
+	}
+	return tracer.usedPaths(), nil
+}
+
+func NewTemplateData(pageName string, siteData any) map[string]any {
+	if siteData == nil {
+		siteData = map[string]any{}
+	}
+	return map[string]any{
+		"PageName": pageName,
+		"SiteData": siteData,
+	}
+}
+
+func readDataSource(source string) ([]byte, error) {
+	if source == "" {
+		return nil, fmt.Errorf("data source cannot be empty")
+	}
+	if isHTTPURL(source) {
+		return readDataURL(source)
+	}
+	if strings.HasPrefix(source, "file://") {
+		fileURL, err := url.Parse(source)
+		if err != nil {
+			return nil, fmt.Errorf("parsing data file URL: %w", err)
+		}
+		return readDataFile(fileURL.Path)
+	}
+	if parsed, err := url.Parse(source); err == nil && parsed.Scheme != "" && parsed.Scheme != "file" {
+		return nil, fmt.Errorf("unsupported data source scheme %q", parsed.Scheme)
+	}
+	return readDataFile(source)
+}
+
+func readDataFile(path string) ([]byte, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading data source: %w", err)
+	}
+	return raw, nil
+}
+
+func readDataURL(rawURL string) ([]byte, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetching data source: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetching data source: unexpected status %s", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading data source response: %w", err)
+	}
+	return body, nil
+}
+
+func parseSiteData(raw []byte) (map[string]any, error) {
+	var siteData map[string]any
+	if err := yaml.Unmarshal(raw, &siteData); err != nil {
+		return nil, fmt.Errorf("parsing site data yaml: %w", err)
+	}
+	if siteData == nil {
+		return map[string]any{}, nil
+	}
+
+	normalized, err := normalizeYAMLValue(siteData)
+	if err != nil {
+		return nil, fmt.Errorf("normalizing site data: %w", err)
+	}
+
+	root, ok := normalized.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("site data root must be a map")
+	}
+	return root, nil
+}
+
+func parseSiteDataContract(raw []byte) (SiteDataContract, error) {
+	var contract SiteDataContract
+	if err := yaml.Unmarshal(raw, &contract); err != nil {
+		return SiteDataContract{}, fmt.Errorf("parsing site data contract yaml: %w", err)
+	}
+	requiredPatterns, err := normalizePatterns(contract.Required)
+	if err != nil {
+		return SiteDataContract{}, err
+	}
+	allowedPatterns, err := normalizePatterns(contract.Allowed)
+	if err != nil {
+		return SiteDataContract{}, err
+	}
+	contract.Required = requiredPatterns
+	contract.Allowed = allowedPatterns
+	return contract, nil
 }
 
 func dirExists(path string) bool {
@@ -88,4 +458,393 @@ func list(values ...any) []any {
 
 func safeHTML(v string) template.HTML {
 	return template.HTML(v)
+}
+
+func dig(root any, keys ...any) (any, error) {
+	current := root
+	var tracePath string
+	var tracer *accessTracer
+	if metadata, ok := traceMetadataForValue(current); ok {
+		tracePath = metadata.path
+		tracer = metadata.tracer
+	}
+	for _, key := range keys {
+		if current == nil {
+			return nil, nil
+		}
+
+		switch typed := current.(type) {
+		case map[string]any:
+			keyString, err := stringifyKey(key)
+			if err != nil {
+				return nil, err
+			}
+			current = typed[keyString]
+			if tracer != nil {
+				tracePath = joinTracePath(tracePath, keyString)
+			}
+		case tracedMap:
+			keyString, err := stringifyKey(key)
+			if err != nil {
+				return nil, err
+			}
+			current = typed[keyString]
+			if tracer != nil {
+				tracePath = joinTracePath(tracePath, keyString)
+			}
+		case []any:
+			index, err := integerKey(key)
+			if err != nil {
+				return nil, err
+			}
+			if index < 0 || index >= len(typed) {
+				return nil, nil
+			}
+			current = typed[index]
+			if tracer != nil {
+				tracePath = joinTracePath(tracePath, strconv.Itoa(index))
+			}
+		case tracedSlice:
+			index, err := integerKey(key)
+			if err != nil {
+				return nil, err
+			}
+			if index < 0 || index >= len(typed) {
+				return nil, nil
+			}
+			current = typed[index]
+			if tracer != nil {
+				tracePath = joinTracePath(tracePath, strconv.Itoa(index))
+			}
+		default:
+			return nil, fmt.Errorf("dig cannot descend into %T", current)
+		}
+
+		if nextMetadata, ok := traceMetadataForValue(current); ok {
+			tracePath = nextMetadata.path
+			tracer = nextMetadata.tracer
+		}
+	}
+	if tracer != nil && shouldTraceValue(current) && tracePath != "" {
+		tracer.record(tracePath)
+	}
+	return current, nil
+}
+
+func required(value any, message string) (any, error) {
+	if isMissingValue(value) {
+		return nil, errors.New(message)
+	}
+	return value, nil
+}
+
+func normalizeYAMLValue(value any) (any, error) {
+	switch typed := value.(type) {
+	case map[string]any:
+		normalized := make(map[string]any, len(typed))
+		for key, item := range typed {
+			next, err := normalizeYAMLValue(item)
+			if err != nil {
+				return nil, err
+			}
+			normalized[key] = next
+		}
+		return normalized, nil
+	case []any:
+		normalized := make([]any, len(typed))
+		for i, item := range typed {
+			next, err := normalizeYAMLValue(item)
+			if err != nil {
+				return nil, err
+			}
+			normalized[i] = next
+		}
+		return normalized, nil
+	default:
+		return value, nil
+	}
+}
+
+func stringifyKey(key any) (string, error) {
+	switch typed := key.(type) {
+	case string:
+		return typed, nil
+	case fmt.Stringer:
+		return typed.String(), nil
+	default:
+		return "", fmt.Errorf("dig map keys must be strings, got %T", key)
+	}
+}
+
+func integerKey(key any) (int, error) {
+	switch typed := key.(type) {
+	case int:
+		return typed, nil
+	case int8:
+		return int(typed), nil
+	case int16:
+		return int(typed), nil
+	case int32:
+		return int(typed), nil
+	case int64:
+		return int(typed), nil
+	case uint:
+		return int(typed), nil
+	case uint8:
+		return int(typed), nil
+	case uint16:
+		return int(typed), nil
+	case uint32:
+		return int(typed), nil
+	case uint64:
+		return int(typed), nil
+	case string:
+		index, err := strconv.Atoi(typed)
+		if err != nil {
+			return 0, fmt.Errorf("dig slice keys must be integers, got %q", typed)
+		}
+		return index, nil
+	default:
+		return 0, fmt.Errorf("dig slice keys must be integers, got %T", key)
+	}
+}
+
+func isMissingValue(value any) bool {
+	if value == nil {
+		return true
+	}
+
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) == ""
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		return rv.IsNil()
+	case reflect.Slice, reflect.Map, reflect.Array:
+		return rv.Len() == 0
+	}
+
+	return false
+}
+
+func isHTTPURL(v string) bool {
+	return strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://")
+}
+
+func fileExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
+func normalizePatterns(patterns []string) ([]string, error) {
+	if len(patterns) == 0 {
+		return nil, nil
+	}
+	normalized := make([]string, 0, len(patterns))
+	seen := make(map[string]struct{}, len(patterns))
+	for _, raw := range patterns {
+		pattern := strings.Trim(strings.TrimSpace(raw), ".")
+		if pattern == "" {
+			continue
+		}
+		segments := strings.Split(pattern, ".")
+		for _, segment := range segments {
+			if strings.TrimSpace(segment) == "" {
+				return nil, fmt.Errorf("invalid site data contract pattern %q", raw)
+			}
+		}
+		if _, ok := seen[pattern]; ok {
+			continue
+		}
+		seen[pattern] = struct{}{}
+		normalized = append(normalized, pattern)
+	}
+	sort.Strings(normalized)
+	return normalized, nil
+}
+
+func collectPaths(root map[string]any) ([]string, []string) {
+	var allPaths []string
+	var leafPaths []string
+	var walk func(prefix []string, value any)
+	walk = func(prefix []string, value any) {
+		if len(prefix) > 0 {
+			allPaths = append(allPaths, strings.Join(prefix, "."))
+		}
+		switch typed := value.(type) {
+		case map[string]any:
+			if len(typed) == 0 && len(prefix) > 0 {
+				leafPaths = append(leafPaths, strings.Join(prefix, "."))
+				return
+			}
+			keys := make([]string, 0, len(typed))
+			for key := range typed {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				walk(append(prefix, key), typed[key])
+			}
+		case []any:
+			if len(typed) == 0 && len(prefix) > 0 {
+				leafPaths = append(leafPaths, strings.Join(prefix, "."))
+				return
+			}
+			for i, item := range typed {
+				walk(append(prefix, strconv.Itoa(i)), item)
+			}
+		default:
+			if len(prefix) > 0 {
+				leafPaths = append(leafPaths, strings.Join(prefix, "."))
+			}
+		}
+	}
+	walk(nil, root)
+	return allPaths, leafPaths
+}
+
+func anyPathMatches(paths []string, pattern string) bool {
+	for _, path := range paths {
+		if pathMatchesPattern(path, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func anyPatternMatches(path string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if pathMatchesPattern(path, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func wrapTracedValue(value any, tracer *accessTracer, path string) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		wrapped := make(tracedMap, len(typed))
+		for key, item := range typed {
+			wrapped[key] = wrapTracedValue(item, tracer, joinTracePath(path, key))
+		}
+		registerTraceMetadata(wrapped, traceMetadata{path: path, tracer: tracer})
+		return wrapped
+	case []any:
+		wrapped := make(tracedSlice, len(typed))
+		for i, item := range typed {
+			wrapped[i] = wrapTracedValue(item, tracer, joinTracePath(path, strconv.Itoa(i)))
+		}
+		registerTraceMetadata(wrapped, traceMetadata{path: path, tracer: tracer})
+		return wrapped
+	default:
+		return value
+	}
+}
+
+func registerTraceMetadata(value any, metadata traceMetadata) {
+	pointer, ok := compositePointer(value)
+	if !ok || pointer == 0 {
+		return
+	}
+	traceRegistry.Store(pointer, metadata)
+	if metadata.tracer != nil {
+		metadata.tracer.mu.Lock()
+		metadata.tracer.registered = append(metadata.tracer.registered, pointer)
+		metadata.tracer.mu.Unlock()
+	}
+}
+
+func traceMetadataForValue(value any) (traceMetadata, bool) {
+	pointer, ok := compositePointer(value)
+	if !ok || pointer == 0 {
+		return traceMetadata{}, false
+	}
+	metadata, ok := traceRegistry.Load(pointer)
+	if !ok {
+		return traceMetadata{}, false
+	}
+	typed, ok := metadata.(traceMetadata)
+	return typed, ok
+}
+
+func compositePointer(value any) (uintptr, bool) {
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Map, reflect.Slice:
+		return rv.Pointer(), true
+	default:
+		return 0, false
+	}
+}
+
+func shouldTraceValue(value any) bool {
+	switch value.(type) {
+	case tracedMap, map[string]any:
+		return false
+	default:
+		return true
+	}
+}
+
+func joinTracePath(prefix, segment string) string {
+	if strings.TrimSpace(prefix) == "" {
+		return segment
+	}
+	return prefix + "." + segment
+}
+
+func (t *accessTracer) record(path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.used[path] = struct{}{}
+}
+
+func (t *accessTracer) usedPaths() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	paths := make([]string, 0, len(t.used))
+	for path := range t.used {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func (t *accessTracer) cleanup() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, pointer := range t.registered {
+		traceRegistry.Delete(pointer)
+	}
+	t.registered = nil
+}
+
+func pathMatchesPattern(path, pattern string) bool {
+	pathSegments := strings.Split(strings.Trim(path, "."), ".")
+	patternSegments := strings.Split(strings.Trim(pattern, "."), ".")
+	if len(patternSegments) > len(pathSegments) {
+		return false
+	}
+	for i, segment := range patternSegments {
+		if segment == "*" {
+			continue
+		}
+		if segment != pathSegments[i] {
+			return false
+		}
+	}
+	return true
 }

@@ -12,6 +12,17 @@ on:
       - '.github/workflows/**'
 
 jobs:
+  require-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        env:
+          DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEEPSOURCE_DSN}" ] || (echo "Missing required secret: DEEPSOURCE_DSN" >&2; exit 1)
+
   deepsource:
     runs-on: ubuntu-latest
     if: ${{ secrets.DEEPSOURCE_DSN != '' }}

@@ -6,6 +6,17 @@ on:
     - cron: '15 4 * * *'
 
 jobs:
+  require-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        env:
+          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "${SMOKE_BASE_URL}" ] || (echo "Missing required secret: SMOKE_BASE_URL" >&2; exit 1)
+
   smoke:
     runs-on: ubuntu-latest
     if: ${{ secrets.SMOKE_BASE_URL != '' }}

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/sitegen"
 )
 
@@ -28,7 +29,9 @@ func Run(args []string, logger *slog.Logger) error {
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	websiteRoot := fs.String("website-root", ".", "website project root; expects <website-root>/src/{assets,templates} (legacy fallback: <website-root>/{site,templates})")
+	siteDataSource := fs.String("site-data", "", "optional site data source override; supports file/URL sources or a directory containing YAML layers")
 	addr := fs.String("addr", ":8080", "HTTP listen address")
+	enableSanity := fs.Bool("sanity", true, "fail server startup if generic sanity checks fail (site contract + invariants + asset reachability)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -42,10 +45,54 @@ func Run(args []string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("loading templates: %w", err)
 	}
+	siteDataResult, err := sitegen.LoadSiteData(templatesRoot, *siteDataSource)
+	if err != nil {
+		return fmt.Errorf("loading site data: %w", err)
+	}
+	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesRoot)
+	if err != nil {
+		return fmt.Errorf("loading site data contract: %w", err)
+	}
+	if siteDataResult.UsedOverride && siteDataResult.DefaultPathFound {
+		logger.Warn(
+			"site data override supersedes local site data file",
+			"override_source", siteDataResult.Source,
+			"local_site_data", siteDataResult.DefaultPath,
+			"site_data_layers", siteDataResult.Layers,
+		)
+	}
+	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
+		return fmt.Errorf("validating site data against contract: %w", err)
+	}
+	if len(siteDataContractResult.Contract.Required) > 0 || len(siteDataContractResult.Contract.Allowed) > 0 {
+		usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
+		if err != nil {
+			return fmt.Errorf("tracing site data usage: %w", err)
+		}
+		if err := sitegen.ValidateSiteDataContractUsage(siteDataContractResult.Contract, usedPaths); err != nil {
+			return fmt.Errorf("validating site data contract usage: %w", err)
+		}
+	}
+	if *enableSanity {
+		if err := sitegen.ValidateSiteSanity(siteDataResult.Data, sitegen.DefaultSanityConfig()); err != nil {
+			return fmt.Errorf("validating site sanity rules: %w", err)
+		}
+	}
+	renderedPages := make(map[string]string, len(pages))
+	for _, page := range pages {
+		var rendered strings.Builder
+		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", sitegen.NewTemplateData(page.Name, siteDataResult.Data)); err != nil {
+			return fmt.Errorf("rendering %s.html for asset validation: %w", page.Name, err)
+		}
+		renderedPages[page.Name] = rendered.String()
+	}
+	if _, err := assetusage.Validate(assetsRoot, renderedPages); err != nil {
+		return fmt.Errorf("validating local css/js asset usage: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	registerStatic(mux, assetsRoot)
-	registerPages(mux, pages, logger)
+	registerPages(mux, pages, siteDataResult.Data, logger)
 
 	var handler http.Handler = mux
 	handler = loggingMiddleware(logger, handler)
@@ -133,28 +180,30 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func registerPages(mux *http.ServeMux, pages []sitegen.PageTemplate, logger *slog.Logger) {
+func registerPages(mux *http.ServeMux, pages []sitegen.PageTemplate, siteData map[string]any, logger *slog.Logger) {
 	for _, page := range pages {
 		path := "/" + page.Name + ".html"
 		tpl := page.Tmpl
 		if page.Name == "index" {
+			pageName := page.Name
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/" {
 					http.NotFound(w, r)
 					return
 				}
-				renderTemplate(w, r, tpl, logger)
+				renderTemplate(w, r, tpl, pageName, siteData, logger)
 			})
 		}
 
+		pageName := page.Name
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			renderTemplate(w, r, tpl, logger)
+			renderTemplate(w, r, tpl, pageName, siteData, logger)
 		})
 	}
 }
 
-func renderTemplate(w http.ResponseWriter, r *http.Request, tpl *template.Template, logger *slog.Logger) {
-	if err := tpl.ExecuteTemplate(w, "layout", nil); err != nil {
+func renderTemplate(w http.ResponseWriter, r *http.Request, tpl *template.Template, pageName string, siteData map[string]any, logger *slog.Logger) {
+	if err := tpl.ExecuteTemplate(w, "layout", sitegen.NewTemplateData(pageName, siteData)); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		logger.Error("template execution failed", "path", r.URL.Path, "error", err)
 	}
@@ -284,6 +333,7 @@ func registerStatic(mux *http.ServeMux, siteRoot string) {
 	mux.Handle("/fonts/", http.StripPrefix("/fonts/", http.FileServer(http.Dir(filepath.Join(siteRoot, "fonts")))))
 	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(filepath.Join(siteRoot, "images")))))
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir(filepath.Join(siteRoot, "js")))))
+	mux.Handle("/ld/", http.StripPrefix("/ld/", http.FileServer(http.Dir(filepath.Join(siteRoot, "ld")))))
 	mux.Handle("/send.js", http.FileServer(http.Dir(siteRoot)))
 	mux.Handle("/contactScript.js", http.FileServer(http.Dir(siteRoot)))
 	mux.Handle("/robots.txt", http.FileServer(http.Dir(siteRoot)))

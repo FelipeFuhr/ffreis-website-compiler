@@ -1,29 +1,84 @@
 name: Lint
 
+# Job dependency graph:
+#
+#   fmt ─┐
+#        ├─→ golangci-lint
+#   vet ─┘
+#
+# fmt and vet run in parallel; golangci-lint waits for both.
+# Any failure blocks all downstream jobs.
+
 on:
   pull_request:
     paths:
-      - '**'
-      - '.github/workflows/**'
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.golangci.yml'
+      - '.github/workflows/lint.yml'
   push:
     branches: [main, master]
-    paths:
-      - '**'
-      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  golangci:
+
+  # ── 1. Format ──────────────────────────────────────────────────────────────
+  fmt:
+    name: Format (gofmt)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25.8'
+          go-version-file: go.mod
           cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            printf "The following files need gofmt:\n%s\n\nFix with: gofmt -w .\n" "$unformatted"
+            exit 1
+          fi
+
+  # ── 2. Vet ─────────────────────────────────────────────────────────────────
+  vet:
+    name: Vet (go vet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+  # ── 3. Lint ─────────────────────────────────────────────────────────────────
+  golangci:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    needs: [fmt, vet]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           install-mode: goinstall
           skip-cache: true
+          args: --timeout=5m
           working-directory: .

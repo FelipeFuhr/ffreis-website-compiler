@@ -12,29 +12,15 @@ on:
       - '.github/workflows/**'
 
 permissions:
+  contents: read
   security-events: write
 
 jobs:
-  trivy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Trivy (filesystem)
-        uses: aquasecurity/trivy-action@0.24.0
-        with:
-          scan-type: fs
-          scan-ref: ./
-          format: sarif
-          output: trivy.sarif
-      - name: Validate SARIF output
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s trivy.sarif || (echo "trivy.sarif was not generated or is empty" && exit 1)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: trivy-sarif
-          path: trivy.sarif
-      - uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy.sarif
+  trivy-fs:
+    permissions:
+      contents: read
+      security-events: write
+    uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-scan-trivy-fs.yml@main
+    with:
+      scan-ref: "."
+      upload-sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
