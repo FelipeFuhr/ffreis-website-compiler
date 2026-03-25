@@ -20,11 +20,11 @@ while IFS= read -r -d '' file; do
   fi
 done < <(git diff --cached --name-only --diff-filter=ACM -z)
 
-if [ "$found_any" -eq 0 ]; then
+if [[ "$found_any" -eq 0 ]]; then
   exit 0
 fi
 
-if [ "$has_error" -ne 0 ]; then
+if [[ "$has_error" -ne 0 ]]; then
   echo "Resolve conflict markers before committing." >&2
   exit 1
 fi
