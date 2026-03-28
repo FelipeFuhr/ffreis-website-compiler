@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-IFS=$'\n\t'
 
 MAX_SIZE_BYTES="${MAX_SIZE_BYTES:-1048576}"
 has_error=0
