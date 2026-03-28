@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+IFS=$'\n\t'
 
 has_error=0
 found_any=0

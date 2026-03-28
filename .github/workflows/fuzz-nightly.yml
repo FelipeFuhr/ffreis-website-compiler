@@ -7,15 +7,10 @@ on:
 
 jobs:
   fuzz:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.8'
-          cache: true
-      - name: Fuzz sitemap parser
-        run: go test ./internal/sitemap -run=^$ -fuzz=FuzzLoadConfigAndGenerateXML -fuzztime=20s
-      - name: Fuzz sitegen helpers
-        run: go test ./internal/sitegen -run=^$ -fuzz=Fuzz -fuzztime=20s
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fuzz.yml@main
+    with:
+      go-version: "1.25.8"
+      working-directory: "."
+      packages: "./internal/sitemap ./internal/sitegen"
+      fuzz-targets: "Fuzz"
+      fuzz-time: "20s"

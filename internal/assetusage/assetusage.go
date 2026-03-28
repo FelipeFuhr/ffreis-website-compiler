@@ -33,20 +33,37 @@ func Validate(assetsRoot string, renderedPages map[string]string) (Result, error
 		return Result{}, err
 	}
 
-	used := make(map[string]struct{})
-	var missing []string
-	queue := make([]string, 0)
+	used, queue, err := collectInitialUsedAssets(renderedPages)
+	if err != nil {
+		return Result{}, err
+	}
+
+	missing, err := expandImportedAssets(assetsRoot, used, queue)
+	if err != nil {
+		return Result{}, err
+	}
+
+	result := buildResult(allCSS, allJS, used, missing)
+	if err := validateResult(result); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func collectInitialUsedAssets(renderedPages map[string]string) (used map[string]struct{}, queue []string, err error) {
+	used = make(map[string]struct{})
+	queue = make([]string, 0)
 
 	for pageName, html := range renderedPages {
 		for _, ref := range collectHTMLRefs(html) {
 			relPath, local, err := normalizeHTMLAssetRef(ref)
 			if err != nil {
-				return Result{}, fmt.Errorf("normalizing asset reference %q in %s: %w", ref, pageName, err)
+				return nil, nil, fmt.Errorf("normalizing asset reference %q in %s: %w", ref, pageName, err)
 			}
 			if !local {
 				continue
 			}
-			if ext := strings.ToLower(filepath.Ext(relPath)); ext != ".css" && ext != ".js" {
+			if !isCSSOrJS(relPath) {
 				continue
 			}
 			if _, seen := used[relPath]; seen {
@@ -57,35 +74,35 @@ func Validate(assetsRoot string, renderedPages map[string]string) (Result, error
 		}
 	}
 
+	return used, queue, nil
+}
+
+func isCSSOrJS(relPath string) bool {
+	switch strings.ToLower(filepath.Ext(relPath)) {
+	case ".css", ".js":
+		return true
+	default:
+		return false
+	}
+}
+
+func expandImportedAssets(assetsRoot string, used map[string]struct{}, queue []string) ([]string, error) {
+	var missing []string
+
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
+
 		fullPath := filepath.Join(assetsRoot, filepath.FromSlash(current))
-		info, err := os.Stat(fullPath)
+		imported, missingRef, err := importsForAsset(fullPath, current)
 		if err != nil {
-			if os.IsNotExist(err) {
-				missing = append(missing, current)
-				continue
-			}
-			return Result{}, fmt.Errorf("stat asset %s: %w", fullPath, err)
+			return nil, err
 		}
-		if info.IsDir() {
+		if missingRef {
 			missing = append(missing, current)
 			continue
 		}
 
-		var imported []string
-		switch strings.ToLower(filepath.Ext(current)) {
-		case ".css":
-			imported, err = collectCSSImports(fullPath, current)
-		case ".js":
-			imported, err = collectJSImports(fullPath, current)
-		default:
-			continue
-		}
-		if err != nil {
-			return Result{}, err
-		}
 		for _, relPath := range imported {
 			if _, seen := used[relPath]; seen {
 				continue
@@ -95,29 +112,60 @@ func Validate(assetsRoot string, renderedPages map[string]string) (Result, error
 		}
 	}
 
-	result := Result{
+	return missing, nil
+}
+
+func importsForAsset(fullPath, relPath string) (imported []string, missing bool, err error) {
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("stat asset %s: %w", fullPath, err)
+	}
+	if info.IsDir() {
+		return nil, true, nil
+	}
+
+	switch strings.ToLower(filepath.Ext(relPath)) {
+	case ".css":
+		imported, err = collectCSSImports(fullPath, relPath)
+	case ".js":
+		imported, err = collectJSImports(fullPath, relPath)
+	default:
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return imported, false, nil
+}
+
+func buildResult(allCSS, allJS map[string]struct{}, used map[string]struct{}, missing []string) Result {
+	return Result{
 		UsedCSS:    intersectAndSort(allCSS, used),
 		UsedJS:     intersectAndSort(allJS, used),
 		UnusedCSS:  differenceAndSort(allCSS, used),
 		UnusedJS:   differenceAndSort(allJS, used),
 		MissingRef: sortStrings(missing),
 	}
+}
 
-	var validationErrors []string
+func validateResult(result Result) error {
+	errs := make([]string, 0, len(result.MissingRef)+len(result.UnusedCSS)+len(result.UnusedJS))
 	for _, relPath := range result.MissingRef {
-		validationErrors = append(validationErrors, fmt.Sprintf("missing local asset reference: %s", relPath))
+		errs = append(errs, fmt.Sprintf("missing local asset reference: %s", relPath))
 	}
 	for _, relPath := range result.UnusedCSS {
-		validationErrors = append(validationErrors, fmt.Sprintf("unused local css asset: %s", relPath))
+		errs = append(errs, fmt.Sprintf("unused local css asset: %s", relPath))
 	}
 	for _, relPath := range result.UnusedJS {
-		validationErrors = append(validationErrors, fmt.Sprintf("unused local js asset: %s", relPath))
+		errs = append(errs, fmt.Sprintf("unused local js asset: %s", relPath))
 	}
-	if len(validationErrors) > 0 {
-		return result, errors.New(strings.Join(validationErrors, "; "))
+	if len(errs) == 0 {
+		return nil
 	}
-
-	return result, nil
+	return errors.New(strings.Join(errs, "; "))
 }
 
 func collectLocalAssets(assetsRoot string) (map[string]struct{}, map[string]struct{}, error) {
@@ -230,41 +278,63 @@ func normalizeRef(baseDir, ref, expectedExt string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if parsed.Scheme != "" || parsed.Host != "" {
-		return "", false, nil
-	}
-	if strings.HasPrefix(trimmed, "//") {
-		return "", false, nil
-	}
-	cleanPath := strings.TrimSpace(parsed.Path)
-	if cleanPath == "" || strings.HasPrefix(cleanPath, "#") {
-		return "", false, nil
-	}
-	if strings.HasPrefix(strings.ToLower(cleanPath), "data:") || strings.HasPrefix(strings.ToLower(cleanPath), "javascript:") {
+	if shouldSkipAssetURL(parsed, trimmed) {
 		return "", false, nil
 	}
 
-	var joined string
-	if strings.HasPrefix(cleanPath, "/") {
-		joined = pathClean(strings.TrimPrefix(cleanPath, "/"))
-	} else if baseDir != "" {
-		joined = pathClean(baseDir + "/" + cleanPath)
-	} else {
-		joined = pathClean(cleanPath)
-	}
-	if joined == "." || joined == "" || strings.HasPrefix(joined, "../") {
+	joined := joinAndCleanAssetPath(baseDir, parsed.Path)
+	if isInvalidAssetPath(joined) {
 		return "", false, nil
 	}
 
-	if expectedExt != "" && filepath.Ext(joined) == "" {
-		joined += expectedExt
-	}
-	ext := strings.ToLower(filepath.Ext(joined))
-	if ext != ".css" && ext != ".js" {
+	joined = ensureExpectedExt(joined, expectedExt)
+	if !isCSSOrJS(joined) {
 		return "", false, nil
 	}
 
 	return joined, true, nil
+}
+
+func shouldSkipAssetURL(parsed *url.URL, trimmedRef string) bool {
+	if parsed.Scheme != "" || parsed.Host != "" {
+		return true
+	}
+	if strings.HasPrefix(trimmedRef, "//") {
+		return true
+	}
+
+	cleanPath := strings.TrimSpace(parsed.Path)
+	if cleanPath == "" || strings.HasPrefix(cleanPath, "#") {
+		return true
+	}
+
+	lower := strings.ToLower(cleanPath)
+	return strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "javascript:")
+}
+
+func joinAndCleanAssetPath(baseDir, rawPath string) string {
+	cleanPath := strings.TrimSpace(rawPath)
+	if strings.HasPrefix(cleanPath, "/") {
+		return pathClean(strings.TrimPrefix(cleanPath, "/"))
+	}
+	if baseDir != "" {
+		return pathClean(baseDir + "/" + cleanPath)
+	}
+	return pathClean(cleanPath)
+}
+
+func isInvalidAssetPath(joined string) bool {
+	return joined == "." || joined == "" || strings.HasPrefix(joined, "../")
+}
+
+func ensureExpectedExt(joined, expectedExt string) string {
+	if expectedExt == "" {
+		return joined
+	}
+	if filepath.Ext(joined) != "" {
+		return joined
+	}
+	return joined + expectedExt
 }
 
 func pathClean(v string) string {

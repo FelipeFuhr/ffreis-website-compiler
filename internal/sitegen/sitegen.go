@@ -127,41 +127,7 @@ func LoadSiteData(templatesRoot, overrideSource string) (SiteDataLoadResult, err
 
 	source := strings.TrimSpace(overrideSource)
 	if source != "" {
-		if isLocalDirSource(source) {
-			layers, err := listYAMLLayersInDir(source)
-			if err != nil {
-				return SiteDataLoadResult{}, err
-			}
-			merged, err := loadAndMergeSiteDataLayers(layers)
-			if err != nil {
-				return SiteDataLoadResult{}, err
-			}
-			return SiteDataLoadResult{
-				Data:             merged,
-				Source:           source,
-				Layers:           layers,
-				DefaultPath:      defaultPath,
-				UsedOverride:     true,
-				DefaultPathFound: defaultFound,
-			}, nil
-		}
-
-		raw, err := readDataSource(source)
-		if err != nil {
-			return SiteDataLoadResult{}, err
-		}
-		siteData, err := parseSiteData(raw)
-		if err != nil {
-			return SiteDataLoadResult{}, err
-		}
-		return SiteDataLoadResult{
-			Data:             siteData,
-			Source:           source,
-			Layers:           []string{source},
-			DefaultPath:      defaultPath,
-			UsedOverride:     true,
-			DefaultPathFound: defaultFound,
-		}, nil
+		return loadSiteDataFromOverride(source, defaultPath, defaultFound)
 	}
 
 	overlayDir := filepath.Join(filepath.Dir(templatesRoot), "data", "site.d")
@@ -178,31 +144,77 @@ func LoadSiteData(templatesRoot, overrideSource string) (SiteDataLoadResult, err
 		}, nil
 	}
 
-	var base map[string]any
-	var layers []string
-	baseOrigin := ""
-	if defaultFound {
-		raw, err := readDataSource(defaultPath)
-		if err != nil {
-			return SiteDataLoadResult{}, err
-		}
-		siteData, err := parseSiteData(raw)
-		if err != nil {
-			return SiteDataLoadResult{}, err
-		}
-		base = siteData
-		layers = append(layers, defaultPath)
-		baseOrigin = defaultPath
-	} else {
-		base = map[string]any{}
+	base, baseOrigin, layers, err := loadBaseSiteData(defaultFound, defaultPath, overlayLayers)
+	if err != nil {
+		return SiteDataLoadResult{}, err
 	}
-	layers = append(layers, overlayLayers...)
 
 	merged, err := mergeSiteDataStrict(base, overlayLayers, baseOrigin)
 	if err != nil {
 		return SiteDataLoadResult{}, err
 	}
 
+	return buildSiteDataLoadResult(defaultFound, defaultPath, layers, merged), nil
+}
+
+func loadSiteDataFromOverride(source, defaultPath string, defaultFound bool) (SiteDataLoadResult, error) {
+	if isLocalDirSource(source) {
+		layers, err := listYAMLLayersInDir(source)
+		if err != nil {
+			return SiteDataLoadResult{}, err
+		}
+		merged, err := loadAndMergeSiteDataLayers(layers)
+		if err != nil {
+			return SiteDataLoadResult{}, err
+		}
+		return SiteDataLoadResult{
+			Data:             merged,
+			Source:           source,
+			Layers:           layers,
+			DefaultPath:      defaultPath,
+			UsedOverride:     true,
+			DefaultPathFound: defaultFound,
+		}, nil
+	}
+
+	raw, err := readDataSource(source)
+	if err != nil {
+		return SiteDataLoadResult{}, err
+	}
+	siteData, err := parseSiteData(raw)
+	if err != nil {
+		return SiteDataLoadResult{}, err
+	}
+	return SiteDataLoadResult{
+		Data:             siteData,
+		Source:           source,
+		Layers:           []string{source},
+		DefaultPath:      defaultPath,
+		UsedOverride:     true,
+		DefaultPathFound: defaultFound,
+	}, nil
+}
+
+func loadBaseSiteData(defaultFound bool, defaultPath string, overlayLayers []string) (base map[string]any, baseOrigin string, layers []string, err error) {
+	if !defaultFound {
+		return map[string]any{}, "", overlayLayers, nil
+	}
+
+	raw, err := readDataSource(defaultPath)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	siteData, err := parseSiteData(raw)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	layers = append(layers, defaultPath)
+	layers = append(layers, overlayLayers...)
+	return siteData, defaultPath, layers, nil
+}
+
+func buildSiteDataLoadResult(defaultFound bool, defaultPath string, layers []string, merged map[string]any) SiteDataLoadResult {
 	resultSource := ""
 	if defaultFound {
 		resultSource = defaultPath
@@ -214,7 +226,7 @@ func LoadSiteData(templatesRoot, overrideSource string) (SiteDataLoadResult, err
 		DefaultPath:      defaultPath,
 		UsedOverride:     false,
 		DefaultPathFound: defaultFound,
-	}, nil
+	}
 }
 
 func LoadSiteDataContract(templatesRoot string) (SiteDataContractLoadResult, error) {
@@ -298,29 +310,37 @@ func ValidateSiteDataContractUsage(contract SiteDataContract, usedPaths []string
 		return nil
 	}
 
-	var validationErrors []string
+	validationErrors := make([]string, 0)
+	validationErrors = append(validationErrors, undeclaredUsageErrors(usedPaths, allowedPatterns, requiredPatterns)...)
+	validationErrors = append(validationErrors, unusedPatternErrors("required", requiredPatterns, usedPaths)...)
+	validationErrors = append(validationErrors, unusedPatternErrors("allowed", allowedPatterns, usedPaths)...)
+
+	if len(validationErrors) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(validationErrors, "; "))
+}
+
+func undeclaredUsageErrors(usedPaths, allowedPatterns, requiredPatterns []string) []string {
+	var errs []string
 	for _, path := range usedPaths {
-		if len(allowedPatterns) == 0 && len(requiredPatterns) == 0 {
+		if anyPatternMatches(path, allowedPatterns) || anyPatternMatches(path, requiredPatterns) {
 			continue
 		}
-		if !anyPatternMatches(path, allowedPatterns) && !anyPatternMatches(path, requiredPatterns) {
-			validationErrors = append(validationErrors, fmt.Sprintf("site data path used by templates but not declared in contract: %s", path))
+		errs = append(errs, fmt.Sprintf("site data path used by templates but not declared in contract: %s", path))
+	}
+	return errs
+}
+
+func unusedPatternErrors(kind string, patterns []string, usedPaths []string) []string {
+	var errs []string
+	for _, pattern := range patterns {
+		if anyPathMatches(usedPaths, pattern) {
+			continue
 		}
+		errs = append(errs, fmt.Sprintf("%s contract path not used by templates: %s", kind, pattern))
 	}
-	for _, pattern := range requiredPatterns {
-		if !anyPathMatches(usedPaths, pattern) {
-			validationErrors = append(validationErrors, fmt.Sprintf("required contract path not used by templates: %s", pattern))
-		}
-	}
-	for _, pattern := range allowedPatterns {
-		if !anyPathMatches(usedPaths, pattern) {
-			validationErrors = append(validationErrors, fmt.Sprintf("allowed contract path not used by templates: %s", pattern))
-		}
-	}
-	if len(validationErrors) > 0 {
-		return errors.New(strings.Join(validationErrors, "; "))
-	}
-	return nil
+	return errs
 }
 
 func TraceSiteDataUsage(pages []PageTemplate, siteData map[string]any) ([]string, error) {
@@ -462,73 +482,98 @@ func safeHTML(v string) template.HTML {
 
 func dig(root any, keys ...any) (any, error) {
 	current := root
-	var tracePath string
-	var tracer *accessTracer
-	if metadata, ok := traceMetadataForValue(current); ok {
-		tracePath = metadata.path
-		tracer = metadata.tracer
-	}
+	tracePath, tracer := traceStateForValue(current)
+
 	for _, key := range keys {
 		if current == nil {
 			return nil, nil
 		}
 
-		switch typed := current.(type) {
-		case map[string]any:
-			keyString, err := stringifyKey(key)
-			if err != nil {
-				return nil, err
-			}
-			current = typed[keyString]
-			if tracer != nil {
-				tracePath = joinTracePath(tracePath, keyString)
-			}
-		case tracedMap:
-			keyString, err := stringifyKey(key)
-			if err != nil {
-				return nil, err
-			}
-			current = typed[keyString]
-			if tracer != nil {
-				tracePath = joinTracePath(tracePath, keyString)
-			}
-		case []any:
-			index, err := integerKey(key)
-			if err != nil {
-				return nil, err
-			}
-			if index < 0 || index >= len(typed) {
-				return nil, nil
-			}
-			current = typed[index]
-			if tracer != nil {
-				tracePath = joinTracePath(tracePath, strconv.Itoa(index))
-			}
-		case tracedSlice:
-			index, err := integerKey(key)
-			if err != nil {
-				return nil, err
-			}
-			if index < 0 || index >= len(typed) {
-				return nil, nil
-			}
-			current = typed[index]
-			if tracer != nil {
-				tracePath = joinTracePath(tracePath, strconv.Itoa(index))
-			}
-		default:
-			return nil, fmt.Errorf("dig cannot descend into %T", current)
+		next, nextTracePath, err := descend(current, key, tracePath, tracer)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil && current != nil {
+			// For missing keys/out-of-range indexes, preserve original behavior (nil, nil).
+			return nil, nil
 		}
 
-		if nextMetadata, ok := traceMetadataForValue(current); ok {
-			tracePath = nextMetadata.path
-			tracer = nextMetadata.tracer
-		}
+		current = next
+		tracePath = nextTracePath
+		tracePath, tracer = updateTraceStateFromMetadata(current, tracePath, tracer)
 	}
-	if tracer != nil && shouldTraceValue(current) && tracePath != "" {
-		tracer.record(tracePath)
-	}
+
+	recordTraceIfNeeded(tracer, tracePath, current)
 	return current, nil
+}
+
+func traceStateForValue(value any) (string, *accessTracer) {
+	if metadata, ok := traceMetadataForValue(value); ok {
+		return metadata.path, metadata.tracer
+	}
+	return "", nil
+}
+
+func updateTraceStateFromMetadata(value any, tracePath string, tracer *accessTracer) (string, *accessTracer) {
+	if nextMetadata, ok := traceMetadataForValue(value); ok {
+		return nextMetadata.path, nextMetadata.tracer
+	}
+	return tracePath, tracer
+}
+
+func recordTraceIfNeeded(tracer *accessTracer, tracePath string, value any) {
+	if tracer == nil {
+		return
+	}
+	if tracePath == "" {
+		return
+	}
+	if !shouldTraceValue(value) {
+		return
+	}
+	tracer.record(tracePath)
+}
+
+func descend(current any, key any, tracePath string, tracer *accessTracer) (any, string, error) {
+	switch typed := current.(type) {
+	case map[string]any:
+		return descendMapLike(typed, key, tracePath, tracer)
+	case tracedMap:
+		return descendMapLike(map[string]any(typed), key, tracePath, tracer)
+	case []any:
+		return descendSliceLike(typed, key, tracePath, tracer)
+	case tracedSlice:
+		return descendSliceLike([]any(typed), key, tracePath, tracer)
+	default:
+		return nil, tracePath, fmt.Errorf("dig cannot descend into %T", current)
+	}
+}
+
+func descendMapLike(m map[string]any, key any, tracePath string, tracer *accessTracer) (any, string, error) {
+	keyString, err := stringifyKey(key)
+	if err != nil {
+		return nil, tracePath, err
+	}
+	next := m[keyString]
+	if tracer != nil {
+		tracePath = joinTracePath(tracePath, keyString)
+	}
+	return next, tracePath, nil
+}
+
+func descendSliceLike(s []any, key any, tracePath string, tracer *accessTracer) (any, string, error) {
+	index, err := integerKey(key)
+	if err != nil {
+		return nil, tracePath, err
+	}
+	if index < 0 || index >= len(s) {
+		return nil, tracePath, nil
+	}
+	next := s[index]
+	if tracer != nil {
+		tracePath = joinTracePath(tracePath, strconv.Itoa(index))
+	}
+	return next, tracePath, nil
 }
 
 func required(value any, message string) (any, error) {
@@ -675,41 +720,51 @@ func normalizePatterns(patterns []string) ([]string, error) {
 func collectPaths(root map[string]any) ([]string, []string) {
 	var allPaths []string
 	var leafPaths []string
-	var walk func(prefix []string, value any)
-	walk = func(prefix []string, value any) {
+	walkPaths(nil, root, &allPaths, &leafPaths)
+	return allPaths, leafPaths
+}
+
+func walkPaths(prefix []string, value any, allPaths *[]string, leafPaths *[]string) {
+	if len(prefix) > 0 {
+		*allPaths = append(*allPaths, strings.Join(prefix, "."))
+	}
+
+	switch typed := value.(type) {
+	case map[string]any:
+		walkPathsMap(prefix, typed, allPaths, leafPaths)
+	case []any:
+		walkPathsSlice(prefix, typed, allPaths, leafPaths)
+	default:
 		if len(prefix) > 0 {
-			allPaths = append(allPaths, strings.Join(prefix, "."))
-		}
-		switch typed := value.(type) {
-		case map[string]any:
-			if len(typed) == 0 && len(prefix) > 0 {
-				leafPaths = append(leafPaths, strings.Join(prefix, "."))
-				return
-			}
-			keys := make([]string, 0, len(typed))
-			for key := range typed {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				walk(append(prefix, key), typed[key])
-			}
-		case []any:
-			if len(typed) == 0 && len(prefix) > 0 {
-				leafPaths = append(leafPaths, strings.Join(prefix, "."))
-				return
-			}
-			for i, item := range typed {
-				walk(append(prefix, strconv.Itoa(i)), item)
-			}
-		default:
-			if len(prefix) > 0 {
-				leafPaths = append(leafPaths, strings.Join(prefix, "."))
-			}
+			*leafPaths = append(*leafPaths, strings.Join(prefix, "."))
 		}
 	}
-	walk(nil, root)
-	return allPaths, leafPaths
+}
+
+func walkPathsMap(prefix []string, typed map[string]any, allPaths *[]string, leafPaths *[]string) {
+	if len(typed) == 0 && len(prefix) > 0 {
+		*leafPaths = append(*leafPaths, strings.Join(prefix, "."))
+		return
+	}
+
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		walkPaths(append(prefix, key), typed[key], allPaths, leafPaths)
+	}
+}
+
+func walkPathsSlice(prefix []string, typed []any, allPaths *[]string, leafPaths *[]string) {
+	if len(typed) == 0 && len(prefix) > 0 {
+		*leafPaths = append(*leafPaths, strings.Join(prefix, "."))
+		return
+	}
+	for i, item := range typed {
+		walkPaths(append(prefix, strconv.Itoa(i)), item, allPaths, leafPaths)
+	}
 }
 
 func anyPathMatches(paths []string, pattern string) bool {

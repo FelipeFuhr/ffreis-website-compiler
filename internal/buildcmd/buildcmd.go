@@ -39,148 +39,276 @@ func Run(args []string, logger *slog.Logger) error {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 
-	fs := flag.NewFlagSet("build", flag.ContinueOnError)
-	websiteRoot := fs.String("website-root", ".", "website project root; expects <website-root>/src/{assets,templates} (legacy fallback: <website-root>/{site,templates})")
-	assetsDirFlag := fs.String("assets-dir", "", "path to source assets folder (defaults to <website-root>/src/assets, then <website-root>/site)")
-	siteDirFlag := fs.String("site-dir", "", "legacy alias for -assets-dir")
-	templatesDirFlag := fs.String("templates-dir", "", "path to templates root folder (defaults to <website-root>/src/templates, then <website-root>/templates)")
-	sitemapConfigFlag := fs.String("sitemap-config", "", "optional path to sitemap YAML config; defaults to <website-root>/sitemap.yaml if present")
-	sitemapBaseURL := fs.String("sitemap-base-url", "", "optional base URL for automatic sitemap.xml generation when no sitemap config file is found")
-	siteDataSource := fs.String("site-data", "", "optional site data source override; supports file/URL sources or a directory containing YAML layers")
-	outDir := fs.String("out", "dist", "output directory for generated static site")
-	copyAssets := fs.Bool("copy-assets", true, "copy static assets from assets dir into output")
-	inlineAssets := fs.Bool("inline-assets", false, "inline local css/js/images into each html for self-contained pages")
-	mirrorExternalAssets := fs.Bool("mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
-	mirroredAssetsDir := fs.String("mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
-	enableSanity := fs.Bool("sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
-	if err := fs.Parse(args); err != nil {
+	opts, err := parseBuildOptions(args)
+	if err != nil {
 		return err
 	}
 
-	assetsDir := *assetsDirFlag
-	if assetsDir == "" && *siteDirFlag != "" {
-		assetsDir = *siteDirFlag
-	}
-	templatesDir := *templatesDirFlag
-
-	if assetsDir == "" || templatesDir == "" {
-		resolvedAssetsDir, resolvedTemplatesDir, err := resolveWebsitePaths(*websiteRoot)
-		if err != nil {
-			return err
-		}
-		if assetsDir == "" {
-			assetsDir = resolvedAssetsDir
-		}
-		if templatesDir == "" {
-			templatesDir = resolvedTemplatesDir
-		}
+	assetsDir, templatesDir, err := resolveBuildPaths(opts)
+	if err != nil {
+		return err
 	}
 
+	logBuildStart(logger, opts, assetsDir, templatesDir)
+
+	if err := validateBuildDirs(assetsDir, templatesDir); err != nil {
+		return err
+	}
+	if err := ensureOutDir(opts.outDir); err != nil {
+		return err
+	}
+	if err := maybeCopyAssets(opts, assetsDir); err != nil {
+		return err
+	}
+
+	mirrorer, err := maybeInitMirrorer(opts)
+	if err != nil {
+		return err
+	}
+
+	pages, siteDataResult, _, err := loadAndValidateSiteInputs(logger, opts, templatesDir)
+	if err != nil {
+		return err
+	}
+
+	renderedPages, err := renderPages(pages, siteDataResult.Data)
+	if err != nil {
+		return err
+	}
+	if _, err := assetusage.Validate(assetsDir, renderedPages); err != nil {
+		return fmt.Errorf("validating local css/js asset usage: %w", err)
+	}
+
+	if err := writePages(logger, opts, pages, assetsDir, renderedPages, mirrorer); err != nil {
+		return err
+	}
+	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages); err != nil {
+		return err
+	}
+
+	logger.Info("build completed", "out_dir", opts.outDir)
+	return nil
+}
+
+type buildOptions struct {
+	websiteRoot          string
+	assetsDir            string
+	templatesDir         string
+	sitemapConfig        string
+	sitemapBaseURL       string
+	siteDataSource       string
+	outDir               string
+	copyAssets           bool
+	inlineAssets         bool
+	mirrorExternalAssets bool
+	mirroredAssetsDir    string
+	enableSanity         bool
+}
+
+func parseBuildOptions(args []string) (buildOptions, error) {
+	fs := flag.NewFlagSet("build", flag.ContinueOnError)
+
+	var opts buildOptions
+	var assetsDirFlag string
+	var siteDirFlag string
+	var templatesDirFlag string
+
+	fs.StringVar(&opts.websiteRoot, "website-root", ".", "website project root; expects <website-root>/src/{assets,templates} (legacy fallback: <website-root>/{site,templates})")
+	fs.StringVar(&assetsDirFlag, "assets-dir", "", "path to source assets folder (defaults to <website-root>/src/assets, then <website-root>/site)")
+	fs.StringVar(&siteDirFlag, "site-dir", "", "legacy alias for -assets-dir")
+	fs.StringVar(&templatesDirFlag, "templates-dir", "", "path to templates root folder (defaults to <website-root>/src/templates, then <website-root>/templates)")
+	fs.StringVar(&opts.sitemapConfig, "sitemap-config", "", "optional path to sitemap YAML config; defaults to <website-root>/sitemap.yaml if present")
+	fs.StringVar(&opts.sitemapBaseURL, "sitemap-base-url", "", "optional base URL for automatic sitemap.xml generation when no sitemap config file is found")
+	fs.StringVar(&opts.siteDataSource, "site-data", "", "optional site data source override; supports file/URL sources or a directory containing YAML layers")
+	fs.StringVar(&opts.outDir, "out", "dist", "output directory for generated static site")
+	fs.BoolVar(&opts.copyAssets, "copy-assets", true, "copy static assets from assets dir into output")
+	fs.BoolVar(&opts.inlineAssets, "inline-assets", false, "inline local css/js/images into each html for self-contained pages")
+	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
+	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
+	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
+
+	if err := fs.Parse(args); err != nil {
+		return buildOptions{}, err
+	}
+
+	if assetsDirFlag == "" && siteDirFlag != "" {
+		assetsDirFlag = siteDirFlag
+	}
+	opts.assetsDir = assetsDirFlag
+	opts.templatesDir = templatesDirFlag
+
+	return opts, nil
+}
+
+func resolveBuildPaths(opts buildOptions) (assetsDir string, templatesDir string, err error) {
+	assetsDir = opts.assetsDir
+	templatesDir = opts.templatesDir
+	if assetsDir != "" && templatesDir != "" {
+		return assetsDir, templatesDir, nil
+	}
+
+	resolvedAssetsDir, resolvedTemplatesDir, err := resolveWebsitePaths(opts.websiteRoot)
+	if err != nil {
+		return "", "", err
+	}
+
+	if assetsDir == "" {
+		assetsDir = resolvedAssetsDir
+	}
+	if templatesDir == "" {
+		templatesDir = resolvedTemplatesDir
+	}
+
+	return assetsDir, templatesDir, nil
+}
+
+func logBuildStart(logger *slog.Logger, opts buildOptions, assetsDir, templatesDir string) {
 	logger.Info(
 		"starting website build",
-		"website_root", *websiteRoot,
+		"website_root", opts.websiteRoot,
 		"assets_dir", assetsDir,
 		"templates_dir", templatesDir,
-		"out_dir", *outDir,
-		"copy_assets", *copyAssets,
-		"inline_assets", *inlineAssets,
-		"mirror_external_assets", *mirrorExternalAssets,
-		"mirrored_assets_dir", *mirroredAssetsDir,
+		"out_dir", opts.outDir,
+		"copy_assets", opts.copyAssets,
+		"inline_assets", opts.inlineAssets,
+		"mirror_external_assets", opts.mirrorExternalAssets,
+		"mirrored_assets_dir", opts.mirroredAssetsDir,
 	)
+}
 
+func validateBuildDirs(assetsDir, templatesDir string) error {
 	if _, err := os.Stat(assetsDir); err != nil {
 		return fmt.Errorf("assets directory not found: %s (%w)", assetsDir, err)
 	}
 	if _, err := os.Stat(templatesDir); err != nil {
 		return fmt.Errorf("templates directory not found: %s (%w)", templatesDir, err)
 	}
+	return nil
+}
 
-	if err := os.MkdirAll(*outDir, 0o755); err != nil {
+func ensureOutDir(outDir string) error {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
+	return nil
+}
 
-	if *copyAssets && !*inlineAssets {
-		if err := copyStaticAssets(assetsDir, *outDir); err != nil {
-			return fmt.Errorf("copying assets: %w", err)
-		}
+func maybeCopyAssets(opts buildOptions, assetsDir string) error {
+	if !opts.copyAssets || opts.inlineAssets {
+		return nil
+	}
+	if err := copyStaticAssets(assetsDir, opts.outDir); err != nil {
+		return fmt.Errorf("copying assets: %w", err)
+	}
+	return nil
+}
+
+func maybeInitMirrorer(opts buildOptions) (*externalAssetMirrorer, error) {
+	if !opts.mirrorExternalAssets {
+		return nil, nil
 	}
 
-	var mirrorer *externalAssetMirrorer
-	if *mirrorExternalAssets {
-		mirrorer = newExternalAssetMirrorer(*outDir, *mirroredAssetsDir)
-		if *copyAssets && !*inlineAssets {
-			if err := mirrorExternalAssetsInCopiedCSS(filepath.Join(*outDir, "css"), mirrorer); err != nil {
-				return fmt.Errorf("mirroring external assets in copied css: %w", err)
-			}
+	mirrorer := newExternalAssetMirrorer(opts.outDir, opts.mirroredAssetsDir)
+	if opts.copyAssets && !opts.inlineAssets {
+		if err := mirrorExternalAssetsInCopiedCSS(filepath.Join(opts.outDir, "css"), mirrorer); err != nil {
+			return nil, fmt.Errorf("mirroring external assets in copied css: %w", err)
 		}
 	}
+	return mirrorer, nil
+}
 
+func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templatesDir string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
 	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
 	if err != nil {
-		return fmt.Errorf("loading templates: %w", err)
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading templates: %w", err)
 	}
-	siteDataResult, err := sitegen.LoadSiteData(templatesDir, *siteDataSource)
+	siteDataResult, err := sitegen.LoadSiteData(templatesDir, opts.siteDataSource)
 	if err != nil {
-		return fmt.Errorf("loading site data: %w", err)
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data: %w", err)
 	}
 	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesDir)
 	if err != nil {
-		return fmt.Errorf("loading site data contract: %w", err)
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
 	}
-	if siteDataResult.UsedOverride && siteDataResult.DefaultPathFound {
-		logger.Warn(
-			"site data override supersedes local site data file",
-			"override_source", siteDataResult.Source,
-			"local_site_data", siteDataResult.DefaultPath,
-			"site_data_layers", siteDataResult.Layers,
-		)
+
+	logSiteDataOverride(logger, siteDataResult)
+
+	if err := validateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
+	if opts.enableSanity {
+		if err := sitegen.ValidateSiteSanity(siteDataResult.Data, sitegen.DefaultSanityConfig()); err != nil {
+			return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site sanity rules: %w", err)
+		}
+	}
+
+	logger.Info("loaded templates", "count", len(pages), "templates_dir", templatesDir)
+	return pages, siteDataResult, siteDataContractResult, nil
+}
+
+func logSiteDataOverride(logger *slog.Logger, siteDataResult sitegen.SiteDataLoadResult) {
+	if !siteDataResult.UsedOverride || !siteDataResult.DefaultPathFound {
+		return
+	}
+	logger.Warn(
+		"site data override supersedes local site data file",
+		"override_source", siteDataResult.Source,
+		"local_site_data", siteDataResult.DefaultPath,
+		"site_data_layers", siteDataResult.Layers,
+	)
+}
+
+func validateSiteDataAndUsage(pages []sitegen.PageTemplate, siteDataResult sitegen.SiteDataLoadResult, siteDataContractResult sitegen.SiteDataContractLoadResult) error {
 	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
 		return fmt.Errorf("validating site data against contract: %w", err)
 	}
-	if len(siteDataContractResult.Contract.Required) > 0 || len(siteDataContractResult.Contract.Allowed) > 0 {
-		usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
-		if err != nil {
-			return fmt.Errorf("tracing site data usage: %w", err)
-		}
-		if err := sitegen.ValidateSiteDataContractUsage(siteDataContractResult.Contract, usedPaths); err != nil {
-			return fmt.Errorf("validating site data contract usage: %w", err)
-		}
-	}
-	if *enableSanity {
-		if err := sitegen.ValidateSiteSanity(siteDataResult.Data, sitegen.DefaultSanityConfig()); err != nil {
-			return fmt.Errorf("validating site sanity rules: %w", err)
-		}
-	}
-	logger.Info("loaded templates", "count", len(pages), "templates_dir", templatesDir)
 
+	contract := siteDataContractResult.Contract
+	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
+		return nil
+	}
+
+	usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
+	if err != nil {
+		return fmt.Errorf("tracing site data usage: %w", err)
+	}
+	if err := sitegen.ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
+		return fmt.Errorf("validating site data contract usage: %w", err)
+	}
+	return nil
+}
+
+func renderPages(pages []sitegen.PageTemplate, siteData map[string]any) (map[string]string, error) {
 	renderedPages := make(map[string]string, len(pages))
 	for _, page := range pages {
 		var rendered bytes.Buffer
-		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", sitegen.NewTemplateData(page.Name, siteDataResult.Data)); err != nil {
-			return fmt.Errorf("rendering %s.html: %w", page.Name, err)
+		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", sitegen.NewTemplateData(page.Name, siteData)); err != nil {
+			return nil, fmt.Errorf("rendering %s.html: %w", page.Name, err)
 		}
 		renderedPages[page.Name] = rendered.String()
 	}
+	return renderedPages, nil
+}
 
-	if _, err := assetusage.Validate(assetsDir, renderedPages); err != nil {
-		return fmt.Errorf("validating local css/js asset usage: %w", err)
-	}
-
+func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, assetsDir string, renderedPages map[string]string, mirrorer *externalAssetMirrorer) error {
 	for _, page := range pages {
-		target := filepath.Join(*outDir, page.Name+".html")
+		target := filepath.Join(opts.outDir, page.Name+".html")
 		htmlOut := renderedPages[page.Name]
-		if *inlineAssets {
-			htmlOut, err = inlineLocalAssets(htmlOut, assetsDir)
+
+		if opts.inlineAssets {
+			updated, err := inlineLocalAssets(htmlOut, assetsDir)
 			if err != nil {
 				return fmt.Errorf("inlining assets in %s: %w", target, err)
 			}
+			htmlOut = updated
 		}
+
 		if mirrorer != nil {
-			htmlOut, err = mirrorer.rewriteHTML(htmlOut)
+			updated, err := mirrorer.rewriteHTML(htmlOut)
 			if err != nil {
 				return fmt.Errorf("mirroring external assets in %s: %w", target, err)
 			}
+			htmlOut = updated
 		}
 
 		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil {
@@ -190,27 +318,33 @@ func Run(args []string, logger *slog.Logger) error {
 		logger.Info("generated page", "page", page.Name, "target", target)
 		fmt.Fprintln(os.Stdout, target)
 	}
+	return nil
+}
 
-	sitemapConfigPath, err := resolveSitemapConfigPath(*websiteRoot, *sitemapConfigFlag)
+func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate) error {
+	sitemapConfigPath, err := resolveSitemapConfigPath(opts.websiteRoot, opts.sitemapConfig)
 	if err != nil {
 		return err
 	}
+
 	if sitemapConfigPath != "" {
-		if err := generateSitemapFromConfig(sitemapConfigPath, *websiteRoot, *outDir); err != nil {
+		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir); err != nil {
 			return err
 		}
-		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(*outDir, "sitemap.xml"))
-		fmt.Fprintln(os.Stdout, filepath.Join(*outDir, "sitemap.xml"))
-	} else if strings.TrimSpace(*sitemapBaseURL) != "" {
-		if err := generateSitemapFromPages(*sitemapBaseURL, templatesDir, pages, *outDir); err != nil {
-			return err
-		}
-		logger.Info("generated sitemap from pages", "base_url", strings.TrimSpace(*sitemapBaseURL), "target", filepath.Join(*outDir, "sitemap.xml"))
-		fmt.Fprintln(os.Stdout, filepath.Join(*outDir, "sitemap.xml"))
+		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(opts.outDir, "sitemap.xml"))
+		fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, "sitemap.xml"))
+		return nil
 	}
 
-	logger.Info("build completed", "out_dir", *outDir)
-
+	baseURL := strings.TrimSpace(opts.sitemapBaseURL)
+	if baseURL == "" {
+		return nil
+	}
+	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir); err != nil {
+		return err
+	}
+	logger.Info("generated sitemap from pages", "base_url", baseURL, "target", filepath.Join(opts.outDir, "sitemap.xml"))
+	fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, "sitemap.xml"))
 	return nil
 }
 
@@ -497,7 +631,23 @@ func dirExists(path string) bool {
 func inlineLocalAssets(doc, srcRoot string) (string, error) {
 	var err error
 
-	doc, err = replaceTagWith(doc, stylesheetTagRE, func(tag string, refs []string) (string, error) {
+	doc, err = inlineLocalStylesheets(doc, srcRoot)
+	if err != nil {
+		return "", err
+	}
+	doc, err = inlineLocalScripts(doc, srcRoot)
+	if err != nil {
+		return "", err
+	}
+	doc, err = inlineLocalIcons(doc, srcRoot)
+	if err != nil {
+		return "", err
+	}
+	return inlineLocalImages(doc, srcRoot)
+}
+
+func inlineLocalStylesheets(doc, srcRoot string) (string, error) {
+	return replaceTagWith(doc, stylesheetTagRE, func(tag string, refs []string) (string, error) {
 		href := refs[1]
 		if isExternalRef(href) {
 			return tag, nil
@@ -519,11 +669,10 @@ func inlineLocalAssets(doc, srcRoot string) (string, error) {
 		}
 		return "<style>\n" + inlinedCSS + "\n</style>", nil
 	})
-	if err != nil {
-		return "", err
-	}
+}
 
-	doc, err = replaceTagWith(doc, scriptTagRE, func(tag string, refs []string) (string, error) {
+func inlineLocalScripts(doc, srcRoot string) (string, error) {
+	return replaceTagWith(doc, scriptTagRE, func(tag string, refs []string) (string, error) {
 		src := refs[1]
 		if isExternalRef(src) {
 			return tag, nil
@@ -534,11 +683,10 @@ func inlineLocalAssets(doc, srcRoot string) (string, error) {
 		}
 		return "<script>\n" + string(jsBytes) + "\n</script>", nil
 	})
-	if err != nil {
-		return "", err
-	}
+}
 
-	doc, err = replaceTagWith(doc, iconTagRE, func(tag string, refs []string) (string, error) {
+func inlineLocalIcons(doc, srcRoot string) (string, error) {
+	return replaceTagWith(doc, iconTagRE, func(tag string, refs []string) (string, error) {
 		href := refs[1]
 		if isExternalRef(href) {
 			return tag, nil
@@ -549,11 +697,10 @@ func inlineLocalAssets(doc, srcRoot string) (string, error) {
 		}
 		return strings.Replace(tag, href, dataURL, 1), nil
 	})
-	if err != nil {
-		return "", err
-	}
+}
 
-	doc, err = replaceTagWith(doc, imgTagRE, func(tag string, refs []string) (string, error) {
+func inlineLocalImages(doc, srcRoot string) (string, error) {
+	return replaceTagWith(doc, imgTagRE, func(tag string, refs []string) (string, error) {
 		src := refs[1]
 		if isExternalRef(src) {
 			return tag, nil
@@ -564,11 +711,6 @@ func inlineLocalAssets(doc, srcRoot string) (string, error) {
 		}
 		return strings.Replace(tag, src, dataURL, 1), nil
 	})
-	if err != nil {
-		return "", err
-	}
-
-	return doc, nil
 }
 
 func replaceTagWith(doc string, re *regexp.Regexp, replacer func(tag string, refs []string) (string, error)) (string, error) {
@@ -762,36 +904,63 @@ func resolveExternalURL(baseURL *url.URL, ref string) (string, bool) {
 		return "", false
 	}
 
-	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(trimmed, "//") {
+		return resolveSchemeRelativeURL(baseURL, trimmed), true
+	}
+
+	if shouldSkipExternalURL(trimmed) {
+		return "", false
+	}
+	if absoluteURL, ok := parseAbsoluteHTTPURL(trimmed); ok {
+		return absoluteURL, true
+	}
+	if baseURL == nil {
+		return "", false
+	}
+
+	return resolveRelativeHTTPURL(baseURL, trimmed)
+}
+
+func shouldSkipExternalURL(trimmedRef string) bool {
+	lower := strings.ToLower(trimmedRef)
 	switch {
 	case strings.HasPrefix(lower, "data:"),
 		strings.HasPrefix(lower, "mailto:"),
 		strings.HasPrefix(lower, "tel:"),
 		strings.HasPrefix(lower, "javascript:"),
 		strings.HasPrefix(lower, "#"):
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveSchemeRelativeURL(baseURL *url.URL, schemeRelative string) string {
+	scheme := "https"
+	if baseURL != nil && baseURL.Scheme != "" {
+		scheme = baseURL.Scheme
+	}
+	return scheme + ":" + schemeRelative
+}
+
+func parseAbsoluteHTTPURL(ref string) (string, bool) {
+	parsed, err := url.Parse(ref)
+	if err != nil {
 		return "", false
 	}
-
-	if strings.HasPrefix(trimmed, "//") {
-		scheme := "https"
-		if baseURL != nil && baseURL.Scheme != "" {
-			scheme = baseURL.Scheme
-		}
-		return scheme + ":" + trimmed, true
-	}
-
-	parsed, err := url.Parse(trimmed)
-	if err == nil && parsed.IsAbs() && (parsed.Scheme == "http" || parsed.Scheme == "https") {
-		return parsed.String(), true
-	}
-
-	if baseURL == nil {
+	if !parsed.IsAbs() {
 		return "", false
 	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", false
+	}
+	return parsed.String(), true
+}
 
-	resolved := baseURL.ResolveReference(&url.URL{Path: trimmed})
-	if strings.Contains(trimmed, "?") || strings.Contains(trimmed, "#") {
-		if parsed, err := url.Parse(trimmed); err == nil {
+func resolveRelativeHTTPURL(baseURL *url.URL, ref string) (string, bool) {
+	resolved := baseURL.ResolveReference(&url.URL{Path: ref})
+	if strings.Contains(ref, "?") || strings.Contains(ref, "#") {
+		if parsed, err := url.Parse(ref); err == nil {
 			resolved = baseURL.ResolveReference(parsed)
 		}
 	}
@@ -977,6 +1146,13 @@ func copyStaticAssets(srcRoot, dstRoot string) error {
 	dirs := []string{"css", "fonts", "images", "js", "ld"}
 	files := []string{"send.js", "contactScript.js", "robots.txt", "sitemap.xml"}
 
+	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
+		return err
+	}
+	return copyExistingFiles(srcRoot, dstRoot, files)
+}
+
+func copyExistingDirs(srcRoot, dstRoot string, dirs []string) error {
 	for _, dir := range dirs {
 		src := filepath.Join(srcRoot, dir)
 		if _, err := os.Stat(src); err != nil {
@@ -985,12 +1161,16 @@ func copyStaticAssets(srcRoot, dstRoot string) error {
 			}
 			return err
 		}
+
 		dst := filepath.Join(dstRoot, dir)
 		if err := copyDir(src, dst); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
+func copyExistingFiles(srcRoot, dstRoot string, files []string) error {
 	for _, file := range files {
 		src := filepath.Join(srcRoot, file)
 		if _, err := os.Stat(src); err != nil {
@@ -999,12 +1179,12 @@ func copyStaticAssets(srcRoot, dstRoot string) error {
 			}
 			return err
 		}
+
 		dst := filepath.Join(dstRoot, file)
 		if err := copyFile(src, dst); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 

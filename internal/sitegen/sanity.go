@@ -34,72 +34,103 @@ func ValidateSiteSanity(siteData map[string]any, config SanityConfig) error {
 		if !ok {
 			continue
 		}
-		variants, ok := digMap(course, "variants")
-		if !ok {
-			continue
-		}
-
-		for variantID, variantValue := range variants {
-			variant, ok := variantValue.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			cronograma, hasCronograma := digMap(variant, "cronograma")
-			if !hasCronograma {
-				continue
-			}
-			sessions, ok := digSlice(cronograma, "sessions")
-			if !ok || len(sessions) == 0 {
-				continue
-			}
-
-			firstSessionDate, ok := firstCronogramaSessionDate(sessions)
-			if !ok {
-				continue
-			}
-
-			basePath := fmt.Sprintf("courses.%s.variants.%s", courseID, variantID)
-
-			if config.CourseStartMatchesFirstSession {
-				startText, _ := variant["start_text"].(string)
-				startText = strings.TrimSpace(startText)
-				if startText == "" {
-					errs = append(errs, fmt.Errorf("%s.start_text is empty but cronograma.sessions is present", basePath))
-				} else if parsedStartDate, ok := parseStartTextToDate(startText); !ok {
-					errs = append(errs, fmt.Errorf("%s.start_text %q could not be parsed as a date", basePath, startText))
-				} else if !sameDay(parsedStartDate, firstSessionDate) {
-					errs = append(errs, fmt.Errorf(
-						"%s.start_text %q does not match the first cronograma session date %s",
-						basePath,
-						startText,
-						firstSessionDate.Format("2006-01-02"),
-					))
-				}
-			}
-
-			if config.CourseDurationHoursMatchesSessionHours {
-				durationHours, ok := coerceInt(variant["duration_hours"])
-				if !ok {
-					errs = append(errs, fmt.Errorf("%s.duration_hours is missing/invalid but cronograma.sessions is present", basePath))
-				} else if totalHours, ok := sumCronogramaSessionHours(sessions); !ok {
-					errs = append(errs, fmt.Errorf("%s.cronograma.sessions hours is missing/invalid", basePath))
-				} else if durationHours != totalHours {
-					errs = append(errs, fmt.Errorf(
-						"%s.duration_hours (%d) does not match sum(cronograma.sessions.hours) (%d)",
-						basePath,
-						durationHours,
-						totalHours,
-					))
-				}
-			}
-		}
+		errs = append(errs, validateCourseSanity(courseID, course, config)...)
 	}
 
 	if len(errs) == 0 {
 		return nil
 	}
 	return errors.Join(errs...)
+}
+
+func validateCourseSanity(courseID string, course map[string]any, config SanityConfig) []error {
+	variants, ok := digMap(course, "variants")
+	if !ok {
+		return nil
+	}
+
+	var errs []error
+	for variantID, variantValue := range variants {
+		variant, ok := variantValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		errs = append(errs, validateVariantSanity(courseID, variantID, variant, config)...)
+	}
+	return errs
+}
+
+func validateVariantSanity(courseID, variantID string, variant map[string]any, config SanityConfig) []error {
+	cronograma, hasCronograma := digMap(variant, "cronograma")
+	if !hasCronograma {
+		return nil
+	}
+	sessions, ok := digSlice(cronograma, "sessions")
+	if !ok || len(sessions) == 0 {
+		return nil
+	}
+
+	firstSessionDate, ok := firstCronogramaSessionDate(sessions)
+	if !ok {
+		return nil
+	}
+
+	basePath := fmt.Sprintf("courses.%s.variants.%s", courseID, variantID)
+	var errs []error
+
+	if config.CourseStartMatchesFirstSession {
+		errs = append(errs, validateCourseStartText(basePath, variant, firstSessionDate)...)
+	}
+	if config.CourseDurationHoursMatchesSessionHours {
+		errs = append(errs, validateCourseDurationHours(basePath, variant, sessions)...)
+	}
+
+	return errs
+}
+
+func validateCourseStartText(basePath string, variant map[string]any, firstSessionDate time.Time) []error {
+	startText, _ := variant["start_text"].(string)
+	startText = strings.TrimSpace(startText)
+	if startText == "" {
+		return []error{fmt.Errorf("%s.start_text is empty but cronograma.sessions is present", basePath)}
+	}
+
+	parsedStartDate, ok := parseStartTextToDate(startText)
+	if !ok {
+		return []error{fmt.Errorf("%s.start_text %q could not be parsed as a date", basePath, startText)}
+	}
+	if sameDay(parsedStartDate, firstSessionDate) {
+		return nil
+	}
+
+	return []error{fmt.Errorf(
+		"%s.start_text %q does not match the first cronograma session date %s",
+		basePath,
+		startText,
+		firstSessionDate.Format("2006-01-02"),
+	)}
+}
+
+func validateCourseDurationHours(basePath string, variant map[string]any, sessions []any) []error {
+	durationHours, ok := coerceInt(variant["duration_hours"])
+	if !ok {
+		return []error{fmt.Errorf("%s.duration_hours is missing/invalid but cronograma.sessions is present", basePath)}
+	}
+
+	totalHours, ok := sumCronogramaSessionHours(sessions)
+	if !ok {
+		return []error{fmt.Errorf("%s.cronograma.sessions hours is missing/invalid", basePath)}
+	}
+	if durationHours == totalHours {
+		return nil
+	}
+
+	return []error{fmt.Errorf(
+		"%s.duration_hours (%d) does not match sum(cronograma.sessions.hours) (%d)",
+		basePath,
+		durationHours,
+		totalHours,
+	)}
 }
 
 func digMap(parent map[string]any, key string) (map[string]any, bool) {
@@ -262,4 +293,3 @@ func normalizeMonthName(raw string) string {
 	)
 	return replacer.Replace(raw)
 }
-

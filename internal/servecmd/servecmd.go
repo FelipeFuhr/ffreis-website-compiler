@@ -27,31 +27,61 @@ func Run(args []string, logger *slog.Logger) error {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	websiteRoot := fs.String("website-root", ".", "website project root; expects <website-root>/src/{assets,templates} (legacy fallback: <website-root>/{site,templates})")
-	siteDataSource := fs.String("site-data", "", "optional site data source override; supports file/URL sources or a directory containing YAML layers")
-	addr := fs.String("addr", ":8080", "HTTP listen address")
-	enableSanity := fs.Bool("sanity", true, "fail server startup if generic sanity checks fail (site contract + invariants + asset reachability)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	assetsRoot, templatesRoot, err := resolveWebsitePaths(*websiteRoot)
+	opts, err := parseServeOptions(args)
 	if err != nil {
 		return err
 	}
 
+	assetsRoot, templatesRoot, err := resolveWebsitePaths(opts.websiteRoot)
+	if err != nil {
+		return err
+	}
+
+	pages, siteDataResult, err := loadAndValidateSiteData(logger, templatesRoot, opts.siteDataSource, opts.enableSanity)
+	if err != nil {
+		return err
+	}
+	if err := validateAssetUsage(assetsRoot, pages, siteDataResult.Data); err != nil {
+		return err
+	}
+
+	srv, shutdownTimeout := newServer(opts.addr, assetsRoot, pages, siteDataResult.Data, logger)
+	logServerStart(logger, opts, assetsRoot, templatesRoot, pages, srv, shutdownTimeout)
+	return serveUntilShutdown(logger, srv, shutdownTimeout)
+}
+
+type serveOptions struct {
+	websiteRoot    string
+	siteDataSource string
+	addr           string
+	enableSanity   bool
+}
+
+func parseServeOptions(args []string) (serveOptions, error) {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	var opts serveOptions
+	fs.StringVar(&opts.websiteRoot, "website-root", ".", "website project root; expects <website-root>/src/{assets,templates} (legacy fallback: <website-root>/{site,templates})")
+	fs.StringVar(&opts.siteDataSource, "site-data", "", "optional site data source override; supports file/URL sources or a directory containing YAML layers")
+	fs.StringVar(&opts.addr, "addr", ":8080", "HTTP listen address")
+	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail server startup if generic sanity checks fail (site contract + invariants + asset reachability)")
+	if err := fs.Parse(args); err != nil {
+		return serveOptions{}, err
+	}
+	return opts, nil
+}
+
+func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource string, enableSanity bool) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, error) {
 	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesRoot)
 	if err != nil {
-		return fmt.Errorf("loading templates: %w", err)
+		return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("loading templates: %w", err)
 	}
-	siteDataResult, err := sitegen.LoadSiteData(templatesRoot, *siteDataSource)
+	siteDataResult, err := sitegen.LoadSiteData(templatesRoot, siteDataSource)
 	if err != nil {
-		return fmt.Errorf("loading site data: %w", err)
+		return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("loading site data: %w", err)
 	}
 	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesRoot)
 	if err != nil {
-		return fmt.Errorf("loading site data contract: %w", err)
+		return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
 	}
 	if siteDataResult.UsedOverride && siteDataResult.DefaultPathFound {
 		logger.Warn(
@@ -61,27 +91,32 @@ func Run(args []string, logger *slog.Logger) error {
 			"site_data_layers", siteDataResult.Layers,
 		)
 	}
+
 	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
-		return fmt.Errorf("validating site data against contract: %w", err)
+		return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("validating site data against contract: %w", err)
 	}
 	if len(siteDataContractResult.Contract.Required) > 0 || len(siteDataContractResult.Contract.Allowed) > 0 {
 		usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
 		if err != nil {
-			return fmt.Errorf("tracing site data usage: %w", err)
+			return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("tracing site data usage: %w", err)
 		}
 		if err := sitegen.ValidateSiteDataContractUsage(siteDataContractResult.Contract, usedPaths); err != nil {
-			return fmt.Errorf("validating site data contract usage: %w", err)
+			return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("validating site data contract usage: %w", err)
 		}
 	}
-	if *enableSanity {
+	if enableSanity {
 		if err := sitegen.ValidateSiteSanity(siteDataResult.Data, sitegen.DefaultSanityConfig()); err != nil {
-			return fmt.Errorf("validating site sanity rules: %w", err)
+			return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("validating site sanity rules: %w", err)
 		}
 	}
+	return pages, siteDataResult, nil
+}
+
+func validateAssetUsage(assetsRoot string, pages []sitegen.PageTemplate, siteData map[string]any) error {
 	renderedPages := make(map[string]string, len(pages))
 	for _, page := range pages {
 		var rendered strings.Builder
-		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", sitegen.NewTemplateData(page.Name, siteDataResult.Data)); err != nil {
+		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", sitegen.NewTemplateData(page.Name, siteData)); err != nil {
 			return fmt.Errorf("rendering %s.html for asset validation: %w", page.Name, err)
 		}
 		renderedPages[page.Name] = rendered.String()
@@ -89,10 +124,13 @@ func Run(args []string, logger *slog.Logger) error {
 	if _, err := assetusage.Validate(assetsRoot, renderedPages); err != nil {
 		return fmt.Errorf("validating local css/js asset usage: %w", err)
 	}
+	return nil
+}
 
+func newServer(addr, assetsRoot string, pages []sitegen.PageTemplate, siteData map[string]any, logger *slog.Logger) (*http.Server, time.Duration) {
 	mux := http.NewServeMux()
 	registerStatic(mux, assetsRoot)
-	registerPages(mux, pages, siteDataResult.Data, logger)
+	registerPages(mux, pages, siteData, logger)
 
 	var handler http.Handler = mux
 	handler = loggingMiddleware(logger, handler)
@@ -101,7 +139,7 @@ func Run(args []string, logger *slog.Logger) error {
 	handler = requestIDMiddleware(handler)
 
 	srv := &http.Server{
-		Addr:              *addr,
+		Addr:              addr,
 		Handler:           handler,
 		ReadTimeout:       getEnvDuration("SERVE_READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:      getEnvDuration("SERVE_WRITE_TIMEOUT", 15*time.Second),
@@ -109,12 +147,14 @@ func Run(args []string, logger *slog.Logger) error {
 		ReadHeaderTimeout: getEnvDuration("SERVE_READ_HEADER_TIMEOUT", 5*time.Second),
 		MaxHeaderBytes:    getEnvInt("SERVE_MAX_HEADER_BYTES", 1_048_576),
 	}
-	shutdownTimeout := getEnvDuration("SERVE_SHUTDOWN_TIMEOUT", 10*time.Second)
+	return srv, getEnvDuration("SERVE_SHUTDOWN_TIMEOUT", 10*time.Second)
+}
 
+func logServerStart(logger *slog.Logger, opts serveOptions, assetsRoot, templatesRoot string, pages []sitegen.PageTemplate, srv *http.Server, shutdownTimeout time.Duration) {
 	logger.Info(
 		"starting local server",
-		"addr", *addr,
-		"website_root", *websiteRoot,
+		"addr", opts.addr,
+		"website_root", opts.websiteRoot,
 		"assets_dir", assetsRoot,
 		"templates_dir", templatesRoot,
 		"pages", len(pages),
@@ -123,7 +163,9 @@ func Run(args []string, logger *slog.Logger) error {
 		"idle_timeout", srv.IdleTimeout.String(),
 		"shutdown_timeout", shutdownTimeout.String(),
 	)
+}
 
+func serveUntilShutdown(logger *slog.Logger, srv *http.Server, shutdownTimeout time.Duration) error {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.ListenAndServe()

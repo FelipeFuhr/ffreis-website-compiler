@@ -1,11 +1,9 @@
-version: "2"
-
 run:
   timeout: 5m
   tests: true
 
 linters:
-  default: none
+  disable-all: true
   enable:
     # Correctness
     - govet          # go vet (shadowed vars, printf mismatches, etc.)
@@ -25,19 +23,18 @@ linters:
     # Bugs
     - bodyclose      # HTTP response body must be closed
     - noctx          # HTTP requests must carry context
-    - copylock       # mutexes must not be copied
 
     # Maintainability
     - godot          # comments must end in a period
     - nolintlint     # nolint directives must be specific and justified
 
 linters-settings:
+  govet:
+    enable:
+      - copylocks
   errcheck:
     check-type-assertions: true
     check-blank: false  # `_ = expr` is intentional in tests
-  gosec:
-    excludes:
-      - G404   # weak random (math/rand) — acceptable outside crypto
   godot:
     scope: declarations
     capital: false
