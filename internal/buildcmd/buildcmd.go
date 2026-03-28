@@ -2,6 +2,7 @@ package buildcmd
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -419,6 +420,8 @@ func (m *externalAssetMirrorer) replaceExternalRef(tag, ref, hintedExt string) (
 	return strings.Replace(tag, ref, "/"+localRef, 1), nil
 }
 
+const maxMirroredAssetBytes = 100 * 1024 * 1024 // 100 MiB
+
 func (m *externalAssetMirrorer) mirrorURL(absoluteURL, hintedExt string) (string, error) {
 	if cached, ok := m.cache[absoluteURL]; ok {
 		return cached, nil
@@ -427,7 +430,11 @@ func (m *externalAssetMirrorer) mirrorURL(absoluteURL, hintedExt string) (string
 		return pending, nil
 	}
 
-	resp, err := m.client.Get(absoluteURL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, absoluteURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating request for external asset %s: %w", absoluteURL, err)
+	}
+	resp, err := m.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("downloading external asset %s: %w", absoluteURL, err)
 	}
@@ -437,9 +444,16 @@ func (m *externalAssetMirrorer) mirrorURL(absoluteURL, hintedExt string) (string
 		return "", fmt.Errorf("downloading external asset %s: unexpected status %s", absoluteURL, resp.Status)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	if resp.ContentLength > maxMirroredAssetBytes {
+		return "", fmt.Errorf("external asset %s Content-Length (%d) exceeds maximum download size of %d bytes", absoluteURL, resp.ContentLength, maxMirroredAssetBytes)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxMirroredAssetBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("reading external asset %s: %w", absoluteURL, err)
+	}
+	if int64(len(body)) > maxMirroredAssetBytes {
+		return "", fmt.Errorf("external asset %s exceeds maximum download size of %d bytes", absoluteURL, maxMirroredAssetBytes)
 	}
 
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
