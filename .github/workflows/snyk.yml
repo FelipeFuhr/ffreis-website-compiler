@@ -17,6 +17,7 @@ permissions:
 jobs:
   require-secrets:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     steps:
       - name: Validate required secrets
         shell: bash

@@ -1,6 +1,7 @@
 package sitegen
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -378,7 +379,11 @@ func readDataFile(path string) ([]byte, error) {
 
 func readDataURL(rawURL string) ([]byte, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(rawURL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request for data source: %w", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching data source: %w", err)
 	}

@@ -25,7 +25,7 @@ jobs:
     # Set repository variable SONAR_ENABLED=false to skip this job entirely.
     # Default: runs. If SONAR_TOKEN or SONAR_HOST_URL are missing, fails
     # explicitly with instructions — never silently passes.
-    if: vars.SONAR_ENABLED != 'false'
+    if: vars.SONAR_ENABLED != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
 
     steps:
       - uses: actions/checkout@v4

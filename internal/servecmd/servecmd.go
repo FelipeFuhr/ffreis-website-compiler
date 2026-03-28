@@ -182,23 +182,26 @@ func dirExists(path string) bool {
 
 func registerPages(mux *http.ServeMux, pages []sitegen.PageTemplate, siteData map[string]any, logger *slog.Logger) {
 	for _, page := range pages {
-		path := "/" + page.Name + ".html"
-		tpl := page.Tmpl
 		if page.Name == "index" {
-			pageName := page.Name
-			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/" {
-					http.NotFound(w, r)
-					return
-				}
-				renderTemplate(w, r, tpl, pageName, siteData, logger)
-			})
+			mux.HandleFunc("/", makeIndexHandler(page.Tmpl, page.Name, siteData, logger))
 		}
+		mux.HandleFunc("/"+page.Name+".html", makePageHandler(page.Tmpl, page.Name, siteData, logger))
+	}
+}
 
-		pageName := page.Name
-		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			renderTemplate(w, r, tpl, pageName, siteData, logger)
-		})
+func makeIndexHandler(tpl *template.Template, pageName string, siteData map[string]any, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		renderTemplate(w, r, tpl, pageName, siteData, logger)
+	}
+}
+
+func makePageHandler(tpl *template.Template, pageName string, siteData map[string]any, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		renderTemplate(w, r, tpl, pageName, siteData, logger)
 	}
 }
 
