@@ -24,7 +24,7 @@ jobs:
     #
     # NOTE: The shared workflow expects SonarCloud configuration. If it's not
     # configured, skip rather than fail the entire CI run.
-    if: vars.SONAR_ENABLED != 'false' && vars.SONAR_ORGANIZATION != '' && secrets.SONAR_TOKEN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+    if: vars.SONAR_ENABLED != 'false' && secrets.SONAR_TOKEN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-sonarqube.yml@ed2f7d29467bf1fd6ec40df3953b3ee128ba3f04
     with:
       go-version: "1.25.8"
