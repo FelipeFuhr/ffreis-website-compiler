@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"ffreis-website-compiler/internal/cmdutil"
 	"ffreis-website-compiler/internal/sitegen"
 	"gopkg.in/yaml.v3"
 )
@@ -29,7 +29,7 @@ func Run(args []string, logger *slog.Logger) error {
 
 	templatesRoot := strings.TrimSpace(*templatesDirFlag)
 	if templatesRoot == "" {
-		resolvedTemplatesRoot, err := resolveTemplatesRoot(*websiteRoot)
+		resolvedTemplatesRoot, err := cmdutil.ResolveTemplatesRoot(*websiteRoot)
 		if err != nil {
 			return err
 		}
@@ -58,25 +58,5 @@ func Run(args []string, logger *slog.Logger) error {
 	}
 }
 
-func resolveTemplatesRoot(websiteRoot string) (string, error) {
-	newTemplates := filepath.Join(websiteRoot, "src", "templates")
-	if dirExists(newTemplates) {
-		return newTemplates, nil
-	}
 
-	legacyTemplates := filepath.Join(websiteRoot, "templates")
-	if dirExists(legacyTemplates) {
-		return legacyTemplates, nil
-	}
-
-	return "", fmt.Errorf(
-		"could not resolve templates directory under %s; expected src/templates (or legacy templates)",
-		websiteRoot,
-	)
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
 

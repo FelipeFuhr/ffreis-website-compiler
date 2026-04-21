@@ -25,6 +25,12 @@ import (
 	"ffreis-website-compiler/internal/sitemap"
 )
 
+const (
+	sitemapXML  = "sitemap.xml"
+	mimeTextCSS = "text/css"
+	extWoff2    = ".woff2"
+)
+
 var (
 	stylesheetTagRE = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>`)
 	preloadTagRE    = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["'][^"']*preload[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>`)
@@ -288,8 +294,8 @@ func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir s
 		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir); err != nil {
 			return err
 		}
-		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(opts.outDir, "sitemap.xml"))
-		fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, "sitemap.xml"))
+		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(opts.outDir, sitemapXML))
+		fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, sitemapXML))
 		return nil
 	}
 
@@ -300,8 +306,8 @@ func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir s
 	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir); err != nil {
 		return err
 	}
-	logger.Info("generated sitemap from pages", "base_url", baseURL, "target", filepath.Join(opts.outDir, "sitemap.xml"))
-	fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, "sitemap.xml"))
+	logger.Info("generated sitemap from pages", "base_url", baseURL, "target", filepath.Join(opts.outDir, sitemapXML))
+	fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, sitemapXML))
 	return nil
 }
 
@@ -418,15 +424,10 @@ func (m *externalAssetMirrorer) mirrorURL(absoluteURL, hintedExt string) (string
 	defer delete(m.inProgress, absoluteURL)
 
 	if isCSSContentType(contentType, relPath, hintedExt) {
-		baseURL, parseErr := url.Parse(absoluteURL)
-		if parseErr != nil {
-			return "", fmt.Errorf("parsing css asset url %s: %w", absoluteURL, parseErr)
+		body, err = m.rewriteBodyAsCSS(absoluteURL, body)
+		if err != nil {
+			return "", err
 		}
-		rewritten, rewriteErr := m.rewriteCSS(string(body), baseURL)
-		if rewriteErr != nil {
-			return "", rewriteErr
-		}
-		body = []byte(rewritten)
 	}
 
 	fullPath := filepath.Join(m.outDir, filepath.FromSlash(relPath))
@@ -439,6 +440,18 @@ func (m *externalAssetMirrorer) mirrorURL(absoluteURL, hintedExt string) (string
 
 	m.cache[absoluteURL] = relPath
 	return relPath, nil
+}
+
+func (m *externalAssetMirrorer) rewriteBodyAsCSS(absoluteURL string, body []byte) ([]byte, error) {
+	baseURL, err := url.Parse(absoluteURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing css asset url %s: %w", absoluteURL, err)
+	}
+	rewritten, err := m.rewriteCSS(string(body), baseURL)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(rewritten), nil
 }
 
 func (m *externalAssetMirrorer) rewriteCSS(cssText string, baseURL *url.URL) (string, error) {
@@ -528,9 +541,9 @@ func generateSitemapFromConfig(configPath, websiteRoot, outDir string) error {
 		return err
 	}
 
-	targetPath := filepath.Join(outDir, "sitemap.xml")
+	targetPath := filepath.Join(outDir, sitemapXML)
 	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil {
-		return fmt.Errorf("writing sitemap.xml: %w", err)
+		return fmt.Errorf("writing %s: %w", sitemapXML, err)
 	}
 	return nil
 }
@@ -566,9 +579,9 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 		return err
 	}
 
-	targetPath := filepath.Join(outDir, "sitemap.xml")
+	targetPath := filepath.Join(outDir, sitemapXML)
 	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil {
-		return fmt.Errorf("writing sitemap.xml: %w", err)
+		return fmt.Errorf("writing %s: %w", sitemapXML, err)
 	}
 
 	return nil
@@ -817,7 +830,7 @@ func detectMimeType(path string, content []byte) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".css":
-		return "text/css"
+		return mimeTextCSS
 	case ".js":
 		return "application/javascript"
 	case ".svg":
@@ -828,7 +841,7 @@ func detectMimeType(path string, content []byte) string {
 		return "image/jpeg"
 	case ".woff":
 		return "font/woff"
-	case ".woff2":
+	case extWoff2:
 		return "font/woff2"
 	case ".ttf":
 		return "font/ttf"
@@ -929,7 +942,7 @@ func hintedExtFromPreload(tag string) string {
 		if hrefType := strings.ToLower(strings.TrimSpace(getTagAttr(tag, "type"))); hrefType != "" {
 			return extensionFromContentType(hrefType)
 		}
-		return ".woff2"
+		return extWoff2
 	case "image":
 		return ""
 	default:
@@ -1037,12 +1050,12 @@ func extensionFromContentType(contentType string) string {
 		}
 	}
 	switch trimmed {
-	case "text/css":
+	case mimeTextCSS:
 		return ".css"
 	case "application/javascript", "text/javascript":
 		return ".js"
 	case "font/woff2":
-		return ".woff2"
+		return extWoff2
 	case "font/woff":
 		return ".woff"
 	case "font/ttf", "application/x-font-ttf":
@@ -1057,7 +1070,7 @@ func extensionFromContentType(contentType string) string {
 }
 
 func isCSSContentType(contentType, relPath, hintedExt string) bool {
-	if strings.EqualFold(strings.TrimSpace(strings.Split(contentType, ";")[0]), "text/css") {
+	if strings.EqualFold(strings.TrimSpace(strings.Split(contentType, ";")[0]), mimeTextCSS) {
 		return true
 	}
 	switch normalizeExt(filepath.Ext(relPath)) {
@@ -1090,7 +1103,7 @@ func getTagAttr(tag, attr string) string {
 
 func copyStaticAssets(srcRoot, dstRoot string) error {
 	dirs := []string{"css", "fonts", "images", "js", "ld"}
-	files := []string{"send.js", "contactScript.js", "robots.txt", "sitemap.xml"}
+	files := []string{"send.js", "contactScript.js", "robots.txt", sitemapXML}
 
 	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
 		return err

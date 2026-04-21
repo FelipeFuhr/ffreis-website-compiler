@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const dateLayout = "2006-01-02"
+
 type SanityConfig struct {
 	CourseStartMatchesFirstSession         bool
 	CourseDurationHoursMatchesSessionHours bool
@@ -107,7 +109,7 @@ func validateCourseStartText(basePath string, variant map[string]any, firstSessi
 		"%s.start_text %q does not match the first cronograma session date %s",
 		basePath,
 		startText,
-		firstSessionDate.Format("2006-01-02"),
+		firstSessionDate.Format(dateLayout),
 	)}
 }
 
@@ -152,7 +154,7 @@ func firstCronogramaSessionDate(sessions []any) (time.Time, bool) {
 	if !ok {
 		return time.Time{}, false
 	}
-	parsed, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	parsed, err := time.Parse(dateLayout, strings.TrimSpace(dateStr))
 	if err != nil {
 		return time.Time{}, false
 	}
@@ -212,7 +214,7 @@ func parseStartTextToDate(startText string) (time.Time, bool) {
 	}
 
 	// ISO date.
-	if parsed, err := time.Parse("2006-01-02", startText); err == nil {
+	if parsed, err := time.Parse(dateLayout, startText); err == nil {
 		return parsed, true
 	}
 

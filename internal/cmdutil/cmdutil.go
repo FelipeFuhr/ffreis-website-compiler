@@ -81,6 +81,49 @@ func ValidateSiteDataAndUsage(pages []sitegen.PageTemplate, siteDataResult siteg
 	return nil
 }
 
+func ResolveTemplatesRoot(websiteRoot string) (string, error) {
+	newTemplates := filepath.Join(websiteRoot, "src", "templates")
+	if DirExists(newTemplates) {
+		return newTemplates, nil
+	}
+
+	legacyTemplates := filepath.Join(websiteRoot, "templates")
+	if DirExists(legacyTemplates) {
+		return legacyTemplates, nil
+	}
+
+	return "", fmt.Errorf(
+		"could not resolve templates directory under %s; expected src/templates (or legacy templates)",
+		websiteRoot,
+	)
+}
+
+// ValidateSiteDataAndUsageFromRoot is like ValidateSiteDataAndUsage but loads
+// page templates lazily from templatesRoot (only when the contract has required/allowed keys).
+func ValidateSiteDataAndUsageFromRoot(templatesRoot string, siteDataResult sitegen.SiteDataLoadResult, siteDataContractResult sitegen.SiteDataContractLoadResult) error {
+	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
+		return fmt.Errorf("validating site data against contract: %w", err)
+	}
+
+	contract := siteDataContractResult.Contract
+	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
+		return nil
+	}
+
+	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesRoot)
+	if err != nil {
+		return fmt.Errorf("loading templates for site data usage validation: %w", err)
+	}
+	usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
+	if err != nil {
+		return fmt.Errorf("tracing site data usage: %w", err)
+	}
+	if err := sitegen.ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
+		return fmt.Errorf("validating site data contract usage: %w", err)
+	}
+	return nil
+}
+
 func RenderPages(pages []sitegen.PageTemplate, siteData map[string]any) (map[string]string, error) {
 	renderedPages := make(map[string]string, len(pages))
 	for _, page := range pages {

@@ -59,4 +59,5 @@ common_require_file() {
   fi
 
   common_die "$message"
+  return 1
 }

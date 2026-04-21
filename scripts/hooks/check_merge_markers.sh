@@ -13,7 +13,8 @@ fi
 
 while IFS= read -r -d '' file; do
   found_any=1
-  if git show ":${file}" | grep -nE '^(<<<<<<< |=======|>>>>>>> )' >"${tmp_output}" 2>/dev/null; then
+  if git show ":${file}" | \
+      grep -nE '^(<<<<<<< |=======|>>>>>>> )' >"${tmp_output}" 2>/dev/null; then
     echo "Merge conflict markers detected in staged file: ${file}" >&2
     sed 's/^/  /' "${tmp_output}" >&2
     has_error=1

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"ffreis-website-compiler/internal/cmdutil"
 	"ffreis-website-compiler/internal/sitegen"
 )
 
@@ -35,9 +35,9 @@ func Run(args []string, logger *slog.Logger) error {
 		"site data validation passed",
 		"website_root", opts.websiteRoot,
 		"templates_dir", templatesRoot,
-		"site_data_source", firstNonEmpty(siteDataResult.Source, siteDataResult.DefaultPath),
+		"site_data_source", cmdutil.FirstNonEmpty(siteDataResult.Source, siteDataResult.DefaultPath),
 		"site_data_layers", siteDataResult.Layers,
-		"site_data_contract_source", firstNonEmpty(siteDataContractResult.Source, siteDataContractResult.DefaultPath),
+		"site_data_contract_source", cmdutil.FirstNonEmpty(siteDataContractResult.Source, siteDataContractResult.DefaultPath),
 	)
 	return nil
 }
@@ -65,7 +65,7 @@ func resolveTemplatesRootFlag(websiteRoot, templatesDirFlag string) (string, err
 	if templatesRoot != "" {
 		return templatesRoot, nil
 	}
-	return resolveTemplatesRoot(websiteRoot)
+	return cmdutil.ResolveTemplatesRoot(websiteRoot)
 }
 
 func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource string) (sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
@@ -78,73 +78,11 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 		return sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
 	}
 
-	if siteDataResult.UsedOverride && siteDataResult.DefaultPathFound {
-		logger.Warn(
-			"site data override supersedes local site data file",
-			"override_source", siteDataResult.Source,
-			"local_site_data", siteDataResult.DefaultPath,
-			"site_data_layers", siteDataResult.Layers,
-		)
-	}
+	cmdutil.LogSiteDataOverride(logger, siteDataResult)
 
-	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
-		return sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site data against contract: %w", err)
-	}
-
-	if err := validateSiteDataContractUsage(templatesRoot, siteDataResult, siteDataContractResult); err != nil {
+	if err := cmdutil.ValidateSiteDataAndUsageFromRoot(templatesRoot, siteDataResult, siteDataContractResult); err != nil {
 		return sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
 
 	return siteDataResult, siteDataContractResult, nil
-}
-
-func validateSiteDataContractUsage(templatesRoot string, siteDataResult sitegen.SiteDataLoadResult, siteDataContractResult sitegen.SiteDataContractLoadResult) error {
-	contract := siteDataContractResult.Contract
-	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
-		return nil
-	}
-
-	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesRoot)
-	if err != nil {
-		return fmt.Errorf("loading templates for site data usage validation: %w", err)
-	}
-	usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
-	if err != nil {
-		return fmt.Errorf("tracing site data usage: %w", err)
-	}
-	if err := sitegen.ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
-		return fmt.Errorf("validating site data contract usage: %w", err)
-	}
-	return nil
-}
-
-func resolveTemplatesRoot(websiteRoot string) (string, error) {
-	newTemplates := filepath.Join(websiteRoot, "src", "templates")
-	if dirExists(newTemplates) {
-		return newTemplates, nil
-	}
-
-	legacyTemplates := filepath.Join(websiteRoot, "templates")
-	if dirExists(legacyTemplates) {
-		return legacyTemplates, nil
-	}
-
-	return "", fmt.Errorf(
-		"could not resolve templates directory under %s; expected src/templates (or legacy templates)",
-		websiteRoot,
-	)
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
