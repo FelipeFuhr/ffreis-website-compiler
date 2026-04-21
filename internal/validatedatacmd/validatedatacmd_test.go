@@ -1,92 +1,66 @@
 package validatedatacmd
 
 import (
-	"io"
-	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ffreis-website-compiler/internal/testutil"
 )
 
-func TestRun_ValidatesExternalSiteDataAgainstContract(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+const (
+	validateDataLayoutTmpl = `{{define "layout"}}{{template "page" .}}{{end}}`
+	validateDataHeadTmpl   = `{{define "head"}}{{end}}`
+	validateDataAgendaMain = `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "start_text") "missing start_text"}}{{end}}`
 
-	websiteRoot := t.TempDir()
+	contractFileName = "site.contract.yaml"
+	externalDataFile = "site.yaml"
+	flagWebsiteRoot  = "-website-root"
+	flagSiteData     = "-site-data"
+)
+
+func setupWebsiteRoot(t *testing.T, pageTemplate string) (websiteRoot, dataRoot string) {
+	t.Helper()
+	websiteRoot = t.TempDir()
 	for _, dir := range []string{
 		filepath.Join(websiteRoot, "src", "templates", "layout"),
 		filepath.Join(websiteRoot, "src", "templates", "partials"),
 		filepath.Join(websiteRoot, "src", "templates", "pages"),
+		filepath.Join(websiteRoot, "src", "data"),
 	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
+		testutil.MustMkdirAll(t, dir)
 	}
-	dataRoot := filepath.Join(websiteRoot, "src", "data")
-	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}{{template "page" .}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "start_text") "missing start_text"}}{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dataRoot, "site.contract.yaml"), []byte("required:\n  - courses.ssyb.start_text\nallowed:\n  - courses.*.start_text\n"), 0o644); err != nil {
-		t.Fatalf("write contract: %v", err)
-	}
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   validateDataLayoutTmpl,
+		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): validateDataHeadTmpl,
+		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  pageTemplate,
+	})
+	dataRoot = filepath.Join(websiteRoot, "src", "data")
+	return websiteRoot, dataRoot
+}
 
-	externalDataPath := filepath.Join(t.TempDir(), "site.yaml")
-	if err := os.WriteFile(externalDataPath, []byte("courses:\n  ssyb:\n    start_text: Em definição.\n"), 0o644); err != nil {
-		t.Fatalf("write external data: %v", err)
-	}
+func TestRun_ValidatesExternalSiteDataAgainstContract(t *testing.T) {
+	websiteRoot, dataRoot := setupWebsiteRoot(t, validateDataAgendaMain)
+	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(dataRoot, contractFileName): "required:\n  - courses.ssyb.start_text\nallowed:\n  - courses.*.start_text\n",
+		externalDataPath: "courses:\n  ssyb:\n    start_text: Em definição.\n",
+	})
 
-	if err := Run([]string{"-website-root", websiteRoot, "-site-data", externalDataPath}, logger); err != nil {
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger()); err != nil {
 		t.Fatalf("expected validate-site-data success, got %v", err)
 	}
 }
 
 func TestRun_FailsForInvalidExternalSiteData(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	websiteRoot, dataRoot := setupWebsiteRoot(t, validateDataAgendaMain)
+	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(dataRoot, contractFileName): "allowed:\n  - courses.*.start_text\n",
+		externalDataPath: "courses:\n  ssyb:\n    unexpected: value\n",
+	})
 
-	websiteRoot := t.TempDir()
-	for _, dir := range []string{
-		filepath.Join(websiteRoot, "src", "templates", "layout"),
-		filepath.Join(websiteRoot, "src", "templates", "partials"),
-		filepath.Join(websiteRoot, "src", "templates", "pages"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-	dataRoot := filepath.Join(websiteRoot, "src", "data")
-	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}{{template "page" .}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "start_text") "missing start_text"}}{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dataRoot, "site.contract.yaml"), []byte("allowed:\n  - courses.*.start_text\n"), 0o644); err != nil {
-		t.Fatalf("write contract: %v", err)
-	}
-
-	externalDataPath := filepath.Join(t.TempDir(), "site.yaml")
-	if err := os.WriteFile(externalDataPath, []byte("courses:\n  ssyb:\n    unexpected: value\n"), 0o644); err != nil {
-		t.Fatalf("write external data: %v", err)
-	}
-
-	err := Run([]string{"-website-root", websiteRoot, "-site-data", externalDataPath}, logger)
+	err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected validate-site-data to fail")
 	}
@@ -96,40 +70,14 @@ func TestRun_FailsForInvalidExternalSiteData(t *testing.T) {
 }
 
 func TestRun_FailsForUnusedContractPath(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	websiteRoot, dataRoot := setupWebsiteRoot(t, validateDataAgendaMain)
+	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(dataRoot, contractFileName): "allowed:\n  - courses.*.start_text\n  - courses.*.duration\n",
+		externalDataPath: "courses:\n  ssyb:\n    start_text: Em definição.\n    duration: 16 horas\n",
+	})
 
-	websiteRoot := t.TempDir()
-	for _, dir := range []string{
-		filepath.Join(websiteRoot, "src", "templates", "layout"),
-		filepath.Join(websiteRoot, "src", "templates", "partials"),
-		filepath.Join(websiteRoot, "src", "templates", "pages"),
-		filepath.Join(websiteRoot, "src", "data"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}{{template "page" .}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "start_text") "missing start_text"}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"): `allowed:
-  - courses.*.start_text
-  - courses.*.duration
-`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
-
-	externalDataPath := filepath.Join(t.TempDir(), "site.yaml")
-	if err := os.WriteFile(externalDataPath, []byte("courses:\n  ssyb:\n    start_text: Em definição.\n    duration: 16 horas\n"), 0o644); err != nil {
-		t.Fatalf("write external data: %v", err)
-	}
-
-	err := Run([]string{"-website-root", websiteRoot, "-site-data", externalDataPath}, logger)
+	err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected validate-site-data to fail for unused contract path")
 	}
@@ -139,36 +87,13 @@ func TestRun_FailsForUnusedContractPath(t *testing.T) {
 }
 
 func TestRun_FailsWhenLocalContractMissing(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	websiteRoot, _ := setupWebsiteRoot(t, `{{define "page"}}ok{{end}}`)
+	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
+	testutil.WriteFiles(t, map[string]string{
+		externalDataPath: "courses:\n  ssyb:\n    start_text: Em definição.\n",
+	})
 
-	websiteRoot := t.TempDir()
-	for _, dir := range []string{
-		filepath.Join(websiteRoot, "src", "templates", "layout"),
-		filepath.Join(websiteRoot, "src", "templates", "partials"),
-		filepath.Join(websiteRoot, "src", "templates", "pages"),
-		filepath.Join(websiteRoot, "src", "data"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}{{template "page" .}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}ok{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
-
-	externalDataPath := filepath.Join(t.TempDir(), "site.yaml")
-	if err := os.WriteFile(externalDataPath, []byte("courses:\n  ssyb:\n    start_text: Em definição.\n"), 0o644); err != nil {
-		t.Fatalf("write external data: %v", err)
-	}
-
-	err := Run([]string{"-website-root", websiteRoot, "-site-data", externalDataPath}, logger)
+	err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected validate-site-data to fail when local contract is missing")
 	}

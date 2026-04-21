@@ -10,11 +10,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ffreis-website-compiler/internal/testutil"
+)
+
+const (
+	flagWebsiteRoot = "-website-root"
+	flagOut         = "-out"
+
+	fileMainCSS          = "main.css"
+	fileSiteContractYAML = "site.contract.yaml"
+	fileSiteYAML         = "site.yaml"
+	fileAgendaGoHTML     = "agenda.gohtml"
+	fileAgendaHTML       = "agenda.html"
+	fileIndexHTML        = "index.html"
+
+	mainCSSContent   = "body { color: #000; }\n"
+	buildRunFailed   = "build run failed: %v"
+	readingAgendaFmt = "reading agenda output: %v"
+	httpContentType  = "Content-Type"
+
+	stdLayoutTmpl = `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`
+	stdHeadTmpl   = `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`
 )
 
 func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
 	websiteRoot, err := filepath.Abs(filepath.Join("..", "..", "examples", "hello-world"))
 	if err != nil {
 		t.Fatalf("resolving website root: %v", err)
@@ -22,15 +42,15 @@ func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
 	outDir := t.TempDir()
 
 	args := []string{
-		"-website-root", websiteRoot,
-		"-out", outDir,
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
 		"-sitemap-base-url", "https://example.com",
 	}
-	if err := Run(args, logger); err != nil {
-		t.Fatalf("build run failed: %v", err)
+	if err := Run(args, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
 	}
 
-	indexPath := filepath.Join(outDir, "index.html")
+	indexPath := filepath.Join(outDir, fileIndexHTML)
 	content, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("reading %s: %v", indexPath, err)
@@ -45,7 +65,7 @@ func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
 		}
 	}
 
-	cssPath := filepath.Join(outDir, "css", "main.css")
+	cssPath := filepath.Join(outDir, "css", fileMainCSS)
 	if _, err := os.Stat(cssPath); err != nil {
 		t.Fatalf("expected copied css asset %s: %v", cssPath, err)
 	}
@@ -61,50 +81,21 @@ func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
 }
 
 func TestRun_PassesPageNameToTemplates(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	websiteRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "assets", "css"), 0o755); err != nil {
-		t.Fatalf("mkdir assets: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "data"), 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "layout"), 0o755); err != nil {
-		t.Fatalf("mkdir layout: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "partials"), 0o755); err != nil {
-		t.Fatalf("mkdir partials: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "pages"), 0o755); err != nil {
-		t.Fatalf("mkdir pages: %v", err)
-	}
-
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"):            "body { color: #000; }\n",
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"):           "",
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}<main data-page="{{.PageName}}">agenda</main>{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<main data-page="{{.PageName}}">agenda</main>{{end}}`,
+	})
 
 	outDir := t.TempDir()
-	args := []string{
-		"-website-root", websiteRoot,
-		"-out", outDir,
-	}
-	if err := Run(args, logger); err != nil {
-		t.Fatalf("build run failed: %v", err)
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
 	}
 
-	rendered, err := os.ReadFile(filepath.Join(outDir, "agenda.html"))
+	rendered, err := os.ReadFile(filepath.Join(outDir, fileAgendaHTML))
 	if err != nil {
-		t.Fatalf("reading agenda output: %v", err)
+		t.Fatalf(readingAgendaFmt, err)
 	}
 	if !strings.Contains(string(rendered), `data-page="agenda"`) {
 		t.Fatalf("expected page name in rendered html, got %s", string(rendered))
@@ -112,54 +103,22 @@ func TestRun_PassesPageNameToTemplates(t *testing.T) {
 }
 
 func TestRun_PassesSiteDataToTemplates(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	websiteRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "assets", "css"), 0o755); err != nil {
-		t.Fatalf("mkdir assets: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "data"), 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "data"), 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "layout"), 0o755); err != nil {
-		t.Fatalf("mkdir layout: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "partials"), 0o755); err != nil {
-		t.Fatalf("mkdir partials: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "pages"), 0o755); err != nil {
-		t.Fatalf("mkdir pages: %v", err)
-	}
-
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"):            "body { color: #000; }\n",
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"):           "",
-		filepath.Join(websiteRoot, "src", "data", "site.yaml"):                    "courses:\n  agenda:\n    title: Agenda Centralizada\n",
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}<main data-title="{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}">{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}</main>{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "data", fileSiteYAML):                   "courses:\n  agenda:\n    title: Agenda Centralizada\n",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<main data-title="{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}">{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}</main>{{end}}`,
+	})
 
 	outDir := t.TempDir()
-	args := []string{
-		"-website-root", websiteRoot,
-		"-out", outDir,
-	}
-	if err := Run(args, logger); err != nil {
-		t.Fatalf("build run failed: %v", err)
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
 	}
 
-	rendered, err := os.ReadFile(filepath.Join(outDir, "agenda.html"))
+	rendered, err := os.ReadFile(filepath.Join(outDir, fileAgendaHTML))
 	if err != nil {
-		t.Fatalf("reading agenda output: %v", err)
+		t.Fatalf(readingAgendaFmt, err)
 	}
 	if !strings.Contains(string(rendered), `data-title="Agenda Centralizada"`) {
 		t.Fatalf("expected site data in rendered html, got %s", string(rendered))
@@ -167,44 +126,15 @@ func TestRun_PassesSiteDataToTemplates(t *testing.T) {
 }
 
 func TestRun_RequiredFailsForMissingSiteData(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	websiteRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "assets", "css"), 0o755); err != nil {
-		t.Fatalf("mkdir assets: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "data"), 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "layout"), 0o755); err != nil {
-		t.Fatalf("mkdir layout: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "partials"), 0o755); err != nil {
-		t.Fatalf("mkdir partials: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "pages"), 0o755); err != nil {
-		t.Fatalf("mkdir pages: %v", err)
-	}
-
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"):            "body { color: #000; }\n",
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"):           "",
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}{{end}}`,
+	})
 
 	outDir := t.TempDir()
-	args := []string{
-		"-website-root", websiteRoot,
-		"-out", outDir,
-	}
-	err := Run(args, logger)
+	err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected build run to fail when required site data is missing")
 	}
@@ -214,33 +144,13 @@ func TestRun_RequiredFailsForMissingSiteData(t *testing.T) {
 }
 
 func TestRun_FailsWhenSiteDataContractMissing(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}ok{{end}}`,
+	})
 
-	websiteRoot := t.TempDir()
-	for _, dir := range []string{
-		filepath.Join(websiteRoot, "src", "assets", "css"),
-		filepath.Join(websiteRoot, "src", "templates", "layout"),
-		filepath.Join(websiteRoot, "src", "templates", "partials"),
-		filepath.Join(websiteRoot, "src", "templates", "pages"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"):            "body { color: #000; }\n",
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}ok{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
-
-	err := Run([]string{"-website-root", websiteRoot, "-out", t.TempDir()}, logger)
+	err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, t.TempDir()}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected build run to fail without site contract")
 	}
@@ -250,41 +160,16 @@ func TestRun_FailsWhenSiteDataContractMissing(t *testing.T) {
 }
 
 func TestRun_FailsWhenSiteDataViolatesContract(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	websiteRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "assets", "css"), 0o755); err != nil {
-		t.Fatalf("mkdir assets: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "data"), 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "layout"), 0o755); err != nil {
-		t.Fatalf("mkdir layout: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "partials"), 0o755); err != nil {
-		t.Fatalf("mkdir partials: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "pages"), 0o755); err != nil {
-		t.Fatalf("mkdir pages: %v", err)
-	}
-
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"):            "body { color: #000; }\n",
-		filepath.Join(websiteRoot, "src", "data", "site.yaml"):                    "courses:\n  ssyb:\n    start_text: Em definição.\n    unexpected: value\n",
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"):           "allowed:\n  - courses.*.start_text\n",
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}ok{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteYAML):                   "courses:\n  ssyb:\n    start_text: Em definição.\n    unexpected: value\n",
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "allowed:\n  - courses.*.start_text\n",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}ok{{end}}`,
+	})
 
 	outDir := t.TempDir()
-	err := Run([]string{"-website-root", websiteRoot, "-out", outDir}, logger)
+	err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected build run to fail when site data violates contract")
 	}
@@ -294,44 +179,23 @@ func TestRun_FailsWhenSiteDataViolatesContract(t *testing.T) {
 }
 
 func TestRun_FailsWhenContractDeclaresUnusedTemplatePath(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	websiteRoot := t.TempDir()
-	for _, dir := range []string{
-		filepath.Join(websiteRoot, "src", "assets", "css"),
-		filepath.Join(websiteRoot, "src", "data"),
-		filepath.Join(websiteRoot, "src", "templates", "layout"),
-		filepath.Join(websiteRoot, "src", "templates", "partials"),
-		filepath.Join(websiteRoot, "src", "templates", "pages"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"): "body { color: #000; }\n",
-		filepath.Join(websiteRoot, "src", "data", "site.yaml"): `courses:
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteYAML): `courses:
   ssyb:
     investment:
       total: R$ 100,00
       installments_text: Em até 2 parcelas
 `,
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"): `allowed:
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML): `allowed:
   - courses.*.investment.total
   - courses.*.investment.installments_text
 `,
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "investment" "total") "missing total"}}{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "investment" "total") "missing total"}}{{end}}`,
+	})
 
-	err := Run([]string{"-website-root", websiteRoot, "-out", t.TempDir()}, logger)
+	err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, t.TempDir()}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected build run to fail for unused contract path")
 	}
@@ -344,52 +208,29 @@ func TestRun_SiteDataOverrideWinsAndWarns(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	websiteRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "assets", "css"), 0o755); err != nil {
-		t.Fatalf("mkdir assets: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "data"), 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "layout"), 0o755); err != nil {
-		t.Fatalf("mkdir layout: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "partials"), 0o755); err != nil {
-		t.Fatalf("mkdir partials: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(websiteRoot, "src", "templates", "pages"), 0o755); err != nil {
-		t.Fatalf("mkdir pages: %v", err)
-	}
-
-	overridePath := filepath.Join(t.TempDir(), "site.yaml")
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"):  "body { color: #000; }\n",
-		filepath.Join(websiteRoot, "src", "data", "site.yaml"):          "courses:\n  agenda:\n    title: Local\n",
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"): "",
+	websiteRoot := newTestWebsiteRoot(t)
+	overridePath := filepath.Join(t.TempDir(), fileSiteYAML)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteYAML):         "courses:\n  agenda:\n    title: Local\n",
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML): "",
 		overridePath: "courses:\n  agenda:\n    title: External\n",
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}{{end}}`,
-	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}{{required (dig .SiteData "courses" "agenda" "title") "missing courses.agenda.title"}}{{end}}`,
+	})
 
 	outDir := t.TempDir()
 	args := []string{
-		"-website-root", websiteRoot,
-		"-out", outDir,
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
 		"-site-data", overridePath,
 	}
 	if err := Run(args, logger); err != nil {
-		t.Fatalf("build run failed: %v", err)
+		t.Fatalf(buildRunFailed, err)
 	}
 
-	rendered, err := os.ReadFile(filepath.Join(outDir, "agenda.html"))
+	rendered, err := os.ReadFile(filepath.Join(outDir, fileAgendaHTML))
 	if err != nil {
-		t.Fatalf("reading agenda output: %v", err)
+		t.Fatalf(readingAgendaFmt, err)
 	}
 	if !strings.Contains(string(rendered), "External") {
 		t.Fatalf("expected external site data to win, got %s", string(rendered))
@@ -400,38 +241,33 @@ func TestRun_SiteDataOverrideWinsAndWarns(t *testing.T) {
 }
 
 func TestRun_MirrorsExternalAssetsIntoOutput(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
 	server := newMirrorAssetsTestServer(t)
 	defer server.Close()
 
 	websiteRoot := newTestWebsiteRoot(t)
-
-	files := map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", "main.css"):            "body { background-image: url('" + server.URL + "/local-bg.png'); }\n",
-		filepath.Join(websiteRoot, "src", "data", "site.contract.yaml"):           "",
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`,
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           "body { background-image: url('" + server.URL + "/local-bg.png'); }\n",
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
 		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="` + server.URL + `/remote.css">{{end}}`,
 		filepath.Join(websiteRoot, "src", "templates", "pages", "index.gohtml"):   `{{define "page"}}<img src="` + server.URL + `/inline-image.png" alt="remote">{{end}}`,
-	}
-	writeFiles(t, files)
+	})
 
 	outDir := t.TempDir()
 	args := []string{
-		"-website-root", websiteRoot,
-		"-out", outDir,
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
 		"-mirror-external-assets",
 	}
-	if err := Run(args, logger); err != nil {
-		t.Fatalf("build run failed: %v", err)
+	if err := Run(args, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
 	}
 
-	indexPath := filepath.Join(outDir, "index.html")
+	indexPath := filepath.Join(outDir, fileIndexHTML)
 	indexHTML := string(mustReadFile(t, indexPath))
-	assertNoExternalRefs(t, "index.html", indexHTML, server.URL)
-	assertContainsAll(t, "index.html", indexHTML, []string{`href="/external/`, `src="/external/`})
+	assertNoExternalRefs(t, fileIndexHTML, indexHTML, server.URL)
+	assertContainsAll(t, fileIndexHTML, indexHTML, []string{`href="/external/`, `src="/external/`})
 
-	localCSSPath := filepath.Join(outDir, "css", "main.css")
+	localCSSPath := filepath.Join(outDir, "css", fileMainCSS)
 	localCSS := string(mustReadFile(t, localCSSPath))
 	assertNoExternalRefs(t, "css/main.css", localCSS, server.URL)
 	assertContainsAll(t, "css/main.css", localCSS, []string{`url("/external/`})
@@ -452,17 +288,17 @@ func newMirrorAssetsTestServer(t *testing.T) *httptest.Server {
 	baseURL := new(string)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/remote.css" {
-			w.Header().Set("Content-Type", "text/css")
+			w.Header().Set(httpContentType, "text/css")
 			_, _ = io.WriteString(w, "@font-face { src: url('/font.woff2'); } .hero { background-image: url('"+*baseURL+"/bg.png'); }")
 			return
 		}
 		if r.URL.Path == "/font.woff2" {
-			w.Header().Set("Content-Type", "font/woff2")
+			w.Header().Set(httpContentType, "font/woff2")
 			_, _ = w.Write([]byte("woff2-data"))
 			return
 		}
 		if r.URL.Path == "/bg.png" || r.URL.Path == "/inline-image.png" || r.URL.Path == "/local-bg.png" {
-			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set(httpContentType, "image/png")
 			_, _ = w.Write([]byte("png-data"))
 			return
 		}
@@ -478,28 +314,16 @@ func newTestWebsiteRoot(t *testing.T) string {
 	t.Helper()
 
 	websiteRoot := t.TempDir()
-	mustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "css"))
-	mustMkdirAll(t, filepath.Join(websiteRoot, "src", "data"))
-	mustMkdirAll(t, filepath.Join(websiteRoot, "src", "templates", "layout"))
-	mustMkdirAll(t, filepath.Join(websiteRoot, "src", "templates", "partials"))
-	mustMkdirAll(t, filepath.Join(websiteRoot, "src", "templates", "pages"))
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "css"))
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "data"))
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "templates", "layout"))
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "templates", "partials"))
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "templates", "pages"))
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   stdLayoutTmpl,
+		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): stdHeadTmpl,
+	})
 	return websiteRoot
-}
-
-func mustMkdirAll(t *testing.T, path string) {
-	t.Helper()
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", path, err)
-	}
-}
-
-func writeFiles(t *testing.T, files map[string]string) {
-	t.Helper()
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
 }
 
 func mustReadFile(t *testing.T, path string) []byte {

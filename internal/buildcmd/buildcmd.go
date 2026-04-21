@@ -29,6 +29,8 @@ const (
 	sitemapXML  = "sitemap.xml"
 	mimeTextCSS = "text/css"
 	extWoff2    = ".woff2"
+
+	errFmtWriting = "writing %s: %w"
 )
 
 var (
@@ -225,22 +227,8 @@ func maybeInitMirrorer(opts buildOptions) (*externalAssetMirrorer, error) {
 }
 
 func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templatesDir string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
-	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
+	pages, siteDataResult, siteDataContractResult, err := cmdutil.LoadAndValidateSiteData(logger, templatesDir, opts.siteDataSource)
 	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading templates: %w", err)
-	}
-	siteDataResult, err := sitegen.LoadSiteData(templatesDir, opts.siteDataSource)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data: %w", err)
-	}
-	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesDir)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
-	}
-
-	cmdutil.LogSiteDataOverride(logger, siteDataResult)
-
-	if err := cmdutil.ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
 	if opts.enableSanity {
@@ -248,7 +236,6 @@ func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templates
 			return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site sanity rules: %w", err)
 		}
 	}
-
 	logger.Info("loaded templates", "count", len(pages), "templates_dir", templatesDir)
 	return pages, siteDataResult, siteDataContractResult, nil
 }
@@ -275,7 +262,7 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		}
 
 		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil {
-			return fmt.Errorf("writing %s: %w", target, err)
+			return fmt.Errorf(errFmtWriting, target, err)
 		}
 
 		logger.Info("generated page", "page", page.Name, "target", target)
@@ -543,7 +530,7 @@ func generateSitemapFromConfig(configPath, websiteRoot, outDir string) error {
 
 	targetPath := filepath.Join(outDir, sitemapXML)
 	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", sitemapXML, err)
+		return fmt.Errorf(errFmtWriting, sitemapXML, err)
 	}
 	return nil
 }
@@ -581,7 +568,7 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 
 	targetPath := filepath.Join(outDir, sitemapXML)
 	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", sitemapXML, err)
+		return fmt.Errorf(errFmtWriting, sitemapXML, err)
 	}
 
 	return nil

@@ -57,6 +57,3 @@ func Run(args []string, logger *slog.Logger) error {
 		return fmt.Errorf("unsupported format %q (expected json|yaml)", *format)
 	}
 }
-
-
-

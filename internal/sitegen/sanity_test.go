@@ -74,4 +74,3 @@ func TestValidateSiteSanity_DurationMismatchFails(t *testing.T) {
 		t.Fatal("expected sanity validation to fail")
 	}
 }
-

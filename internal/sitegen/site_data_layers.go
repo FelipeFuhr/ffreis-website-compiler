@@ -168,4 +168,3 @@ func indexOriginsForValue(value any, origin, path string, origins map[string]str
 		indexOriginsForValue(item, origin, nextPath, origins)
 	}
 }
-

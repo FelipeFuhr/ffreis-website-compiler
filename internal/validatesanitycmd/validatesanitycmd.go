@@ -176,7 +176,6 @@ func maybeValidateAssets(opts validateSanityOptions, assetsDir string, pages []s
 	return nil
 }
 
-
 type sanityConfigFile struct {
 	Version int `yaml:"version"`
 	Checks  struct {

@@ -8,7 +8,6 @@ import (
 
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/cmdutil"
-	"ffreis-website-compiler/internal/sitegen"
 )
 
 func Run(args []string, logger *slog.Logger) error {
@@ -26,7 +25,7 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
-	pages, siteDataResult, siteDataContractResult, err := loadAndValidateSiteData(logger, templatesDir, opts.siteDataSource)
+	pages, siteDataResult, siteDataContractResult, err := cmdutil.LoadAndValidateSiteData(logger, templatesDir, opts.siteDataSource)
 	if err != nil {
 		return err
 	}
@@ -101,25 +100,4 @@ func resolveValidateAssetsPaths(opts validateAssetsOptions) (assetsDir, template
 		templatesDir = resolvedTemplatesDir
 	}
 	return assetsDir, templatesDir, nil
-}
-
-func loadAndValidateSiteData(logger *slog.Logger, templatesDir, siteDataSource string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
-	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading templates: %w", err)
-	}
-	siteDataResult, err := sitegen.LoadSiteData(templatesDir, siteDataSource)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data: %w", err)
-	}
-	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesDir)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
-	}
-	cmdutil.LogSiteDataOverride(logger, siteDataResult)
-
-	if err := cmdutil.ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
-	}
-	return pages, siteDataResult, siteDataContractResult, nil
 }

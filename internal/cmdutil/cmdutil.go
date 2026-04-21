@@ -124,6 +124,26 @@ func ValidateSiteDataAndUsageFromRoot(templatesRoot string, siteDataResult siteg
 	return nil
 }
 
+func LoadAndValidateSiteData(logger *slog.Logger, templatesDir, siteDataSource string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
+	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
+	if err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading templates: %w", err)
+	}
+	siteDataResult, err := sitegen.LoadSiteData(templatesDir, siteDataSource)
+	if err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data: %w", err)
+	}
+	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesDir)
+	if err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
+	}
+	LogSiteDataOverride(logger, siteDataResult)
+	if err := ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
+	}
+	return pages, siteDataResult, siteDataContractResult, nil
+}
+
 func RenderPages(pages []sitegen.PageTemplate, siteData map[string]any) (map[string]string, error) {
 	renderedPages := make(map[string]string, len(pages))
 	for _, page := range pages {
