@@ -1,7 +1,6 @@
 package validatesanitycmd
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -13,6 +12,7 @@ import (
 	"strings"
 
 	"ffreis-website-compiler/internal/assetusage"
+	"ffreis-website-compiler/internal/cmdutil"
 	"ffreis-website-compiler/internal/sitegen"
 	"gopkg.in/yaml.v3"
 )
@@ -44,7 +44,19 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
-	logSanitySuccess(logger, opts, assetsDir, templatesRoot, siteDataResult, siteDataContractResult, sanityDir, sanityConfigSource)
+	logger.Info(
+		"sanity validation passed",
+		"website_root", opts.websiteRoot,
+		"assets_dir", assetsDir,
+		"templates_dir", templatesRoot,
+		"site_data_source", cmdutil.FirstNonEmpty(siteDataResult.Source, siteDataResult.DefaultPath),
+		"site_data_layers", siteDataResult.Layers,
+		"site_data_contract_source", cmdutil.FirstNonEmpty(siteDataContractResult.Source, siteDataContractResult.DefaultPath),
+		"sanity_dir", sanityDir,
+		"sanity_config_source", sanityConfigSource,
+		"ran_sanity_dir_checks", opts.runSanityDirChecks,
+		"checked_assets", opts.checkAssets,
+	)
 	return nil
 }
 
@@ -86,7 +98,7 @@ func resolveValidateSanityPaths(opts validateSanityOptions) (assetsDir, template
 	assetsDir = opts.assetsDir
 	templatesRoot = opts.templatesDir
 	if assetsDir == "" || templatesRoot == "" {
-		resolvedAssetsDir, resolvedTemplatesDir, err := resolveWebsitePaths(opts.websiteRoot)
+		resolvedAssetsDir, resolvedTemplatesDir, err := cmdutil.ResolveWebsitePaths(opts.websiteRoot)
 		if err != nil {
 			return "", "", "", sitegen.SanityConfig{}, "", err
 		}
@@ -101,7 +113,7 @@ func resolveValidateSanityPaths(opts validateSanityOptions) (assetsDir, template
 	sanityDir = opts.sanityDir
 	if sanityDir == "" {
 		defaultSanityDir := filepath.Join(opts.websiteRoot, "sanity")
-		if dirExists(defaultSanityDir) {
+		if cmdutil.DirExists(defaultSanityDir) {
 			sanityDir = defaultSanityDir
 		}
 	}
@@ -126,8 +138,8 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
 	}
 
-	logSiteDataOverride(logger, siteDataResult)
-	if err := validateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
+	cmdutil.LogSiteDataOverride(logger, siteDataResult)
+	if err := cmdutil.ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
 
@@ -136,37 +148,6 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 	}
 
 	return pages, siteDataResult, siteDataContractResult, nil
-}
-
-func logSiteDataOverride(logger *slog.Logger, siteDataResult sitegen.SiteDataLoadResult) {
-	if !siteDataResult.UsedOverride || !siteDataResult.DefaultPathFound {
-		return
-	}
-	logger.Warn(
-		"site data override supersedes local site data file",
-		"override_source", siteDataResult.Source,
-		"local_site_data", siteDataResult.DefaultPath,
-		"site_data_layers", siteDataResult.Layers,
-	)
-}
-
-func validateSiteDataAndUsage(pages []sitegen.PageTemplate, siteDataResult sitegen.SiteDataLoadResult, siteDataContractResult sitegen.SiteDataContractLoadResult) error {
-	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
-		return fmt.Errorf("validating site data against contract: %w", err)
-	}
-
-	contract := siteDataContractResult.Contract
-	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
-		return nil
-	}
-	usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
-	if err != nil {
-		return fmt.Errorf("tracing site data usage: %w", err)
-	}
-	if err := sitegen.ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
-		return fmt.Errorf("validating site data contract usage: %w", err)
-	}
-	return nil
 }
 
 func maybeRunSanityDirChecks(opts validateSanityOptions, sanityDir string, logger *slog.Logger) error {
@@ -185,7 +166,7 @@ func maybeValidateAssets(opts validateSanityOptions, assetsDir string, pages []s
 		return nil
 	}
 
-	renderedPages, err := renderPagesForAssetValidation(pages, siteData)
+	renderedPages, err := cmdutil.RenderPages(pages, siteData)
 	if err != nil {
 		return err
 	}
@@ -195,33 +176,6 @@ func maybeValidateAssets(opts validateSanityOptions, assetsDir string, pages []s
 	return nil
 }
 
-func renderPagesForAssetValidation(pages []sitegen.PageTemplate, siteData map[string]any) (map[string]string, error) {
-	renderedPages := make(map[string]string, len(pages))
-	for _, page := range pages {
-		var rendered bytes.Buffer
-		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", sitegen.NewTemplateData(page.Name, siteData)); err != nil {
-			return nil, fmt.Errorf("rendering %s.html for asset validation: %w", page.Name, err)
-		}
-		renderedPages[page.Name] = rendered.String()
-	}
-	return renderedPages, nil
-}
-
-func logSanitySuccess(logger *slog.Logger, opts validateSanityOptions, assetsDir, templatesRoot string, siteDataResult sitegen.SiteDataLoadResult, siteDataContractResult sitegen.SiteDataContractLoadResult, sanityDir, sanityConfigSource string) {
-	logger.Info(
-		"sanity validation passed",
-		"website_root", opts.websiteRoot,
-		"assets_dir", assetsDir,
-		"templates_dir", templatesRoot,
-		"site_data_source", firstNonEmpty(siteDataResult.Source, siteDataResult.DefaultPath),
-		"site_data_layers", siteDataResult.Layers,
-		"site_data_contract_source", firstNonEmpty(siteDataContractResult.Source, siteDataContractResult.DefaultPath),
-		"sanity_dir", sanityDir,
-		"sanity_config_source", sanityConfigSource,
-		"ran_sanity_dir_checks", opts.runSanityDirChecks,
-		"checked_assets", opts.checkAssets,
-	)
-}
 
 type sanityConfigFile struct {
 	Version int `yaml:"version"`
@@ -243,7 +197,7 @@ func loadSanityConfig(sanityDir string) (sitegen.SanityConfig, string, error) {
 	}
 	var path string
 	for _, candidate := range candidates {
-		if fileExists(candidate) {
+		if cmdutil.FileExists(candidate) {
 			path = candidate
 			break
 		}
@@ -271,50 +225,12 @@ func loadSanityConfig(sanityDir string) (sitegen.SanityConfig, string, error) {
 	return config, path, nil
 }
 
-func resolveWebsitePaths(websiteRoot string) (string, string, error) {
-	newAssets := filepath.Join(websiteRoot, "src", "assets")
-	newTemplates := filepath.Join(websiteRoot, "src", "templates")
-	if dirExists(newAssets) && dirExists(newTemplates) {
-		return newAssets, newTemplates, nil
-	}
-
-	legacyAssets := filepath.Join(websiteRoot, "site")
-	legacyTemplates := filepath.Join(websiteRoot, "templates")
-	if dirExists(legacyAssets) && dirExists(legacyTemplates) {
-		return legacyAssets, legacyTemplates, nil
-	}
-
-	return "", "", fmt.Errorf(
-		"could not resolve website directories under %s; expected src/assets + src/templates (or legacy site + templates)",
-		websiteRoot,
-	)
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func runSanityChecksFromDir(websiteRoot, sanityDir, sanityChecksDirName, compilerExe string, logger *slog.Logger) error {
 	if strings.TrimSpace(sanityDir) == "" {
 		return nil
 	}
 	checksRoot := filepath.Join(sanityDir, sanityChecksDirName)
-	if !dirExists(checksRoot) {
+	if !cmdutil.DirExists(checksRoot) {
 		return nil
 	}
 
@@ -414,13 +330,25 @@ func sanityCheckCommand(path string) (*exec.Cmd, error) {
 		return exec.Command("/bin/bash", path), nil
 	}
 	if ext == ".py" {
-		return exec.Command("python3", path), nil
+		py, err := exec.LookPath("python3")
+		if err != nil {
+			return nil, fmt.Errorf("python3 not found in PATH: %w", err)
+		}
+		return exec.Command(py, path), nil
 	}
 	if ext == ".rb" {
-		return exec.Command("ruby", path), nil
+		rb, err := exec.LookPath("ruby")
+		if err != nil {
+			return nil, fmt.Errorf("ruby not found in PATH: %w", err)
+		}
+		return exec.Command(rb, path), nil
 	}
 	if runtime.GOOS == "windows" && ext == ".cmd" {
-		return exec.Command("cmd.exe", "/c", path), nil
+		cmd, err := exec.LookPath("cmd.exe")
+		if err != nil {
+			return nil, fmt.Errorf("cmd.exe not found in PATH: %w", err)
+		}
+		return exec.Command(cmd, "/c", path), nil
 	}
 	return exec.Command(path), nil
 }
