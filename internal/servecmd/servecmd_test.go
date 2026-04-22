@@ -18,7 +18,7 @@ func TestRequestIDMiddleware_SetsHeaderAndContext(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(context.Background(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -38,7 +38,7 @@ func TestRecoveryMiddleware_Returns500OnPanic(t *testing.T) {
 		panic("boom")
 	}))
 
-	req := httptest.NewRequestWithContext(context.Background(),http.MethodGet, "/panic", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/panic", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
