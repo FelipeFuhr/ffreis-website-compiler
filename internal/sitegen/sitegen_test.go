@@ -33,7 +33,7 @@ func TestValidateSiteData_PassesWithContract(t *testing.T) {
 					"installments_text": "Em até 3 parcelas de R$ 520,00 reais",
 					"max_installments":  3,
 					"cash_discount":     "Para pagamento à vista, 5% de desconto.",
-					   "group_discount":    "Para 3 ou mais participants da mesma organização, 5% de desconto.",
+					"group_discount":    "Para 3 ou mais participants da mesma organização, 5% de desconto.",
 				},
 			},
 		},
