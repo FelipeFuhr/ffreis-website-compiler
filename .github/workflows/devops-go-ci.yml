@@ -27,27 +27,27 @@ concurrency:
 
 jobs:
   mod-tidy:
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mod-tidy-check.yml@e9b9cc0cde6465b785f4b7c71d2180f5b265f42f
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mod-tidy-check.yml@main
     with:
       go-version: "1.25.8"
       working-directory: "."
 
   fmt:
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fmt.yml@e9b9cc0cde6465b785f4b7c71d2180f5b265f42f
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fmt.yml@main
     with:
       go-version: "1.25.8"
       working-directory: "."
 
   lint:
     needs: [fmt]
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@e9b9cc0cde6465b785f4b7c71d2180f5b265f42f
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@main
     with:
       go-version: "1.25.8"
       working-directory: "."
 
   test:
     needs: [fmt]
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@e9b9cc0cde6465b785f4b7c71d2180f5b265f42f
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@main
     with:
       go-version: "1.25.8"
       working-directory: "."
@@ -55,7 +55,7 @@ jobs:
 
   integration:
     needs: [fmt]
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@e9b9cc0cde6465b785f4b7c71d2180f5b265f42f
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@main
     with:
       go-version: "1.25.8"
       working-directory: "."
