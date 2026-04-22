@@ -138,11 +138,11 @@ func TestTraceSiteDataUsage_CollectsDigPaths(t *testing.T) {
 		}
 	}
 
-	files := map[string]string{
-		filepath.Join(templatesRoot, "layout", "base.gohtml"):   `{{define "layout"}}FIC-TEMPLATE-LAYOUT{{end}}`,
-		filepath.Join(templatesRoot, "partials", "head.gohtml"): `{{define "head"}}FIC-TEMPLATE-HEAD{{end}}`,
-		filepath.Join(templatesRoot, "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "fictional_agenda") "missing fictional_agenda"}}{{required (dig .SiteData "fictional_courses" "fictional_id" "investment" "total") "missing total"}}{{end}}`,
-	}
+	   files := map[string]string{
+		   filepath.Join(templatesRoot, "layout", "base.gohtml"):   `{{define "layout"}}FIC-TEMPLATE-LAYOUT{{end}}`,
+		   filepath.Join(templatesRoot, "partials", "head.gohtml"): `{{define "head"}}FIC-TEMPLATE-HEAD{{end}}`,
+		   filepath.Join(templatesRoot, "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "fictional_agenda" 0) "missing fictional_agenda"}}{{required (dig .SiteData "fictional_courses" "fictional_id" "investment" "total") "missing total"}}{{end}}`,
+	   }
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", path, err)
@@ -154,16 +154,16 @@ func TestTraceSiteDataUsage_CollectsDigPaths(t *testing.T) {
 		t.Fatalf("load templates: %v", err)
 	}
 
-	usedPaths, err := TraceSiteDataUsage(pages, map[string]any{
-		"fictional_agenda": []any{"fictional_id"},
-		"fictional_courses": map[string]any{
-			"fictional_id": map[string]any{
-				"investment": map[string]any{
-					"total": "FIC-TOTAL",
-				},
-			},
-		},
-	})
+	   usedPaths, err := TraceSiteDataUsage(pages, map[string]any{
+		   "fictional_agenda": []any{"fictional_id"},
+		   "fictional_courses": map[string]any{
+			   "fictional_id": map[string]any{
+				   "investment": map[string]any{
+					   "total": "FIC-TOTAL",
+				   },
+			   },
+		   },
+	   })
 	if err != nil {
 		t.Fatalf("trace usage: %v", err)
 	}
