@@ -192,7 +192,7 @@ func TestValidateSiteDataContractUsage_FailsForUnusedAllowedPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unused contract path failure")
 	}
-	   if !strings.Contains(err.Error(), "allowed contract path not used by templates: fictional_courses.*.investment.installments_text") {
-		   t.Fatalf("expected unused allowed path in error, got %v", err)
-	   }
+	if !strings.Contains(err.Error(), "allowed contract path not used by templates: fictional_courses.*.investment.installments_text") {
+		t.Fatalf("expected unused allowed path in error, got %v", err)
+	}
 }

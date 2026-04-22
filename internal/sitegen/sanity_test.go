@@ -3,23 +3,23 @@ package sitegen
 import "testing"
 
 func TestValidateSiteSanity_StartDateMatchesFirstSession(t *testing.T) {
-	   siteData := map[string]any{
-		   "courses": map[string]any{
-			   "fictional_course": map[string]any{
-				   "variants": map[string]any{
-					   "fictional_variant": map[string]any{
-						   "start_text":     "2099-01-01",
-						   "duration_hours": 99,
-						   "cronograma": map[string]any{
-							   "sessions": []any{
-								   map[string]any{"date": "2099-01-01", "hours": 99},
-							   },
-						   },
-					   },
-				   },
-			   },
-		   },
-	   }
+	siteData := map[string]any{
+		"courses": map[string]any{
+			"fictional_course": map[string]any{
+				"variants": map[string]any{
+					"fictional_variant": map[string]any{
+						"start_text":     "2099-01-01",
+						"duration_hours": 99,
+						"cronograma": map[string]any{
+							"sessions": []any{
+								map[string]any{"date": "2099-01-01", "hours": 99},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 
 	if err := ValidateSiteSanity(siteData, DefaultSanityConfig()); err != nil {
 		t.Fatalf("expected sanity validation to pass, got %v", err)
