@@ -141,7 +141,7 @@ func TestTraceSiteDataUsage_CollectsDigPaths(t *testing.T) {
 	files := map[string]string{
 		filepath.Join(templatesRoot, "layout", "base.gohtml"):   `{{define "layout"}}FIC-TEMPLATE-LAYOUT{{end}}`,
 		filepath.Join(templatesRoot, "partials", "head.gohtml"): `{{define "head"}}FIC-TEMPLATE-HEAD{{end}}`,
-		filepath.Join(templatesRoot, "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "fictional_agenda" 0) "missing fictional_agenda"}}{{required (dig .SiteData "fictional_courses" "fictional_id" "investment" "total") "missing total"}}{{end}}`,
+		filepath.Join(templatesRoot, "pages", "agenda.gohtml"):  `{{define "page"}}{{required (dig .SiteData "fictional_agenda") "missing fictional_agenda"}}{{required (dig .SiteData "fictional_courses" "fictional_id" "investment" "total") "missing total"}}{{end}}`,
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
