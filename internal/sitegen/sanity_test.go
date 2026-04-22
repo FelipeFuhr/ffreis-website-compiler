@@ -3,23 +3,23 @@ package sitegen
 import "testing"
 
 func TestValidateSiteSanity_StartDateMatchesFirstSession(t *testing.T) {
-	siteData := map[string]any{
-		"courses": map[string]any{
-			"c1": map[string]any{
-				"variants": map[string]any{
-					"v1": map[string]any{
-						"start_text":     "19/Maio/2026",
-						"duration_hours": 8,
-						"cronograma": map[string]any{
-							"sessions": []any{
-								map[string]any{"date": "2026-05-19", "hours": 8},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+	   siteData := map[string]any{
+		   "courses": map[string]any{
+			   "fictional_course": map[string]any{
+				   "variants": map[string]any{
+					   "fictional_variant": map[string]any{
+						   "start_text":     "FIC-START-DATE",
+						   "duration_hours": 99,
+						   "cronograma": map[string]any{
+							   "sessions": []any{
+								   map[string]any{"date": "2099-01-01", "hours": 99},
+							   },
+						   },
+					   },
+				   },
+			   },
+		   },
+	   }
 
 	if err := ValidateSiteSanity(siteData, DefaultSanityConfig()); err != nil {
 		t.Fatalf("expected sanity validation to pass, got %v", err)
@@ -27,23 +27,23 @@ func TestValidateSiteSanity_StartDateMatchesFirstSession(t *testing.T) {
 }
 
 func TestValidateSiteSanity_StartDateMismatchFails(t *testing.T) {
-	siteData := map[string]any{
-		"courses": map[string]any{
-			"c1": map[string]any{
-				"variants": map[string]any{
-					"v1": map[string]any{
-						"start_text":     "20/Maio/2026",
-						"duration_hours": 8,
-						"cronograma": map[string]any{
-							"sessions": []any{
-								map[string]any{"date": "2026-05-19", "hours": 8},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+	   siteData := map[string]any{
+		   "courses": map[string]any{
+			   "fictional_course": map[string]any{
+				   "variants": map[string]any{
+					   "fictional_variant": map[string]any{
+						   "start_text":     "FIC-MISMATCH-START",
+						   "duration_hours": 99,
+						   "cronograma": map[string]any{
+							   "sessions": []any{
+								   map[string]any{"date": "2099-01-01", "hours": 99},
+							   },
+						   },
+					   },
+				   },
+			   },
+		   },
+	   }
 
 	if err := ValidateSiteSanity(siteData, DefaultSanityConfig()); err == nil {
 		t.Fatal("expected sanity validation to fail")
@@ -51,24 +51,24 @@ func TestValidateSiteSanity_StartDateMismatchFails(t *testing.T) {
 }
 
 func TestValidateSiteSanity_DurationMismatchFails(t *testing.T) {
-	siteData := map[string]any{
-		"courses": map[string]any{
-			"c1": map[string]any{
-				"variants": map[string]any{
-					"v1": map[string]any{
-						"start_text":     "2026-05-19",
-						"duration_hours": 10,
-						"cronograma": map[string]any{
-							"sessions": []any{
-								map[string]any{"date": "2026-05-19", "hours": 6},
-								map[string]any{"date": "2026-05-20", "hours": 2},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+	   siteData := map[string]any{
+		   "courses": map[string]any{
+			   "fictional_course": map[string]any{
+				   "variants": map[string]any{
+					   "fictional_variant": map[string]any{
+						   "start_text":     "FIC-DURATION-START",
+						   "duration_hours": 123,
+						   "cronograma": map[string]any{
+							   "sessions": []any{
+								   map[string]any{"date": "2099-01-01", "hours": 50},
+								   map[string]any{"date": "2099-01-02", "hours": 50},
+							   },
+						   },
+					   },
+				   },
+			   },
+		   },
+	   }
 
 	if err := ValidateSiteSanity(siteData, DefaultSanityConfig()); err == nil {
 		t.Fatal("expected sanity validation to fail")
