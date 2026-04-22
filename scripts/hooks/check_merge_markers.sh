@@ -13,18 +13,19 @@ fi
 
 while IFS= read -r -d '' file; do
   found_any=1
-  if git show ":${file}" | grep -nE '^(<<<<<<< |=======|>>>>>>> )' >"${tmp_output}" 2>/dev/null; then
+  if git show ":${file}" | \
+      grep -nE '^(<<<<<<< |=======|>>>>>>> )' >"${tmp_output}" 2>/dev/null; then
     echo "Merge conflict markers detected in staged file: ${file}" >&2
     sed 's/^/  /' "${tmp_output}" >&2
     has_error=1
   fi
 done < <(git diff --cached --name-only --diff-filter=ACM -z)
 
-if [ "$found_any" -eq 0 ]; then
+if [[ "$found_any" -eq 0 ]]; then
   exit 0
 fi
 
-if [ "$has_error" -ne 0 ]; then
+if [[ "$has_error" -ne 0 ]]; then
   echo "Resolve conflict markers before committing." >&2
   exit 1
 fi

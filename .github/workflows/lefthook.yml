@@ -11,41 +11,9 @@ permissions:
 
 jobs:
   lefthook:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.8'
-          cache: true
-
-      - name: Install hook tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${HOME}/.local/bin"
-          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
-          GOBIN="${HOME}/.local/bin" go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-          GITLEAKS_VERSION="8.24.2"
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C "${HOME}/.local/bin" gitleaks
-
-      - name: Stage files for staged hooks
-        run: git add -A
-
-      - name: Run pre-commit hooks
-        shell: bash
-        run: |
-          set -euo pipefail
-          make lefthook-bootstrap
-          LEFTHOOK=.bin/lefthook ./.bin/lefthook run pre-commit
-
-      - name: Run commit-msg hook
-        shell: bash
-        run: |
-          set -euo pipefail
-          msg_file="$(mktemp)"
-          echo "ci(hooks): validate commit-msg hook" > "${msg_file}"
-          LEFTHOOK=.bin/lefthook ./.bin/lefthook run commit-msg -- "${msg_file}"
+    uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-lefthook.yml@ed2f7d29467bf1fd6ec40df3953b3ee128ba3f04
+    with:
+      working-directory: "."
+      go-version: "1.25.8"
+      lefthook-bootstrap-command: "make lefthook-bootstrap"
+      lefthook-bin: ".bin/lefthook"

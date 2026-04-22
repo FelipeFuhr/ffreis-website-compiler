@@ -69,72 +69,16 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func parseConfigYAML(f *os.File) (Config, error) {
-	var cfg Config
 	scanner := bufio.NewScanner(f)
-	lineNo := 0
-	inURLs := false
-	var current *URLItem
-
-	flushCurrent := func() {
-		if current != nil {
-			cfg.URLs = append(cfg.URLs, *current)
-			current = nil
-		}
-	}
+	p := &configYAMLParser{}
 
 	for scanner.Scan() {
-		lineNo++
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		p.lineNo++
+		trimmed := strings.TrimSpace(scanner.Text())
+		if isIgnorableYAMLLine(trimmed) {
 			continue
 		}
-
-		if trimmed == "urls:" {
-			inURLs = true
-			continue
-		}
-
-		if !inURLs {
-			key, val, ok := parseKeyValue(trimmed)
-			if !ok {
-				return Config{}, fmt.Errorf("line %d: expected key: value", lineNo)
-			}
-			switch key {
-			case "base_url":
-				cfg.BaseURL = unquoteYAML(val)
-			case "default_lastmod":
-				cfg.DefaultLastmod = unquoteYAML(val)
-			default:
-				return Config{}, fmt.Errorf("line %d: unsupported key %q", lineNo, key)
-			}
-			continue
-		}
-
-		if strings.HasPrefix(trimmed, "- ") {
-			flushCurrent()
-			current = &URLItem{}
-			itemKV := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
-			if itemKV != "" {
-				key, val, ok := parseKeyValue(itemKV)
-				if !ok {
-					return Config{}, fmt.Errorf("line %d: expected - key: value", lineNo)
-				}
-				if err := assignURLField(current, key, val, lineNo); err != nil {
-					return Config{}, err
-				}
-			}
-			continue
-		}
-
-		if current == nil {
-			return Config{}, fmt.Errorf("line %d: url field without '-' entry", lineNo)
-		}
-		key, val, ok := parseKeyValue(trimmed)
-		if !ok {
-			return Config{}, fmt.Errorf("line %d: expected key: value in url item", lineNo)
-		}
-		if err := assignURLField(current, key, val, lineNo); err != nil {
+		if err := p.parseLine(trimmed); err != nil {
 			return Config{}, err
 		}
 	}
@@ -142,9 +86,88 @@ func parseConfigYAML(f *os.File) (Config, error) {
 	if err := scanner.Err(); err != nil {
 		return Config{}, err
 	}
-	flushCurrent()
+	p.flushCurrent()
 
-	return cfg, nil
+	return p.cfg, nil
+}
+
+type configYAMLParser struct {
+	cfg     Config
+	lineNo  int
+	inURLs  bool
+	current *URLItem
+}
+
+func isIgnorableYAMLLine(trimmed string) bool {
+	return trimmed == "" || strings.HasPrefix(trimmed, "#")
+}
+
+func (p *configYAMLParser) flushCurrent() {
+	if p.current == nil {
+		return
+	}
+	p.cfg.URLs = append(p.cfg.URLs, *p.current)
+	p.current = nil
+}
+
+func (p *configYAMLParser) parseLine(trimmed string) error {
+	if trimmed == "urls:" {
+		p.inURLs = true
+		return nil
+	}
+	if !p.inURLs {
+		return p.parseTopLevel(trimmed)
+	}
+	return p.parseURLSectionLine(trimmed)
+}
+
+func (p *configYAMLParser) parseTopLevel(trimmed string) error {
+	key, val, ok := parseKeyValue(trimmed)
+	if !ok {
+		return fmt.Errorf("line %d: expected key: value", p.lineNo)
+	}
+
+	switch key {
+	case "base_url":
+		p.cfg.BaseURL = unquoteYAML(val)
+	case "default_lastmod":
+		p.cfg.DefaultLastmod = unquoteYAML(val)
+	default:
+		return fmt.Errorf("line %d: unsupported key %q", p.lineNo, key)
+	}
+	return nil
+}
+
+func (p *configYAMLParser) parseURLSectionLine(trimmed string) error {
+	if strings.HasPrefix(trimmed, "- ") {
+		return p.startNewURLItem(trimmed)
+	}
+
+	if p.current == nil {
+		return fmt.Errorf("line %d: url field without '-' entry", p.lineNo)
+	}
+
+	key, val, ok := parseKeyValue(trimmed)
+	if !ok {
+		return fmt.Errorf("line %d: expected key: value in url item", p.lineNo)
+	}
+	return assignURLField(p.current, key, val, p.lineNo)
+}
+
+func (p *configYAMLParser) startNewURLItem(trimmed string) error {
+	p.flushCurrent()
+	p.current = &URLItem{}
+
+	itemKV := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+	if itemKV == "" {
+		return nil
+	}
+
+	key, val, ok := parseKeyValue(itemKV)
+	if !ok {
+		return fmt.Errorf("line %d: expected - key: value", p.lineNo)
+	}
+	return assignURLField(p.current, key, val, p.lineNo)
 }
 
 func parseKeyValue(s string) (string, string, bool) {

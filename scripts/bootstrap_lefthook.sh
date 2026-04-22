@@ -31,16 +31,22 @@ if [ ! -x "$BIN" ]; then
       ;;
   esac
 
-  URL="https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_${OS}_${ARCH}"
+  URL="https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/"\
+"lefthook_${LEFTHOOK_VERSION}_${OS}_${ARCH}"
 
   # Expected SHA-256 checksums for lefthook v1.7.10 per platform.
-  # Source: https://github.com/evilmartians/lefthook/releases/download/v1.7.10/lefthook_checksums.txt
+  # Source: https://github.com/evilmartians/lefthook/releases/download/
+  #   v1.7.10/lefthook_checksums.txt
   EXPECTED_CHECKSUM=""
   case "${OS}_${ARCH}" in
-    Linux_x86_64) EXPECTED_CHECKSUM="33e1a7a8af4bcb0215d54ecdbc78e82b125d00e46e95a779838ec81ea39136d2" ;;
-    Linux_arm64)  EXPECTED_CHECKSUM="ea20bc6c9055b45f640104e860e0beb83368ad9efcda85efef513fc70f3992c3" ;;
-    Darwin_x86_64) EXPECTED_CHECKSUM="a6423e3efc6e48fdf0b43b81ff63d9e57b3d3e175bd22cf5e880b9a8b779eb8d" ;;
-    Darwin_arm64)  EXPECTED_CHECKSUM="05cab0767664461aff1e86b4df9402565b81825fac574ccfcac822c60c8bd015" ;;
+    Linux_x86_64) \
+      EXPECTED_CHECKSUM="33e1a7a8af4bcb0215d54ecdbc78e82b125d00e46e95a779838ec81ea39136d2" ;;
+    Linux_arm64) \
+      EXPECTED_CHECKSUM="ea20bc6c9055b45f640104e860e0beb83368ad9efcda85efef513fc70f3992c3" ;;
+    Darwin_x86_64) \
+      EXPECTED_CHECKSUM="a6423e3efc6e48fdf0b43b81ff63d9e57b3d3e175bd22cf5e880b9a8b779eb8d" ;;
+    Darwin_arm64) \
+      EXPECTED_CHECKSUM="05cab0767664461aff1e86b4df9402565b81825fac574ccfcac822c60c8bd015" ;;
     *)
       echo "No checksum available for ${OS}_${ARCH}" >&2
       exit 2

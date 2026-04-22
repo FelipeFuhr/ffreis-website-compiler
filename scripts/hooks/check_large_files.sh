@@ -31,11 +31,11 @@ is_allowlisted() {
 
 while IFS= read -r -d '' file; do
   size="$(git cat-file -s ":${file}")"
-  if [ -z "$size" ]; then
+  if [[ -z "$size" ]]; then
     continue
   fi
 
-  if [ "$size" -le "$MAX_SIZE_BYTES" ]; then
+  if [[ "$size" -le "$MAX_SIZE_BYTES" ]]; then
     continue
   fi
 
@@ -47,7 +47,7 @@ while IFS= read -r -d '' file; do
   has_error=1
 done < <(git diff --cached --name-only --diff-filter=ACM -z)
 
-if [ "$has_error" -ne 0 ]; then
+if [[ "$has_error" -ne 0 ]]; then
   echo "Large staged files must be split, compressed, or explicitly allowlisted." >&2
   exit 1
 fi

@@ -4,18 +4,21 @@ FROM ${BUILDER_IMAGE} AS builder
 
 WORKDIR /src/ffreis-website-compiler
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/website-compiler ./cmd/website-compiler
+RUN CGO_ENABLED=0 \
+	GOOS=linux \
+	GOARCH=amd64 \
+	go build -trimpath \
+		-ldflags="-s -w" \
+		-o /out/website-compiler \
+		./cmd/website-compiler
 
 FROM ${RUNTIME_IMAGE}
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+RUN apt-get update   && apt-get install -y --no-install-recommends ca-certificates   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 

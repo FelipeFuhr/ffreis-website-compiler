@@ -11,6 +11,9 @@ LEFTHOOK_VERSION ?= 1.7.10
 LEFTHOOK_DIR ?= $(CURDIR)/.bin
 LEFTHOOK_BIN ?= $(LEFTHOOK_DIR)/lefthook
 PREFIX ?= ffreis
+
+MUTATION_PACKAGES ?= ./internal/...
+MUTATION_THRESHOLD ?= 60
 IMAGE_PROVIDER ?=
 IMAGE_TAG ?= local
 COMPILER_IMAGE_NAME ?= website-compiler-cli
@@ -28,11 +31,17 @@ DIST_DIR ?= dist
 EXAMPLE_ROOT := examples/hello-world
 EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 
-.PHONY: help info install build build-inline build-no-assets serve \
+.PHONY: mutation-test help info install build build-inline build-no-assets serve \
 	example-build clean clean-example container-build docker-build ci-list \
-	fmt-check lint test test-race coverage-gate smoke-check quality-gates \
+	fmt fmt-check lint test test-race coverage-gate smoke-check quality-gates \
+	validate plan \
 	secrets-scan-staged hook-generated-drift \
 	lefthook-bootstrap lefthook-install lefthook-run lefthook
+
+## mutation-test: run mutation testing with gremlins (slow — intended for CI/weekly)
+mutation-test: ## Run mutation testing with gremlins (slow — CI only)
+	@which gremlins >/dev/null 2>&1 || go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
+	gremlins unleash --threshold-efficacy $(MUTATION_THRESHOLD) $(MUTATION_PACKAGES)
 
 help: ## Show available compiler commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target> WEBSITE_ROOT=path [DIST_DIR=path]\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -78,6 +87,9 @@ clean: ## Remove default dist output
 clean-example: ## Remove example dist output
 	rm -rf $(EXAMPLE_DIST)
 
+fmt: ## Format all Go files in place
+	$(GOFMT) -w .
+
 fmt-check: ## Fail if Go files are not gofmt-formatted
 	@./scripts/hooks/check_required_tools.sh $(GOFMT)
 	@out="$$(find . -type f -name '*.go' -not -path './vendor/*' -not -path './.git/*' -print0 | xargs -0 -r $(GOFMT) -l)"; \
@@ -91,6 +103,15 @@ fmt-check: ## Fail if Go files are not gofmt-formatted
 lint: ## Run golangci-lint
 	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || (echo "Missing tool: $(GOLANGCI_LINT). Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest" && exit 1)
 	$(GOLANGCI_LINT) run
+
+validate: ## Static analysis and compilation check (go vet + build)
+	go vet ./...
+	go build -o /dev/null ./...
+
+plan: ## Not applicable — use 'make validate' or 'make quality-gates' for Go repos
+	@echo "INFO: 'plan' is Terraform-specific and does not apply to Go repos."
+	@echo "      To verify compilation: make validate"
+	@echo "      For full quality gates: make quality-gates"
 
 test: ## Run unit tests
 	go test ./...
