@@ -5,34 +5,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ffreis-website-compiler/internal/testutil"
+)
+
+const (
+	siteYAMLFile        = "site.yaml"
+	calendarLayerFile   = "20-calendar.yaml"
+	writeSiteYAMLFmt    = "write site.yaml: %v"
+	unexpectedErrorFmt  = "unexpected error: %v"
+	unexpectedLayersFmt = "unexpected layers: %#v"
 )
 
 func TestLoadSiteData_BaseOnly(t *testing.T) {
 	t.Parallel()
 
-	websiteRoot := t.TempDir()
-	templatesRoot := filepath.Join(websiteRoot, "src", "templates")
-	dataRoot := filepath.Join(websiteRoot, "src", "data")
-	if err := os.MkdirAll(templatesRoot, 0o755); err != nil {
-		t.Fatalf("mkdir templates: %v", err)
-	}
-	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
-		t.Fatalf("mkdir data: %v", err)
-	}
-	basePath := filepath.Join(dataRoot, "site.yaml")
+	templatesRoot, dataRoot := newTestSiteRoot(t)
+	basePath := filepath.Join(dataRoot, siteYAMLFile)
 	if err := os.WriteFile(basePath, []byte("courses:\n  a:\n    stable: true\n"), 0o644); err != nil {
-		t.Fatalf("write site.yaml: %v", err)
+		t.Fatalf(writeSiteYAMLFmt, err)
 	}
 
 	result, err := LoadSiteData(templatesRoot, "")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorFmt, err)
 	}
 	if !result.DefaultPathFound {
 		t.Fatalf("expected DefaultPathFound=true, got false")
 	}
 	if len(result.Layers) != 1 || result.Layers[0] != basePath {
-		t.Fatalf("unexpected layers: %#v", result.Layers)
+		t.Fatalf(unexpectedLayersFmt, result.Layers)
 	}
 	courses, ok := result.Data["courses"].(map[string]any)
 	if !ok {
@@ -47,32 +49,22 @@ func TestLoadSiteData_BaseOnly(t *testing.T) {
 func TestLoadSiteData_WithOverlays_MergesDisjointLeaves(t *testing.T) {
 	t.Parallel()
 
-	websiteRoot := t.TempDir()
-	templatesRoot := filepath.Join(websiteRoot, "src", "templates")
-	dataRoot := filepath.Join(websiteRoot, "src", "data")
-	overlayRoot := filepath.Join(dataRoot, "site.d")
-	if err := os.MkdirAll(templatesRoot, 0o755); err != nil {
-		t.Fatalf("mkdir templates: %v", err)
-	}
-	if err := os.MkdirAll(overlayRoot, 0o755); err != nil {
-		t.Fatalf("mkdir overlay: %v", err)
-	}
-
-	basePath := filepath.Join(dataRoot, "site.yaml")
+	templatesRoot, dataRoot, overlayRoot := newTestOverlayRoot(t)
+	basePath := filepath.Join(dataRoot, siteYAMLFile)
+	layerPath := filepath.Join(overlayRoot, calendarLayerFile)
 	if err := os.WriteFile(basePath, []byte("courses:\n  cqe:\n    variants:\n      online:\n        duration: 88\n"), 0o644); err != nil {
-		t.Fatalf("write site.yaml: %v", err)
+		t.Fatalf(writeSiteYAMLFmt, err)
 	}
-	layerPath := filepath.Join(overlayRoot, "20-calendar.yaml")
 	if err := os.WriteFile(layerPath, []byte("courses:\n  cqe:\n    variants:\n      online:\n        start_text: \"Em definição.\"\n"), 0o644); err != nil {
 		t.Fatalf("write layer: %v", err)
 	}
 
 	result, err := LoadSiteData(templatesRoot, "")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorFmt, err)
 	}
 	if len(result.Layers) != 2 || result.Layers[0] != basePath || result.Layers[1] != layerPath {
-		t.Fatalf("unexpected layers: %#v", result.Layers)
+		t.Fatalf(unexpectedLayersFmt, result.Layers)
 	}
 
 	online := digPathMap(t, result.Data, "courses", "cqe", "variants", "online")
@@ -84,22 +76,12 @@ func TestLoadSiteData_WithOverlays_MergesDisjointLeaves(t *testing.T) {
 func TestLoadSiteData_LeafConflictErrors(t *testing.T) {
 	t.Parallel()
 
-	websiteRoot := t.TempDir()
-	templatesRoot := filepath.Join(websiteRoot, "src", "templates")
-	dataRoot := filepath.Join(websiteRoot, "src", "data")
-	overlayRoot := filepath.Join(dataRoot, "site.d")
-	if err := os.MkdirAll(templatesRoot, 0o755); err != nil {
-		t.Fatalf("mkdir templates: %v", err)
-	}
-	if err := os.MkdirAll(overlayRoot, 0o755); err != nil {
-		t.Fatalf("mkdir overlay: %v", err)
-	}
-
-	basePath := filepath.Join(dataRoot, "site.yaml")
+	templatesRoot, dataRoot, overlayRoot := newTestOverlayRoot(t)
+	basePath := filepath.Join(dataRoot, siteYAMLFile)
+	layerPath := filepath.Join(overlayRoot, calendarLayerFile)
 	if err := os.WriteFile(basePath, []byte("courses:\n  cqe:\n    variants:\n      online:\n        start_text: \"A\"\n"), 0o644); err != nil {
-		t.Fatalf("write site.yaml: %v", err)
+		t.Fatalf(writeSiteYAMLFmt, err)
 	}
-	layerPath := filepath.Join(overlayRoot, "20-calendar.yaml")
 	if err := os.WriteFile(layerPath, []byte("courses:\n  cqe:\n    variants:\n      online:\n        start_text: \"B\"\n"), 0o644); err != nil {
 		t.Fatalf("write layer: %v", err)
 	}
@@ -123,18 +105,12 @@ func TestLoadSiteData_LeafConflictErrors(t *testing.T) {
 func TestLoadSiteData_OverrideDirectory(t *testing.T) {
 	t.Parallel()
 
-	websiteRoot := t.TempDir()
-	templatesRoot := filepath.Join(websiteRoot, "src", "templates")
-	if err := os.MkdirAll(templatesRoot, 0o755); err != nil {
-		t.Fatalf("mkdir templates: %v", err)
-	}
-
+	templatesRoot := newTestTemplatesRoot(t)
 	overrideDir := filepath.Join(t.TempDir(), "layers")
-	if err := os.MkdirAll(overrideDir, 0o755); err != nil {
-		t.Fatalf("mkdir override: %v", err)
-	}
+	testutil.MustMkdirAll(t, overrideDir)
+
 	first := filepath.Join(overrideDir, "10-base.yaml")
-	second := filepath.Join(overrideDir, "20-calendar.yaml")
+	second := filepath.Join(overrideDir, calendarLayerFile)
 	if err := os.WriteFile(first, []byte("courses:\n  a:\n    stable: true\n"), 0o644); err != nil {
 		t.Fatalf("write first: %v", err)
 	}
@@ -144,13 +120,13 @@ func TestLoadSiteData_OverrideDirectory(t *testing.T) {
 
 	result, err := LoadSiteData(templatesRoot, overrideDir)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorFmt, err)
 	}
 	if !result.UsedOverride {
 		t.Fatalf("expected UsedOverride=true")
 	}
 	if len(result.Layers) != 2 || result.Layers[0] != first || result.Layers[1] != second {
-		t.Fatalf("unexpected layers: %#v", result.Layers)
+		t.Fatalf(unexpectedLayersFmt, result.Layers)
 	}
 
 	a := digPathMap(t, result.Data, "courses", "a")
@@ -162,16 +138,10 @@ func TestLoadSiteData_OverrideDirectory(t *testing.T) {
 func TestLoadSiteData_OverrideDirectory_LeafConflictErrors(t *testing.T) {
 	t.Parallel()
 
-	websiteRoot := t.TempDir()
-	templatesRoot := filepath.Join(websiteRoot, "src", "templates")
-	if err := os.MkdirAll(templatesRoot, 0o755); err != nil {
-		t.Fatalf("mkdir templates: %v", err)
-	}
-
+	templatesRoot := newTestTemplatesRoot(t)
 	overrideDir := filepath.Join(t.TempDir(), "layers")
-	if err := os.MkdirAll(overrideDir, 0o755); err != nil {
-		t.Fatalf("mkdir override: %v", err)
-	}
+	testutil.MustMkdirAll(t, overrideDir)
+
 	first := filepath.Join(overrideDir, "10-a.yaml")
 	second := filepath.Join(overrideDir, "20-b.yaml")
 	if err := os.WriteFile(first, []byte("courses:\n  a:\n    start_text: \"A\"\n"), 0o644); err != nil {
@@ -195,6 +165,32 @@ func TestLoadSiteData_OverrideDirectory_LeafConflictErrors(t *testing.T) {
 			t.Fatalf("expected %q in error, got %v", token, msg)
 		}
 	}
+}
+
+func newTestTemplatesRoot(t *testing.T) string {
+	t.Helper()
+	websiteRoot := t.TempDir()
+	templatesRoot := filepath.Join(websiteRoot, "src", "templates")
+	testutil.MustMkdirAll(t, templatesRoot)
+	return templatesRoot
+}
+
+func newTestSiteRoot(t *testing.T) (templatesRoot, dataRoot string) {
+	t.Helper()
+	websiteRoot := t.TempDir()
+	templatesRoot = filepath.Join(websiteRoot, "src", "templates")
+	dataRoot = filepath.Join(websiteRoot, "src", "data")
+	testutil.MustMkdirAll(t, templatesRoot)
+	testutil.MustMkdirAll(t, dataRoot)
+	return templatesRoot, dataRoot
+}
+
+func newTestOverlayRoot(t *testing.T) (templatesRoot, dataRoot, overlayRoot string) {
+	t.Helper()
+	templatesRoot, dataRoot = newTestSiteRoot(t)
+	overlayRoot = filepath.Join(dataRoot, "site.d")
+	testutil.MustMkdirAll(t, overlayRoot)
+	return templatesRoot, dataRoot, overlayRoot
 }
 
 func digPathMap(t *testing.T, root map[string]any, keys ...string) map[string]any {
