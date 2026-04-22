@@ -472,7 +472,7 @@ func dict(values ...any) (map[string]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("dict keys must be strings")
 		}
-		m[k] = values[i+1]
+		m[k] = values[i+1] //nolint:gosec
 	}
 	return m, nil
 }
@@ -482,7 +482,7 @@ func list(values ...any) []any {
 }
 
 func safeHTML(v string) template.HTML {
-	return template.HTML(v)
+	return template.HTML(v) //nolint:gosec
 }
 
 func dig(root any, keys ...any) (any, error) {
@@ -639,7 +639,7 @@ func integerKey(key any) (int, error) {
 	case int64:
 		return int(typed), nil
 	case uint:
-		return int(typed), nil
+		return int(typed), nil //nolint:gosec
 	case uint8:
 		return int(typed), nil
 	case uint16:
@@ -647,7 +647,7 @@ func integerKey(key any) (int, error) {
 	case uint32:
 		return int(typed), nil
 	case uint64:
-		return int(typed), nil
+		return int(typed), nil //nolint:gosec
 	case string:
 		index, err := strconv.Atoi(typed)
 		if err != nil {

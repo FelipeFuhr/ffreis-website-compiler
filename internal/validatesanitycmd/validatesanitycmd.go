@@ -1,6 +1,7 @@
 package validatesanitycmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -11,10 +12,11 @@ import (
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/cmdutil"
 	"ffreis-website-compiler/internal/sitegen"
-	"gopkg.in/yaml.v3"
 )
 
 func Run(args []string, logger *slog.Logger) error {
@@ -37,7 +39,7 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
-	if err := maybeRunSanityDirChecks(opts, sanityDir, logger); err != nil {
+	if err := maybeRunSanityDirChecks(context.Background(), opts, sanityDir, logger); err != nil {
 		return err
 	}
 	if err := maybeValidateAssets(opts, assetsDir, pages, siteDataResult.Data); err != nil {
@@ -150,7 +152,7 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
-func maybeRunSanityDirChecks(opts validateSanityOptions, sanityDir string, logger *slog.Logger) error {
+func maybeRunSanityDirChecks(ctx context.Context, opts validateSanityOptions, sanityDir string, logger *slog.Logger) error {
 	if !opts.runSanityDirChecks {
 		return nil
 	}
@@ -158,7 +160,7 @@ func maybeRunSanityDirChecks(opts validateSanityOptions, sanityDir string, logge
 	if err != nil {
 		return fmt.Errorf("resolving compiler executable: %w", err)
 	}
-	return runSanityChecksFromDir(opts.websiteRoot, sanityDir, opts.sanityChecksDirName, executable, logger)
+	return runSanityChecksFromDir(ctx, opts.websiteRoot, sanityDir, opts.sanityChecksDirName, executable, logger)
 }
 
 func maybeValidateAssets(opts validateSanityOptions, assetsDir string, pages []sitegen.PageTemplate, siteData map[string]any) error {
@@ -224,7 +226,7 @@ func loadSanityConfig(sanityDir string) (sitegen.SanityConfig, string, error) {
 	return config, path, nil
 }
 
-func runSanityChecksFromDir(websiteRoot, sanityDir, sanityChecksDirName, compilerExe string, logger *slog.Logger) error {
+func runSanityChecksFromDir(ctx context.Context, websiteRoot, sanityDir, sanityChecksDirName, compilerExe string, logger *slog.Logger) error {
 	if strings.TrimSpace(sanityDir) == "" {
 		return nil
 	}
@@ -249,7 +251,7 @@ func runSanityChecksFromDir(websiteRoot, sanityDir, sanityChecksDirName, compile
 		}
 
 		ran++
-		if err := runSanityCheck(websiteRoot, sanityDir, checksRoot, compilerExe, checkPath, logger); err != nil {
+		if err := runSanityCheck(ctx, websiteRoot, sanityDir, checksRoot, compilerExe, checkPath, logger); err != nil {
 			return err
 		}
 	}
@@ -285,10 +287,10 @@ func resolveRunnableSanityCheck(checksRoot string, entry os.DirEntry) (string, b
 	return checkPath, true, nil
 }
 
-func runSanityCheck(websiteRoot, sanityDir, checksRoot, compilerExe, checkPath string, logger *slog.Logger) error {
+func runSanityCheck(ctx context.Context, websiteRoot, sanityDir, checksRoot, compilerExe, checkPath string, logger *slog.Logger) error {
 	logger.Info("running sanity check", "check", checkPath)
 
-	cmd, err := sanityCheckCommand(checkPath)
+	cmd, err := sanityCheckCommand(ctx, checkPath)
 	if err != nil {
 		return err
 	}
@@ -323,31 +325,31 @@ func isRunnableSanityCheckFile(name string, mode os.FileMode) bool {
 	}
 }
 
-func sanityCheckCommand(path string) (*exec.Cmd, error) {
+func sanityCheckCommand(ctx context.Context, path string) (*exec.Cmd, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext == ".sh" || ext == ".bash" {
-		return exec.Command("/bin/bash", path), nil
+		return exec.CommandContext(ctx, "/bin/bash", path), nil
 	}
 	if ext == ".py" {
 		py, err := exec.LookPath("python3")
 		if err != nil {
 			return nil, fmt.Errorf("python3 not found in PATH: %w", err)
 		}
-		return exec.Command(py, path), nil
+		return exec.CommandContext(ctx, py, path), nil
 	}
 	if ext == ".rb" {
 		rb, err := exec.LookPath("ruby")
 		if err != nil {
 			return nil, fmt.Errorf("ruby not found in PATH: %w", err)
 		}
-		return exec.Command(rb, path), nil
+		return exec.CommandContext(ctx, rb, path), nil
 	}
 	if runtime.GOOS == "windows" && ext == ".cmd" {
 		cmd, err := exec.LookPath("cmd.exe")
 		if err != nil {
 			return nil, fmt.Errorf("cmd.exe not found in PATH: %w", err)
 		}
-		return exec.Command(cmd, "/c", path), nil
+		return exec.CommandContext(ctx, cmd, "/c", path), nil
 	}
-	return exec.Command(path), nil
+	return exec.CommandContext(ctx, path), nil
 }

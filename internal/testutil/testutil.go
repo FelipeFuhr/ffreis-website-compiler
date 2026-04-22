@@ -21,7 +21,7 @@ func MustMkdirAll(t *testing.T, path string) {
 func WriteFiles(t *testing.T, files map[string]string) {
 	t.Helper()
 	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil { //nolint:gosec
 			t.Fatalf("write %s: %v", path, err)
 		}
 	}

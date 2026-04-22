@@ -8,16 +8,13 @@ import (
 	"os"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"ffreis-website-compiler/internal/cmdutil"
 	"ffreis-website-compiler/internal/sitegen"
-	"gopkg.in/yaml.v3"
 )
 
-func Run(args []string, logger *slog.Logger) error {
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	}
-
+func Run(args []string, _ *slog.Logger) error {
 	fs := flag.NewFlagSet("export-site-data", flag.ContinueOnError)
 	websiteRoot := fs.String("website-root", ".", "website project root; expects <website-root>/src/{assets,templates} (legacy fallback: <website-root>/{site,templates})")
 	templatesDirFlag := fs.String("templates-dir", "", "path to templates root folder (defaults to <website-root>/src/templates, then <website-root>/templates)")

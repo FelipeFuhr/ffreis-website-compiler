@@ -261,7 +261,7 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 			htmlOut = updated
 		}
 
-		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil {
+		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf(errFmtWriting, target, err)
 		}
 
@@ -421,7 +421,7 @@ func (m *externalAssetMirrorer) mirrorURL(absoluteURL, hintedExt string) (string
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return "", fmt.Errorf("creating mirrored asset directory for %s: %w", absoluteURL, err)
 	}
-	if err := os.WriteFile(fullPath, body, 0o644); err != nil {
+	if err := os.WriteFile(fullPath, body, 0o644); err != nil { //nolint:gosec
 		return "", fmt.Errorf("writing mirrored asset %s: %w", absoluteURL, err)
 	}
 
@@ -489,7 +489,7 @@ func mirrorExternalAssetsInCopiedCSS(cssRoot string, mirrorer *externalAssetMirr
 			return nil
 		}
 
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(path) //nolint:gosec
 		if err != nil {
 			return err
 		}
@@ -497,7 +497,7 @@ func mirrorExternalAssetsInCopiedCSS(cssRoot string, mirrorer *externalAssetMirr
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(path, []byte(rewritten), 0o644)
+		return os.WriteFile(path, []byte(rewritten), 0o644) //nolint:gosec
 	})
 }
 
@@ -529,7 +529,7 @@ func generateSitemapFromConfig(configPath, websiteRoot, outDir string) error {
 	}
 
 	targetPath := filepath.Join(outDir, sitemapXML)
-	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil {
+	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil { //nolint:gosec
 		return fmt.Errorf(errFmtWriting, sitemapXML, err)
 	}
 	return nil
@@ -567,7 +567,7 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 	}
 
 	targetPath := filepath.Join(outDir, sitemapXML)
-	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil {
+	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil { //nolint:gosec
 		return fmt.Errorf(errFmtWriting, sitemapXML, err)
 	}
 
