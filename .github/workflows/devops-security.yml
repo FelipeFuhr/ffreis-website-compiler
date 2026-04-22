@@ -55,6 +55,7 @@ jobs:
   trivy-fs:
     permissions:
       contents: read
+      actions: read
       security-events: write
     uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-scan-trivy-fs.yml@6c9269aea4f05cdf73672f3da7ee3501b1285463
     with:
@@ -64,6 +65,7 @@ jobs:
   grype-fs:
     permissions:
       contents: read
+      actions: read
       security-events: write
     uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-scan-grype-fs.yml@6c9269aea4f05cdf73672f3da7ee3501b1285463
     with:
