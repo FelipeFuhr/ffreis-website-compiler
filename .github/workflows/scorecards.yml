@@ -12,6 +12,9 @@ permissions:
   actions: read
   security-events: write
   id-token: write
+  issues: read
+  pull-requests: read
+  checks: read
 
 jobs:
   scorecard:
