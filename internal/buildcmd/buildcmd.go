@@ -307,7 +307,7 @@ func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir s
 	if baseURL == "" {
 		return nil
 	}
-	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir); err != nil {
+	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir, opts.cleanURLs); err != nil {
 		return err
 	}
 	logger.Info("generated sitemap from pages", "base_url", baseURL, "target", filepath.Join(opts.outDir, sitemapXML))
@@ -552,7 +552,7 @@ func generateSitemapFromConfig(configPath, websiteRoot, outDir string) error {
 	return nil
 }
 
-func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.PageTemplate, outDir string) error {
+func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.PageTemplate, outDir string, cleanURLs bool) error {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
 		return fmt.Errorf("sitemap base URL cannot be empty")
@@ -563,7 +563,7 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 		var path string
 		if page.Name == "index" {
 			path = "/"
-		} else if opts.cleanURLs {
+		} else if cleanURLs {
 			path = "/" + page.Name
 		} else {
 			path = "/" + page.Name + ".html"

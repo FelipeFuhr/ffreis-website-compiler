@@ -2,6 +2,7 @@ package sitegen
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -86,6 +87,7 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 			"dict":       dict,
 			"list":       list,
 			"safeHTML":   safeHTML,
+			"toJSON":     toJSON,
 			"dig":        dig,
 			"required":   required,
 			"trimSuffix": strings.TrimSuffix,
@@ -484,6 +486,15 @@ func list(values ...any) []any {
 
 func safeHTML(v string) template.HTML {
 	return template.HTML(v) //nolint:gosec
+}
+
+// toJSON marshals v to JSON and marks it safe for embedding in a <script> block.
+func toJSON(v any) (template.JS, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("toJSON: %w", err)
+	}
+	return template.JS(b), nil //nolint:gosec
 }
 
 func dig(root any, keys ...any) (any, error) {
