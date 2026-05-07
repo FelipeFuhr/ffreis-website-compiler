@@ -112,6 +112,7 @@ type buildOptions struct {
 	mirrorExternalAssets bool
 	mirroredAssetsDir    string
 	enableSanity         bool
+	cleanURLs            bool
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -135,6 +136,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
+	fs.BoolVar(&opts.cleanURLs, "clean-urls", false, "output each page as <name>/index.html instead of <name>.html for extension-free URLs; updates sitemap accordingly")
 
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
@@ -240,9 +242,24 @@ func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templates
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
+func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) {
+	if cleanURLs && pageName != "index" {
+		dir := filepath.Join(outDir, pageName)
+		if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec
+			return "", fmt.Errorf("creating directory for %s: %w", pageName, err)
+		}
+		return filepath.Join(dir, "index.html"), nil
+	}
+	return filepath.Join(outDir, pageName+".html"), nil
+}
+
 func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, assetsDir string, renderedPages map[string]string, mirrorer *externalAssetMirrorer) error {
 	for _, page := range pages {
-		target := filepath.Join(opts.outDir, page.Name+".html")
+		target, err := resolvePageTarget(opts.outDir, page.Name, opts.cleanURLs)
+		if err != nil {
+			return err
+		}
+
 		htmlOut := renderedPages[page.Name]
 
 		if opts.inlineAssets {
@@ -543,9 +560,13 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 
 	urls := make([]sitemap.URLItem, 0, len(pages))
 	for _, page := range pages {
-		path := "/" + page.Name + ".html"
+		var path string
 		if page.Name == "index" {
 			path = "/"
+		} else if opts.cleanURLs {
+			path = "/" + page.Name
+		} else {
+			path = "/" + page.Name + ".html"
 		}
 
 		item := sitemap.URLItem{Path: path}
@@ -1090,7 +1111,7 @@ func getTagAttr(tag, attr string) string {
 
 func copyStaticAssets(srcRoot, dstRoot string) error {
 	dirs := []string{"css", "fonts", "images", "js", "ld"}
-	files := []string{"send.js", "contactScript.js", "robots.txt", sitemapXML}
+	files := []string{"favicon.ico", "send.js", "contactScript.js", "robots.txt", sitemapXML}
 
 	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
 		return err
