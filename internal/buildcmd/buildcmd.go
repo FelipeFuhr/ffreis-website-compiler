@@ -293,34 +293,25 @@ func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteD
 }
 
 func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
-	cloned := make(map[string]any, len(siteData))
-	for key, value := range siteData {
-		cloned[key] = value
+	cloned, _ := deepCopyAny(siteData).(map[string]any)
+	if cloned == nil {
+		return map[string]any{}
 	}
 
-	pagesData, ok := siteData["pages"].(map[string]any)
+	pagesData, ok := cloned["pages"].(map[string]any)
 	if !ok {
 		return cloned
 	}
 
-	pagesClone := make(map[string]any, len(pagesData))
 	for pageName, pageData := range pagesData {
 		pageMap, ok := pageData.(map[string]any)
 		if !ok {
-			pagesClone[pageName] = pageData
 			continue
 		}
-
-		pageClone := make(map[string]any, len(pageMap))
-		for key, value := range pageMap {
-			if key == "internal" {
-				continue
-			}
-			pageClone[key] = value
-		}
-		pagesClone[pageName] = pageClone
+		delete(pageMap, "internal")
+		pagesData[pageName] = pageMap
 	}
-	cloned["pages"] = pagesClone
+
 	return cloned
 }
 
@@ -344,6 +335,25 @@ func contractPatternsWithoutPageInternal(patterns []string) []string {
 func isPageInternalPattern(pattern string) bool {
 	parts := strings.Split(strings.TrimSpace(pattern), ".")
 	return len(parts) == 3 && parts[0] == "pages" && parts[2] == "internal" && parts[1] != ""
+}
+
+func deepCopyAny(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		cloned := make(map[string]any, len(typed))
+		for key, child := range typed {
+			cloned[key] = deepCopyAny(child)
+		}
+		return cloned
+	case []any:
+		cloned := make([]any, len(typed))
+		for i, child := range typed {
+			cloned[i] = deepCopyAny(child)
+		}
+		return cloned
+	default:
+		return value
+	}
 }
 
 func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) {
