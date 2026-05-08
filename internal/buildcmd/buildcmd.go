@@ -293,10 +293,7 @@ func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteD
 }
 
 func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
-	cloned, _ := deepCopyAny(siteData).(map[string]any)
-	if cloned == nil {
-		return map[string]any{}
-	}
+	cloned := deepCopyMap(siteData)
 
 	pagesData, ok := cloned["pages"].(map[string]any)
 	if !ok {
@@ -337,6 +334,8 @@ func isPageInternalPattern(pattern string) bool {
 	return len(parts) == 3 && parts[0] == "pages" && parts[2] == "internal" && parts[1] != ""
 }
 
+// deepCopyAny recursively deep-copies map[string]any and []any values.
+// Other value types are returned as-is.
 func deepCopyAny(value any) any {
 	switch typed := value.(type) {
 	case map[string]any:
@@ -354,6 +353,14 @@ func deepCopyAny(value any) any {
 	default:
 		return value
 	}
+}
+
+func deepCopyMap(source map[string]any) map[string]any {
+	cloned, ok := deepCopyAny(source).(map[string]any)
+	if !ok || cloned == nil {
+		return map[string]any{}
+	}
+	return cloned
 }
 
 func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) {
