@@ -80,6 +80,9 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
+	// Render all pages (including internal ones) so their CSS/JS assets are
+	// seen as "used" by the asset validator. Internal pages are filtered out
+	// from disk output and sitemap after validation.
 	renderedPages, err := cmdutil.RenderPages(pages, siteDataResult.Data)
 	if err != nil {
 		return err
@@ -87,6 +90,8 @@ func Run(args []string, logger *slog.Logger) error {
 	if _, err := assetusage.Validate(assetsDir, renderedPages); err != nil {
 		return fmt.Errorf("validating local css/js asset usage: %w", err)
 	}
+
+	pages = filterInternalPages(pages, siteDataResult.Data)
 
 	if err := writePages(logger, opts, pages, assetsDir, renderedPages, mirrorer); err != nil {
 		return err
@@ -1235,4 +1240,19 @@ func copyFile(src, dst string) error {
 	}
 
 	return out.Close()
+}
+
+// filterInternalPages removes pages marked internal: true in the site data
+// (pages.<name>.internal). Such pages are excluded from rendering, HTML output,
+// and sitemap generation.
+func filterInternalPages(pages []sitegen.PageTemplate, siteData map[string]any) []sitegen.PageTemplate {
+	pagesData, _ := siteData["pages"].(map[string]any)
+	result := pages[:0:0]
+	for _, p := range pages {
+		pd, _ := pagesData[p.Name].(map[string]any)
+		if internal, _ := pd["internal"].(bool); !internal {
+			result = append(result, p)
+		}
+	}
+	return result
 }
