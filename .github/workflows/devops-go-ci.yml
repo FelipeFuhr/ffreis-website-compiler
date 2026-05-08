@@ -46,7 +46,6 @@ jobs:
       working-directory: "."
 
   test:
-    if: ${{ !github.event.pull_request.draft }}
     needs: [fmt]
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
     with:
@@ -55,7 +54,6 @@ jobs:
       run-govulncheck: false
 
   integration:
-    if: ${{ !github.event.pull_request.draft }}
     needs: [fmt]
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
     with:
