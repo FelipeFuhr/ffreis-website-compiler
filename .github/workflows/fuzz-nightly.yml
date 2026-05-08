@@ -1,10 +1,14 @@
-name: Nightly Fuzz
+name: Monthly Fuzz
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '0 2 1 * *'
   workflow_dispatch:
-
+    inputs:
+      reason:
+        description: "Reason for manual run (optional)"
+        required: false
+        type: string
 jobs:
   fuzz:
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fuzz.yml@e9b9cc0cde6465b785f4b7c71d2180f5b265f42f
@@ -14,3 +18,24 @@ jobs:
       packages: "./internal/sitemap ./internal/sitegen"
       fuzz-targets: "Fuzz"
       fuzz-time: "20s"
+
+  notify-failure:
+    needs: [fuzz]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ [CI] ${context.workflow} failed (${new Date().toISOString().split('T')[0]})`,
+              body: [
+                `**Workflow:** ${context.workflow}`,
+                `**Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              ].join('\n'),
+            });
