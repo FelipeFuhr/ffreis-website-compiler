@@ -331,7 +331,14 @@ func contractPatternsWithoutPageInternal(patterns []string) []string {
 
 func isPageInternalPattern(pattern string) bool {
 	parts := strings.Split(strings.TrimSpace(pattern), ".")
-	return len(parts) == 3 && parts[0] == "pages" && parts[2] == "internal" && parts[1] != ""
+	if len(parts) != 3 || parts[0] != "pages" || parts[2] != "internal" {
+		return false
+	}
+	segment := parts[1]
+	if segment == "*" {
+		return true
+	}
+	return segment != "" && !strings.Contains(segment, "*")
 }
 
 // deepCopyAny recursively deep-copies map[string]any and []any values.

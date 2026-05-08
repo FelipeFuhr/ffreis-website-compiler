@@ -204,7 +204,7 @@ func TestRun_FailsWhenContractDeclaresUnusedTemplatePath(t *testing.T) {
 	}
 }
 
-func TestRun_AllowsInternalPageFlagWithoutContractPath(t *testing.T) {
+func TestRun_AllowsInternalPageFlagWithoutInternalContractPath(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
