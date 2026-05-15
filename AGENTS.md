@@ -30,16 +30,19 @@ The compiler registers these functions in `internal/sitegen/sitegen.go`:
 ## Automatic page transforms (`transformPage` in `internal/buildcmd/buildcmd.go`)
 
 Every page produced by `build` / `build-static` passes through `transformPage`, which
-applies four automatic transforms in order (no flags required):
+applies these transforms in order:
 
 ### 1. Position-based CSS loading
 
 Document position signals loading priority — mirroring the JS-at-end convention:
 
 - **`<link rel="stylesheet">` in `<head>`** → inlined as a `<style>` block (critical path).
-  Zero HTTP requests; page is fully styled from the first byte. `url()` refs (fonts,
-  backgrounds) are rewritten to root-relative paths (`/fonts/file.woff2`) so they stay
-  external and benefit from fingerprinting and long-lived caching.
+  Zero HTTP requests; page is fully styled from the first byte. Inlined CSS is **minified**
+  (comments stripped, whitespace collapsed, `/*! preserved */` bang-comments kept). Local
+  `@import` rules are **flattened recursively** — imported CSS is inlined verbatim with its
+  own `url()` refs resolved; external `@import` (CDN fonts) are left untouched. `url()` refs
+  (fonts, backgrounds) are rewritten to root-relative paths (`/fonts/file.woff2`) so they
+  stay external and benefit from fingerprinting and long-lived caching.
 
 - **`<link rel="stylesheet">` in `<body>`** → kept external, transformed to the deferred
   pattern:
@@ -62,6 +65,18 @@ blocks so responsive CSS continues to behave correctly.
 
 When `-inline-assets` is set, full inlining (including data-URI fonts) is used for both
 head and body instead, bypassing this step.
+
+**Optional flags:**
+
+- **`-embed-fonts`** (default off): embeds font files (`woff2`/`woff`/`ttf`/`otf`/`eot`)
+  referenced by `url()` in inlined CSS as base64 data URIs, eliminating font files from
+  dist. Increases HTML size by ~1.37× per font file. Appropriate for single-page sites or
+  intranet deployments; avoid for multi-page sites where font caching is beneficial.
+
+- **`-inline-body-css`** (default off): inlines body `<link rel=stylesheet>` as `<style>`
+  blocks instead of the deferred external pattern. Eliminates all CSS files from dist but
+  prevents cross-page CSS cache reuse. Both `-embed-fonts` and `-inline-body-css` apply to
+  body CSS when used together.
 
 ### 2. Navigation enhancement injection (progressive enhancement)
 
@@ -94,7 +109,23 @@ Benefits: eliminates one HTTP request per icon, enables CSS styling of SVG inter
 normal build pipeline only (skipped when `-inline-assets` is set, where
 `inlineLocalImages` already handles SVGs as data URIs).
 
-### 4. LQIP — blur-up placeholders for above-fold images (`lqip.go`)
+### 4. JS size-threshold inlining (`buildcmd.go` — `inlineSmallLocalScripts`)
+
+For every `<script src="...">` referencing a local file below the threshold:
+- Replaces the tag with an inline `<script>` block containing the file's content.
+- `type="module"` scripts are always skipped (module scoping/`import` semantics break
+  when inlined).
+- Files at or above the threshold stay external and are fingerprinted.
+
+**Flag:** `-js-inline-threshold` (default 8192 bytes; set 0 to disable). Mirrors the SVG
+8 KB convention. Large scripts (analytics, libraries) typically exceed the threshold and
+stay external.
+
+Runs after CSS transforms and SVG inlining, before LQIP and fingerprinting. Since
+`assetusage.Validate()` runs on pre-transform HTML, the original `<script src>` tags are
+still present at validation time — no change needed to asset validation.
+
+### 5. LQIP — blur-up placeholders for above-fold images (`lqip.go`)
 
 For every `<img loading="eager" src="local.file">` (raster only — SVGs skipped):
 - Decodes the image, scales to 20 px wide (nearest-neighbour), encodes as quality-20 JPEG.
@@ -107,7 +138,20 @@ For every `<img loading="eager" src="local.file">` (raster only — SVGs skipped
 Requires `golang.org/x/image/webp` for WebP decode. JPEG and PNG use stdlib.
 Runs before fingerprinting so `data-src` gets fingerprinted to the hashed filename.
 
-### 5. Asset fingerprinting (`fingerprint.go`)
+### 6. Small raster image inlining (`buildcmd.go` — `inlineSmallLocalRasterImages`)
+
+Optional; controlled by **`-raster-inline-threshold`** (default 0 = disabled).
+
+For every `<img src="...">` whose src is a local raster file smaller than the threshold:
+- Replaces `src` with a base64 data URI (same mechanism as `-inline-assets` images).
+- Skips images whose `src` is already a data URI (i.e., LQIP-processed images).
+- Skips SVG files (handled by `inlineLocalSVGs` above).
+- Runs **after** LQIP so the `isDataURI` guard correctly excludes LQIP placeholders.
+
+Trade-off: inlined images cannot be cached separately from the HTML page. Appropriate for
+tiny icons (< 4 KB) that change with every deploy. Large images should stay external.
+
+### 7. Asset fingerprinting (`fingerprint.go`)
 
 Rewrites all local asset references to content-hashed filenames:
 `portrait.webp` → `portrait.a1b2c3d4.webp` (SHA-256 of file, first 8 hex chars).
@@ -119,13 +163,15 @@ automatically cached long-term. Fingerprinting covers: `<img src>`, `<img data-s
 `apple-touch-icon`), `<link rel="manifest" href>`, `<script src>`, and
 `url()` inside inline `<style>` blocks. Data URIs and external URLs are left unchanged.
 
-Hashed file copies are written to the output directory alongside the originals
-(originals are also present but no longer referenced by any HTML).
+Only fingerprinted copies are written to the output directory. Originals (css/, fonts/,
+images/, js/) are **not** copied to dist — only `ld/` (JSON-LD) and root files
+(`favicon.ico`, `robots.txt`) are copied wholesale. This prevents dead unreferenced files
+from accumulating in S3.
 
-### 6. External asset mirroring (flag: `-mirror-external-assets`)
+### 8. External asset mirroring (flag: `-mirror-external-assets`)
 
 Optional; downloads external CSS/JS/images and rewrites URLs to local copies.
-Also processes `url()` references inside inline `<style>` blocks.
+Also processes `url()` references inside inline `<style>` blocks via `styleBlockRE`.
 
 ## Blog post processing (`-posts-dir` flag)
 
