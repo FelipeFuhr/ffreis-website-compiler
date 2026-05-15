@@ -78,7 +78,23 @@ Two `<head>` elements are injected before `</head>` by `injectNavigationEnhancem
 These run on top of CSS inlining and serve as a progressive enhancement layer. They are
 secondary to CSS inlining: even without them, FOUC is already eliminated by the inline CSS.
 
-### 3. LQIP — blur-up placeholders for above-fold images (`lqip.go`)
+### 3. SVG icon inlining (`buildcmd.go` — `inlineLocalSVGs`)
+
+For every `<img src="local.svg">` referencing a local SVG file smaller than 8 KB:
+- Replaces the `<img>` tag with the full `<svg>` XML content inline.
+- Strips the `<?xml ...?>` processing instruction (invalid in HTML5).
+- Merges the `<img>`'s `class` attribute into the `<svg>` root element's `class`.
+- Non-empty `alt` → `aria-label="..."` + `role="img"` on `<svg>`.
+  Empty `alt` → `aria-hidden="true"` (decorative icon).
+- Copies `width`/`height` from `<img>` to `<svg>` when the SVG root lacks them.
+- SVGs ≥ 8 KB are skipped and fingerprinted as external files instead.
+
+Benefits: eliminates one HTTP request per icon, enables CSS styling of SVG internals
+(fill, stroke), and removes small icon files from S3 output entirely. Runs in the
+normal build pipeline only (skipped when `-inline-assets` is set, where
+`inlineLocalImages` already handles SVGs as data URIs).
+
+### 4. LQIP — blur-up placeholders for above-fold images (`lqip.go`)
 
 For every `<img loading="eager" src="local.file">` (raster only — SVGs skipped):
 - Decodes the image, scales to 20 px wide (nearest-neighbour), encodes as quality-20 JPEG.
@@ -91,7 +107,7 @@ For every `<img loading="eager" src="local.file">` (raster only — SVGs skipped
 Requires `golang.org/x/image/webp` for WebP decode. JPEG and PNG use stdlib.
 Runs before fingerprinting so `data-src` gets fingerprinted to the hashed filename.
 
-### 4. Asset fingerprinting (`fingerprint.go`)
+### 5. Asset fingerprinting (`fingerprint.go`)
 
 Rewrites all local asset references to content-hashed filenames:
 `portrait.webp` → `portrait.a1b2c3d4.webp` (SHA-256 of file, first 8 hex chars).
@@ -106,7 +122,7 @@ automatically cached long-term. Fingerprinting covers: `<img src>`, `<img data-s
 Hashed file copies are written to the output directory alongside the originals
 (originals are also present but no longer referenced by any HTML).
 
-### 5. External asset mirroring (flag: `-mirror-external-assets`)
+### 6. External asset mirroring (flag: `-mirror-external-assets`)
 
 Optional; downloads external CSS/JS/images and rewrites URLs to local copies.
 Also processes `url()` references inside inline `<style>` blocks.
