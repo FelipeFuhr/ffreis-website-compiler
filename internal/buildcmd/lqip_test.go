@@ -45,7 +45,7 @@ func writePNG(t *testing.T, dir, relPath string, w, h int) string {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(full, makePNGBytes(t, w, h), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(full, makePNGBytes(t, w, h), 0o644); err != nil {
 		t.Fatalf("write PNG: %v", err)
 	}
 	return full

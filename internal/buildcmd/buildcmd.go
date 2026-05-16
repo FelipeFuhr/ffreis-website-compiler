@@ -252,7 +252,7 @@ func writeHashedAssets(outDir, assetsDir string, assets map[string]string) error
 	for hashedRel, origRel := range assets {
 		src := filepath.Join(assetsDir, filepath.FromSlash(origRel))
 		dst := filepath.Join(outDir, filepath.FromSlash(hashedRel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return fmt.Errorf("creating dir for %s: %w", hashedRel, err)
 		}
 		data, err := os.ReadFile(src)
