@@ -98,6 +98,7 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 			"required":   required,
 			"trimSuffix": strings.TrimSuffix,
 			"trimPrefix": strings.TrimPrefix,
+			"has":        hasString,
 		}).ParseFiles(parseFiles...)
 		if err != nil {
 			return nil, err
@@ -587,6 +588,27 @@ func list(values ...any) []any {
 
 func safeHTML(v string) template.HTML {
 	return template.HTML(v) //nolint:gosec
+}
+
+// hasString reports whether val is present in slice. The slice argument accepts
+// []any (as returned by template data) and []string. Any other type returns false.
+// Used by listing templates to check content item language availability.
+func hasString(slice any, val string) bool {
+	switch s := slice.(type) {
+	case []any:
+		for _, item := range s {
+			if str, ok := item.(string); ok && str == val {
+				return true
+			}
+		}
+	case []string:
+		for _, str := range s {
+			if str == val {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // toJSON marshals v to JSON and marks it safe for embedding in a <script> block.

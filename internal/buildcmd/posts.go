@@ -20,12 +20,13 @@ func postToMap(p posts.Post) map[string]any {
 		tagsAny[i] = t
 	}
 	return map[string]any{
-		"title":     p.Meta.Title,
-		"date":      p.Meta.Date,
-		"summary":   p.Meta.Summary,
-		"href":      "/blog/" + p.Meta.Slug + "/",
-		"thumbnail": p.Meta.Thumbnail,
-		"tags":      tagsAny,
+		"title":               p.Meta.Title,
+		"date":                p.Meta.Date,
+		"summary":             p.Meta.Summary,
+		"href":                "/blog/" + p.Meta.Slug + "/",
+		"thumbnail":           p.Meta.Thumbnail,
+		"tags":                tagsAny,
+		"available_languages": toLangsAny(p.Meta.AvailableLanguages),
 	}
 }
 
@@ -76,48 +77,82 @@ func writeBlogPaginatedPages(
 }
 
 // writePostPages renders and writes one HTML file per post using the post template.
+// For posts whose available_languages does not include the current build language,
+// a redirect stub is written instead of the full rendered page.
 func writePostPages(logger *slog.Logger, opts buildOptions, postTpl sitegen.PageTemplate, postList []posts.Post, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) error {
 	allToCopy := make(map[string]string)
+	currentLang := currentLangPrefix(siteData)
 
 	for _, post := range postList {
-		templateData := map[string]any{
-			"PageName": "post",
-			"SiteData": siteData,
-			"CurrentPost": map[string]any{
-				"title":         post.Meta.Title,
-				"date":          post.Meta.Date,
-				"summary":       post.Meta.Summary,
-				"thumbnail":     post.Meta.Thumbnail,
-				"canonical_url": post.Meta.CanonicalURL,
-				"tags":          post.Meta.Tags,
-				"body_html":     post.BodyHTML,
-			},
+		if !isAvailable(post.Meta.AvailableLanguages, currentLang) {
+			if err := writePostLangStub(logger, opts, post, siteData, currentLang); err != nil {
+				return err
+			}
+			continue
 		}
-
-		var rendered bytes.Buffer
-		if err := postTpl.Tmpl.ExecuteTemplate(&rendered, "layout", templateData); err != nil {
-			return fmt.Errorf("rendering post %s: %w", post.Meta.Slug, err)
-		}
-
-		htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, mirrorer)
+		toCopy, err := renderAndWritePost(logger, opts, postTpl, post, siteData, assetsDir, mirrorer)
 		if err != nil {
-			return fmt.Errorf("transforming post %s: %w", post.Meta.Slug, err)
+			return err
 		}
 		for k, v := range toCopy {
 			allToCopy[k] = v
 		}
-
-		target := filepath.Join(opts.outDir, "blog", post.Meta.Slug, "index.html")
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return fmt.Errorf("creating directory for post %s: %w", post.Meta.Slug, err)
-		}
-		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
-			return fmt.Errorf(errFmtWriting, target, err)
-		}
-		logger.Info("generated post page", "slug", post.Meta.Slug, "target", target)
 	}
 
 	return writeHashedAssets(opts.outDir, assetsDir, allToCopy)
+}
+
+// writePostLangStub writes a redirect stub for a post not available in currentLang.
+func writePostLangStub(logger *slog.Logger, opts buildOptions, post posts.Post, siteData map[string]any, currentLang string) error {
+	target := redirectTarget(currentLang, post.Meta.AvailableLanguages, siteData)
+	if target == "" {
+		return nil
+	}
+	targetURL := "/" + target + "/blog/" + post.Meta.Slug + "/"
+	stubDir := filepath.Join(opts.outDir, "blog", post.Meta.Slug)
+	if err := writeRedirectStub(stubDir, targetURL); err != nil {
+		return fmt.Errorf("writing redirect stub for post %s: %w", post.Meta.Slug, err)
+	}
+	logger.Info("generated redirect stub for post", "slug", post.Meta.Slug, "target", targetURL)
+	return nil
+}
+
+// renderAndWritePost renders a single post page and writes it to disk.
+// Returns the asset-copy map for deferred fingerprint writing.
+func renderAndWritePost(logger *slog.Logger, opts buildOptions, postTpl sitegen.PageTemplate, post posts.Post, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) (map[string]string, error) {
+	templateData := map[string]any{
+		"PageName": "post",
+		"SiteData": siteData,
+		"CurrentPost": map[string]any{
+			"title":         post.Meta.Title,
+			"date":          post.Meta.Date,
+			"summary":       post.Meta.Summary,
+			"thumbnail":     post.Meta.Thumbnail,
+			"canonical_url": post.Meta.CanonicalURL,
+			"tags":          post.Meta.Tags,
+			"body_html":     post.BodyHTML,
+		},
+	}
+
+	var rendered bytes.Buffer
+	if err := postTpl.Tmpl.ExecuteTemplate(&rendered, "layout", templateData); err != nil {
+		return nil, fmt.Errorf("rendering post %s: %w", post.Meta.Slug, err)
+	}
+
+	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, mirrorer)
+	if err != nil {
+		return nil, fmt.Errorf("transforming post %s: %w", post.Meta.Slug, err)
+	}
+
+	target := filepath.Join(opts.outDir, "blog", post.Meta.Slug, "index.html")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return nil, fmt.Errorf("creating directory for post %s: %w", post.Meta.Slug, err)
+	}
+	if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
+		return nil, fmt.Errorf(errFmtWriting, target, err)
+	}
+	logger.Info("generated post page", "slug", post.Meta.Slug, "target", target)
+	return toCopy, nil
 }
 
 // writeRSSFeed generates and writes dist/blog/feed.xml from the loaded posts.

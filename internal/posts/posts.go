@@ -17,14 +17,15 @@ import (
 
 // PostMeta holds the frontmatter fields parsed from a post's index.md.
 type PostMeta struct {
-	Title           string
-	Date            string
-	Slug            string
-	Summary         string
-	Thumbnail       string // root-relative path: /blog/slug/images/thumb.webp (empty if none)
-	Tags            []string
-	CanonicalURL    string
-	MediumPublished bool
+	Title              string
+	Date               string
+	Slug               string
+	Summary            string
+	Thumbnail          string // root-relative path: /blog/slug/images/thumb.webp (empty if none)
+	Tags               []string
+	CanonicalURL       string
+	MediumPublished    bool
+	AvailableLanguages []string // nil = available in all site languages
 }
 
 // Post holds the parsed content of a single blog post.
@@ -138,15 +139,26 @@ func parsePostMeta(fm map[string]any, slug, postDir string) (PostMeta, error) {
 		m.Thumbnail = "/blog/" + slug + "/" + clean
 	}
 
-	if tags, ok := fm["tags"].([]any); ok {
-		for _, t := range tags {
-			if s, ok := t.(string); ok {
-				m.Tags = append(m.Tags, s)
-			}
-		}
-	}
+	m.Tags = parseFMStringSlice(fm, "tags")
+	m.AvailableLanguages = parseFMStringSlice(fm, "available_languages")
 
 	return m, nil
+}
+
+// parseFMStringSlice extracts a []string from a frontmatter field that contains []any.
+// Returns nil if the key is absent or not a slice.
+func parseFMStringSlice(fm map[string]any, key string) []string {
+	items, ok := fm[key].([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // rewriteImagePaths rewrites ./images/foo.webp src attributes in the rendered HTML
