@@ -74,7 +74,9 @@ func extractLangVariants(siteData map[string]any) ([]langVariant, string) {
 		return nil, ""
 	}
 
-	defaultHreflang, _ := siteData["language_default"].(string)
+	// language_default is a URL prefix code ("en", "pt") — convert to hreflang
+	// after building the variants list so we can match by path prefix.
+	defaultPrefix, _ := siteData["language_default"].(string)
 
 	var variants []langVariant
 	for _, item := range items {
@@ -89,5 +91,15 @@ func extractLangVariants(siteData map[string]any) ([]langVariant, string) {
 		}
 		variants = append(variants, langVariant{hreflang: hreflang, path: path})
 	}
+
+	// Find the hreflang code for the default language by matching URL prefix.
+	defaultHreflang := ""
+	for _, v := range variants {
+		if strings.TrimPrefix(v.path, "/") == defaultPrefix {
+			defaultHreflang = v.hreflang
+			break
+		}
+	}
+
 	return variants, defaultHreflang
 }
