@@ -11,31 +11,31 @@ import (
 )
 
 type buildOptions struct {
-	websiteRoot           string
-	assetsDir             string
-	templatesDir          string
-	sitemapConfig         string
-	sitemapBaseURL        string
-	siteDataSource        string
-	outDir                string
-	postsDir              string
-	projectsFile          string
-	coursesFile           string
-	itemsPerPage          int
-	copyAssets            bool
-	inlineAssets          bool
+	websiteRoot             string
+	assetsDir               string
+	templatesDir            string
+	sitemapConfig           string
+	sitemapBaseURL          string
+	siteDataSource          string
+	outDir                  string
+	postsDir                string
+	projectsFile            string
+	coursesFile             string
+	itemsPerPage            int
+	copyAssets              bool
+	inlineAssets            bool
 	jsInlineThreshold       int
-	jsSharedInlineThreshold int            // -1 = disabled; use jsInlineThreshold for all scripts
+	jsSharedInlineThreshold int             // -1 = disabled; use jsInlineThreshold for all scripts
 	sharedScripts           map[string]bool // populated at runtime by collectSharedScripts
 	embedFonts              bool
-	inlineBodyCSS         bool
-	rasterInlineThreshold int
-	siblingBasePaths      []string
-	mirrorExternalAssets  bool
-	mirroredAssetsDir     string
-	enableSanity          bool
-	strictContract        bool
-	cleanURLs             bool
+	inlineBodyCSS           bool
+	rasterInlineThreshold   int
+	siblingBasePaths        []string
+	mirrorExternalAssets    bool
+	mirroredAssetsDir       string
+	enableSanity            bool
+	strictContract          bool
+	cleanURLs               bool
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
