@@ -7,6 +7,7 @@ import (
 	"ffreis-website-compiler/internal/buildcmd"
 	"ffreis-website-compiler/internal/exportsitedatacmd"
 	"ffreis-website-compiler/internal/logx"
+	"ffreis-website-compiler/internal/paritycmd"
 	"ffreis-website-compiler/internal/servecmd"
 	"ffreis-website-compiler/internal/validateassetscmd"
 	"ffreis-website-compiler/internal/validatedatacmd"
@@ -38,6 +39,8 @@ func Run(programName string) {
 		err = exportsitedatacmd.Run(args, logger)
 	case "validate-sanity":
 		err = validatesanitycmd.Run(args, logger)
+	case "check-lang-parity":
+		err = paritycmd.Run(args, logger)
 	case "help", "-h", "--help":
 		printUsage(programName)
 		return
@@ -66,6 +69,7 @@ Commands:
   validate-site-data  Validate site data against the required local site contract
   validate-assets     Validate local CSS/JS assets are reachable from rendered pages
   validate-sanity     Run a baseline set of sanity checks (site data contract + invariants + optional asset reachability)
+  check-lang-parity   Check YAML key parity across multilingual data directories
 
 Examples:
   website-compiler build -out dist
