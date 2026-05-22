@@ -166,7 +166,7 @@ func injectCachedScriptPreloads(html string) string {
 		sb.WriteString(src)
 		sb.WriteString("\">\n    ")
 	}
-	inject := strings.TrimRight(sb.String(), "\n    ")
+	inject := strings.TrimRight(sb.String(), "\n ")
 	if inject == "" {
 		return html
 	}
