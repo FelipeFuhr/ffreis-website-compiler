@@ -1,6 +1,7 @@
 name: Build All (Go Matrix)
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -23,6 +24,10 @@ jobs:
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-cross-build-matrix.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
     with:
       go-version: "1.25.8"
+      # PR builds linux only (x both arches). Full GOOS matrix (linux/darwin/
+      # windows) runs on push to main and on manual workflow_dispatch. These are
+      # cross-compiles on ubuntu (1x billing) but 6 jobs/PR-iteration adds up.
+      goos: ${{ github.event_name == 'pull_request' && 'linux' || 'linux,darwin,windows' }}
       working-directory: "."
       targets: |-
         ./cmd/build-static
