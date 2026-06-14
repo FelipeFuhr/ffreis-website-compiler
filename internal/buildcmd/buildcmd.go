@@ -65,6 +65,12 @@ var (
 
 	// baseHrefTagRE extracts the href value from a <base href="..."> tag.
 	baseHrefTagRE = regexp.MustCompile(`(?is)<base\s+[^>]*href=["']([^"']+)["'][^>]*>`)
+
+	// Regexes for validateRenderedPageStructure.
+	titleTagRE       = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+	h1TagRE          = regexp.MustCompile(`(?is)<h1[^>]*>(.*?)</h1>`)
+	metaDescriptionRE = regexp.MustCompile(`(?is)<meta\s+[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>|<meta\s+[^>]*content=["']([^"']*)["'][^>]*name=["']description["'][^>]*>`)
+	htmlTagsRE       = regexp.MustCompile(`<[^>]+>`)
 )
 
 // optionalContent holds the blog posts, projects, and courses loaded from
@@ -361,6 +367,9 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		if err := validatePageBaseHref(htmlOut, opts.basePath, slug, page.Name); err != nil {
 			return err
 		}
+		if err := validateRenderedPageStructure(page.Name, htmlOut); err != nil {
+			return err
+		}
 		htmlOut = injectHreflangAlternates(htmlOut, siteData, page.Name, opts.cleanURLs)
 		htmlOut = injectLangSwitcherHrefs(htmlOut, siteData, page.Name, opts.cleanURLs)
 		for k, v := range pageCopy {
@@ -429,6 +438,51 @@ func validatePageBaseHref(html, basePath, slug, pageName string) error {
 		return fmt.Errorf(
 			"page %q: <base href=%q> but page is served at %q — template must use pageSlug, not .PageName",
 			pageName, m[1], want,
+		)
+	}
+	return nil
+}
+
+// validateRenderedPageStructure catches a class of silent data-missing bugs:
+// templates that use bare {{dig}} for content fields get an empty string when
+// the data key is absent, and the build succeeds with invisible broken content.
+// This check fails the build when the resulting HTML has empty structural
+// elements that must always carry content.
+//
+// What it checks (defence-in-depth; templates should use {{required (dig ...)}}
+// as the first line of defence):
+//   - <title> must be non-empty
+//   - <h1> must be non-empty
+//   - <meta name="description"> must have a non-empty content attribute
+func validateRenderedPageStructure(pageName, html string) error {
+	var errs []string
+
+	if m := titleTagRE.FindStringSubmatch(html); m != nil {
+		if strings.TrimSpace(htmlTagsRE.ReplaceAllString(m[1], "")) == "" {
+			errs = append(errs, "<title> is empty")
+		}
+	}
+
+	if m := h1TagRE.FindStringSubmatch(html); m != nil {
+		if strings.TrimSpace(htmlTagsRE.ReplaceAllString(m[1], "")) == "" {
+			errs = append(errs, "<h1> is empty")
+		}
+	}
+
+	if m := metaDescriptionRE.FindStringSubmatch(html); m != nil {
+		content := m[1]
+		if content == "" {
+			content = m[2]
+		}
+		if strings.TrimSpace(content) == "" {
+			errs = append(errs, `<meta name="description"> content is empty`)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf(
+			"page %q has empty structural content (%s) — replace bare {{dig}} calls with {{required (dig ...) \"...\"}} for non-optional fields",
+			pageName, strings.Join(errs, "; "),
 		)
 	}
 	return nil
