@@ -324,7 +324,7 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return os.WriteFile(path, append(data, '\n'), 0o644) //nolint:gosec // scan-fix(gosec:G306): public web-asset JSON served over HTTP; 0644 is intentional, 0600 would break delivery
 }
 
 // contentHash is sha256 over the payload excluding the volatile metadata fields.
