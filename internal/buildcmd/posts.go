@@ -14,7 +14,11 @@ import (
 )
 
 // postToMap converts a Post to the map[string]any shape expected by templates.
-func postToMap(p posts.Post) map[string]any {
+// basePath is the language prefix (e.g. "/en" or "/pt") from site data's
+// base_path field. It is prepended to the blog href so that listing cards link
+// to the correct language-scoped URL (e.g. "/en/blog/slug/") rather than the
+// root-relative "/blog/slug/" which resolves to the wrong CloudFront origin.
+func postToMap(p posts.Post, basePath string) map[string]any {
 	tagsAny := make([]any, len(p.Meta.Tags))
 	for i, t := range p.Meta.Tags {
 		tagsAny[i] = t
@@ -23,9 +27,10 @@ func postToMap(p posts.Post) map[string]any {
 		"title":               p.Meta.Title,
 		"date":                p.Meta.Date,
 		"summary":             p.Meta.Summary,
-		"href":                "/blog/" + p.Meta.Slug + "/",
+		"href":                basePath + "/blog/" + p.Meta.Slug + "/",
 		"thumbnail":           p.Meta.Thumbnail,
 		"tags":                tagsAny,
+		"slug":                p.Meta.Slug,
 		"available_languages": toLangsAny(p.Meta.AvailableLanguages),
 	}
 }
@@ -45,9 +50,10 @@ func injectPostsBlogList(siteData map[string]any, postList []posts.Post, preview
 		return
 	}
 
+	basePath, _ := siteData["base_path"].(string)
 	items := make([]any, 0, len(postList))
 	for _, p := range postList {
-		items = append(items, postToMap(p))
+		items = append(items, postToMap(p, basePath))
 	}
 
 	// posts key keeps the preview slice for the home carousel.
@@ -69,9 +75,10 @@ func writeBlogPaginatedPages(
 	assetsDir string,
 	mirrorer *externalAssetMirrorer,
 ) ([]sitemap.URLItem, error) {
+	basePath, _ := siteData["base_path"].(string)
 	allItems := make([]any, len(postList))
 	for i, p := range postList {
-		allItems[i] = postToMap(p)
+		allItems[i] = postToMap(p, basePath)
 	}
 	return writePaginatedPages(paginatedPagesParams{
 		logger:      logger,
