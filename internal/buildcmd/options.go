@@ -53,6 +53,12 @@ type buildOptions struct {
 	trackerSiteID     string
 	trackerEndpoint   string
 	trackerCDNBase    string // override (mostly for tests); empty uses cdn.ffreis.com
+	// devData enables injection of window.__devBuild before </head> on every
+	// rendered page. devDataJSON holds the pre-serialised JSON payload built from
+	// siteData + content after loading; it is populated by buildDevDataPayload and
+	// stored here so transformPage can inject it without re-reading siteData.
+	devData     bool
+	devDataJSON string
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -96,6 +102,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.trackerSiteID, "tracker-site-id", "", "site identifier passed to Tracker.init (e.g. flemming, ffreis, petlook)")
 	fs.StringVar(&opts.trackerEndpoint, "tracker-endpoint", "", "ingestion endpoint passed to Tracker.init (e.g. https://events.flemming.com.br)")
 	fs.StringVar(&opts.trackerCDNBase, "tracker-cdn-base", "", "override the CDN base URL for the SDK script (defaults to https://cdn.ffreis.com)")
+	fs.BoolVar(&opts.devData, "dev-data", false, "inject window.__devBuild JSON before </head> on every page; for dev.ffreis.com only — never pass on prod builds")
 
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
