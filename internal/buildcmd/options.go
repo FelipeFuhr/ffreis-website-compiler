@@ -39,12 +39,12 @@ type buildOptions struct {
 	// hide: their pages, nav/footer entries, home-page blocks, and sitemap URLs are
 	// omitted. Injected into siteData as sections.<name>: false AFTER contract
 	// validation, so it needs no contract entry and cannot dangle.
-	disabledSections []string
-	mirrorExternalAssets    bool
-	mirroredAssetsDir       string
-	enableSanity            bool
-	strictContract          bool
-	cleanURLs               bool
+	disabledSections     []string
+	mirrorExternalAssets bool
+	mirroredAssetsDir    string
+	enableSanity         bool
+	strictContract       bool
+	cleanURLs            bool
 	// basePath mirrors site_data["base_path"] (e.g. "/en") and is populated by
 	// the build command after siteData is loaded. It is prepended to absolute
 	// asset references emitted by fingerprintLocalAssets so they remain
