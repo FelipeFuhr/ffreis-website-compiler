@@ -5,7 +5,17 @@ GOFMT ?= gofmt
 GOLANGCI_LINT ?= golangci-lint
 GITLEAKS ?= gitleaks
 GOVULNCHECK ?= govulncheck
-COVERAGE_MIN ?= 90
+# NOTE: this was `?= 90` but that number was never real — `coverage-gate` was
+# dead code (check_required_tools.sh, fetched only via `make hook-scripts`,
+# was missing locally; and no CI workflow ever called go-coverage.yml to
+# check it either), so a whole-module (./...) floor of 90% was never once
+# validated. Measured directly: 58.6% (internal/buildcmd and internal/sitegen
+# — both already flagged in the workspace AGENTS.md as >500-line "god files"
+# — sit at ~59-64%; several internal/*cmd packages have zero tests). Set to
+# a real, currently-passing ratchet baseline instead of an unenforced
+# aspirational number; raise it as buildcmd/sitegen get more test coverage.
+COVERAGE_MIN ?= 55
+INTEGRATION_COVERAGE_MIN ?= 75
 
 LEFTHOOK_VERSION ?= 1.7.10
 LEFTHOOK_DIR ?= $(CURDIR)/.bin
@@ -31,15 +41,15 @@ DIST_DIR ?= dist
 EXAMPLE_ROOT := examples/hello-world
 EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 
-.PHONY: mutation-test help info install build build-inline build-no-assets serve \
+.PHONY: mutation help info install build build-inline build-no-assets serve \
 	example-build clean clean-example container-build docker-build ci-list \
-	fmt fmt-check lint test test-race coverage-gate smoke-check quality-gates \
+	fmt fmt-check lint test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
 	validate plan \
 	secrets-scan-staged hook-generated-drift \
 	lefthook-bootstrap lefthook-install lefthook-run lefthook
 
-## mutation-test: run mutation testing with gremlins (slow — intended for CI/weekly)
-mutation-test: ## Run mutation testing with gremlins (slow — CI only)
+## mutation: run mutation testing with gremlins (slow — intended for CI/weekly)
+mutation: ## Run mutation testing with gremlins (slow — CI only)
 	@which gremlins >/dev/null 2>&1 || go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
 	gremlins unleash --threshold-efficacy $(MUTATION_THRESHOLD) $(MUTATION_PACKAGES)
 
@@ -122,6 +132,9 @@ test-race: ## Run tests with race detector
 coverage-gate: ## Run tests with coverage and fail if below COVERAGE_MIN
 	@COVERAGE_MIN="$(COVERAGE_MIN)" ./scripts/hooks/check_coverage_gate.sh
 
+integration-coverage-gate: ## Run //go:build integration tests with coverage and fail if below INTEGRATION_COVERAGE_MIN (no-op if no integration-tagged files exist)
+	@COVERAGE_MIN="$(INTEGRATION_COVERAGE_MIN)" ./scripts/hooks/check_integration_coverage_gate.sh
+
 smoke-check: ## Build hello-world example and validate output
 	@set -euo pipefail; \
 	tmp_dir="$$(mktemp -d)"; \
@@ -138,6 +151,7 @@ quality-gates: ## Run strict pre-push quality gates
 	$(MAKE) test
 	$(MAKE) test-race
 	$(MAKE) coverage-gate
+	$(MAKE) integration-coverage-gate
 	$(GOVULNCHECK) ./...
 	$(MAKE) smoke-check
 
@@ -168,7 +182,8 @@ container-build: ## Build CLI container image
 docker-build: container-build ## Backward-compatible alias
 
 
-PLATFORM_STANDARDS_SHA := 3c787edb4e96ddea2e86b2add2c32139685e8db7# v1.2.1
+# v1.10.0
+PLATFORM_STANDARDS_SHA := 273842219190739c6b462c21331b234271446b13
 PLATFORM_STANDARDS_RAW := https://raw.githubusercontent.com/FelipeFuhr/ffreis-platform-standards
 
 HOOK_SCRIPTS := \

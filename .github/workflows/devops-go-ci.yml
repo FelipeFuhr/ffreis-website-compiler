@@ -27,7 +27,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # for golangci-lint-action
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-quick-checks.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-quick-checks.yml@86fd6e3b73fbe6d4f83280ef2661605d441a20e3 # v1.4.0
     with:
       go-version: "1.25.8"
       working-directory: "."
@@ -37,20 +37,38 @@ jobs:
     needs: [quick-checks]
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@86fd6e3b73fbe6d4f83280ef2661605d441a20e3 # v1.4.0
     with:
       go-version: "1.25.8"
       working-directory: "."
       run-govulncheck: false
 
-  integration:
+  # Whole-module (./...) line-coverage gate. Threshold 55, not the fleet's
+  # usual 75: this is a real, currently-passing floor (measured 58.6%), not
+  # an aspirational one — see the COVERAGE_MIN comment in the Makefile.
+  coverage:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     needs: [quick-checks]
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-coverage.yml@86fd6e3b73fbe6d4f83280ef2661605d441a20e3 # v1.4.0
     with:
       go-version: "1.25.8"
       working-directory: "."
-      test-tags: "integration"
-      run-govulncheck: false
+      coverage-threshold: 55
+
+  # Replaces the old vacuous "integration" job (go-test.yml + test-tags:
+  # integration): zero files anywhere carry the //go:build integration tag,
+  # so that job silently re-ran the normal unit suite under a different
+  # label. This reusable workflow detects the same condition and skips with
+  # an honest ::notice:: instead of a false pass.
+  integration-coverage:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    needs: [quick-checks]
+    permissions:
+      contents: read
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-integration-coverage.yml@86fd6e3b73fbe6d4f83280ef2661605d441a20e3 # v1.4.0
+    with:
+      go-version: "1.25.8"
+      working-directory: "."
+      coverage-threshold: 75

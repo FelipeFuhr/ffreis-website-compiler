@@ -13,7 +13,10 @@
 
 # Code coverage profiles and other test artifacts
 *.out
-coverage.*
+# Anchored to repo root — an unanchored `coverage.*` would also match a
+# future .github/workflows/coverage.yml, silently keeping it untracked
+# (confirmed as a live bug in the sibling ffreis-platform-bootstrap repo).
+/coverage.*
 *.coverprofile
 profile.cov
 
@@ -33,7 +36,14 @@ go.work.sum
 cmd/build-static/build-static
 cmd/website-compiler/website-compiler
 
-scripts/hooks/
+# Fetched fresh by `make hook-scripts` from ffreis-platform-standards — not
+# authored here. Listed individually (not `scripts/hooks/`) so repo-authored
+# scripts in the same directory, like check_coverage_gate.sh, can be tracked.
+scripts/hooks/check_merge_markers.sh
+scripts/hooks/check_large_files.sh
+scripts/hooks/check_binary_files.sh
+scripts/hooks/check_commit_msg.sh
+scripts/hooks/check_required_tools.sh
 scripts/bootstrap_lefthook.sh
 
 # Built binaries at repo root (from go build ./cmd/...)
