@@ -13,6 +13,13 @@ on:
   push:
     branches: [main]
 
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "sonar-project.properties"
+      - ".github/workflows/**"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

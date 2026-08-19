@@ -24,6 +24,8 @@ PREFIX ?= ffreis
 
 MUTATION_PACKAGES ?= ./internal/...
 MUTATION_THRESHOLD ?= 60
+FUZZ_PACKAGES ?= ./internal/...
+FUZZ_TIME ?= 30s
 IMAGE_PROVIDER ?=
 IMAGE_TAG ?= local
 COMPILER_IMAGE_NAME ?= website-compiler-cli
@@ -41,7 +43,7 @@ DIST_DIR ?= dist
 EXAMPLE_ROOT := examples/hello-world
 EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 
-.PHONY: mutation help info install build build-inline build-no-assets serve \
+.PHONY: mutation-test mutation fuzz help info install build build-all build-inline build-no-assets serve \
 	example-build clean clean-example container-build docker-build ci-list \
 	fmt fmt-check lint test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
 	validate plan \
@@ -52,6 +54,11 @@ EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 mutation: ## Run mutation testing with gremlins (slow — CI only)
 	@which gremlins >/dev/null 2>&1 || go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
 	gremlins unleash --threshold-efficacy $(MUTATION_THRESHOLD) $(MUTATION_PACKAGES)
+
+# scan-fix(lefthook:release-tier): platform-standards' lefthook/go.yml release
+# tier requires `make mutation` unconditionally (no graceful skip). Alias so
+# the existing mutation-test target satisfies the contract.
+mutation: mutation-test ## Alias for the lefthook release tier's `make mutation`
 
 help: ## Show available compiler commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target> WEBSITE_ROOT=path [DIST_DIR=path]\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -71,6 +78,15 @@ info: ## Print effective variables
 
 install: ## Install website-compiler in GOPATH/bin
 	go install ./cmd/website-compiler
+
+# scan-fix(lefthook:release-tier): platform-standards' lefthook/go.yml release
+# tier requires `make build-all` unconditionally (no graceful skip). This repo
+# has no cross-compile matrix — `build` builds a *website*, not the CLI — so
+# build-all compiles every package (both cmd/website-compiler and
+# cmd/build-static) the same way `validate` already does, to catch build
+# breaks anywhere in the module.
+build-all: ## Compile all packages — required by the lefthook release tier's cross-build
+	go build -o /dev/null ./...
 
 build: ## Build static site
 	@test -n "$(WEBSITE_ROOT)" || (echo "WEBSITE_ROOT is required, e.g. WEBSITE_ROOT=../my-website" && exit 1)
@@ -128,6 +144,17 @@ test: ## Run unit tests
 
 test-race: ## Run tests with race detector
 	go test -race ./...
+
+## fuzz: run all Fuzz* targets for FUZZ_TIME each (default 30s — quick CI smoke-test)
+## (required by lefthook release tier; no-ops cleanly if no Fuzz* funcs exist)
+fuzz:
+	@for pkg in $$(go list $(FUZZ_PACKAGES)); do \
+		targets=$$(go test -list 'Fuzz.*' "$$pkg" 2>/dev/null | grep '^Fuzz' || true); \
+		for target in $$targets; do \
+			echo "→ $$pkg/$$target ($(FUZZ_TIME))"; \
+			go test -run='^$$' -fuzz="^$${target}$$" -fuzztime="$(FUZZ_TIME)" "$$pkg"; \
+		done; \
+	done
 
 coverage-gate: ## Run tests with coverage and fail if below COVERAGE_MIN
 	@COVERAGE_MIN="$(COVERAGE_MIN)" ./scripts/hooks/check_coverage_gate.sh

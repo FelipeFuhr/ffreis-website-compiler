@@ -40,6 +40,8 @@ regexes = [
   'REPLACE_ME',
   '<[A-Z_]+>',
   'example\.com',
+  # Google reCAPTCHA's published test site key, used by the CLI validation path.
+  '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
   # Well-known documentation placeholder account IDs
   '123456789012',
   '000000000000',
