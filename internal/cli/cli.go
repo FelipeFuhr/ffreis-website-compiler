@@ -7,6 +7,7 @@ import (
 	"ffreis-website-compiler/internal/buildcmd"
 	"ffreis-website-compiler/internal/exportsitedatacmd"
 	"ffreis-website-compiler/internal/logx"
+	"ffreis-website-compiler/internal/outputtestcmd"
 	"ffreis-website-compiler/internal/paritycmd"
 	"ffreis-website-compiler/internal/servecmd"
 	"ffreis-website-compiler/internal/validateassetscmd"
@@ -41,6 +42,8 @@ func Run(programName string) {
 		err = validatesanitycmd.Run(args, logger)
 	case "check-lang-parity":
 		err = paritycmd.Run(args, logger)
+	case "test-output":
+		err = outputtestcmd.Run(args, logger)
 	case "help", "-h", "--help":
 		printUsage(programName)
 		return
@@ -70,6 +73,7 @@ Commands:
   validate-assets     Validate local CSS/JS assets are reachable from rendered pages
   validate-sanity     Run a baseline set of sanity checks (site data contract + invariants + optional asset reachability)
   check-lang-parity   Check YAML key parity across multilingual data directories
+  test-output         Run a website-owned manifest against compiled static output
 
 Examples:
   website-compiler build -out dist
@@ -78,5 +82,6 @@ Examples:
   website-compiler validate-site-data -website-root ../my-website
   website-compiler validate-assets -website-root ../my-website
   website-compiler validate-sanity -website-root ../my-website
+  website-compiler test-output -website-root ../my-website -out ../my-website/dist
 `, programName)
 }

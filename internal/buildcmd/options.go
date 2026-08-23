@@ -35,16 +35,18 @@ type buildOptions struct {
 	inlineBodyCSS           bool
 	rasterInlineThreshold   int
 	siblingBasePaths        []string
+	mirrorExternalAssets    bool
+	mirroredAssetsDir       string
+	enableSanity            bool
+	strictContract          bool
+	cleanURLs               bool
+	runOutputTests          bool
+	outputTestManifest      string
 	// disabledSections lists content sections ("blog", "courses", "projects") to
 	// hide: their pages, nav/footer entries, home-page blocks, and sitemap URLs are
 	// omitted. Injected into siteData as sections.<name>: false AFTER contract
 	// validation, so it needs no contract entry and cannot dangle.
-	disabledSections     []string
-	mirrorExternalAssets bool
-	mirroredAssetsDir    string
-	enableSanity         bool
-	strictContract       bool
-	cleanURLs            bool
+	disabledSections []string
 	// basePath mirrors site_data["base_path"] (e.g. "/en") and is populated by
 	// the build command after siteData is loaded. It is prepended to absolute
 	// asset references emitted by fingerprintLocalAssets so they remain
@@ -98,6 +100,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
 	fs.BoolVar(&opts.strictContract, "strict-contract", true, "fail if any allowed contract path is not referenced by any template (disable for local dev with in-progress templates)")
 	fs.BoolVar(&opts.cleanURLs, "clean-urls", false, "output each page as <name>/index.html instead of <name>.html for extension-free URLs; updates sitemap accordingly")
+	fs.BoolVar(&opts.runOutputTests, "run-output-tests", false, "run the website-owned compiled-output manifest after a successful build")
+	fs.StringVar(&opts.outputTestManifest, "output-test-manifest", "", "website-owned output test manifest; defaults to tests/output.yaml under website-root when -run-output-tests is set")
 	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
 	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
 	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")

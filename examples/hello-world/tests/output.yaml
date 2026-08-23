@@ -1,0 +1,11 @@
+# This manifest belongs to the website, not the compiler. It demonstrates the
+# smallest useful post-compilation smoke test for a static site.
+version: 1
+pages:
+  - name: home page
+    path: /
+    contains:
+      - Hello World Example
+      - Hello, world.
+    not_contains:
+      - TODO

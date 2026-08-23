@@ -13,6 +13,7 @@ import (
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/linkcheck"
+	"ffreis-website-compiler/internal/outputtestcmd"
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/projects"
 	"ffreis-website-compiler/internal/sitegen"
@@ -166,6 +167,15 @@ func Run(args []string, logger *slog.Logger) error {
 
 	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs, siteDataResult.Data); err != nil {
 		return err
+	}
+	if opts.runOutputTests {
+		args := []string{"-website-root", opts.websiteRoot, "-out", opts.outDir}
+		if opts.outputTestManifest != "" {
+			args = append(args, "-manifest", opts.outputTestManifest)
+		}
+		if err := outputtestcmd.Run(args, logger); err != nil {
+			return fmt.Errorf("testing compiled output: %w", err)
+		}
 	}
 
 	logger.Info("build completed", "out_dir", opts.outDir)
