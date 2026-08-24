@@ -117,7 +117,7 @@ fmt: ## Format all Go files in place
 	$(GOFMT) -w .
 
 fmt-check: ## Fail if Go files are not gofmt-formatted
-	@./scripts/hooks/check_required_tools.sh $(GOFMT)
+	@command -v $(GOFMT) >/dev/null 2>&1 || (echo "Missing tool: $(GOFMT). Install Go from https://go.dev/dl/" && exit 1)
 	@out="$$(find . -type f -name '*.go' -not -path './vendor/*' -not -path './.git/*' -print0 | xargs -0 -r $(GOFMT) -l)"; \
 	if [ -n "$$out" ]; then \
 		echo "Unformatted Go files:"; \
@@ -166,7 +166,7 @@ smoke-check: ## Build hello-world example and validate output
 	@set -euo pipefail; \
 	tmp_dir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp_dir"' EXIT; \
-	go run ./cmd/build-static -website-root ./examples/hello-world -out "$$tmp_dir"; \
+	go run ./cmd/build-static -website-root ./examples/hello-world -out "$$tmp_dir" -run-output-tests; \
 	test -f "$$tmp_dir/index.html"
 
 secrets-scan-staged: ## Scan staged diff for secrets

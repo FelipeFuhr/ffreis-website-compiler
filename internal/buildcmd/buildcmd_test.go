@@ -83,6 +83,21 @@ func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
 	}
 }
 
+func TestRun_ExecutesWebsiteOwnedOutputTests(t *testing.T) {
+	websiteRoot, err := filepath.Abs(filepath.Join("..", "..", "examples", "hello-world"))
+	if err != nil {
+		t.Fatalf("resolving website root: %v", err)
+	}
+	outDir := t.TempDir()
+	if err := Run([]string{
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
+		"-run-output-tests",
+	}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf("Run() with output tests: %v", err)
+	}
+}
+
 func TestRun_PassesPageNameToTemplates(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.WriteFiles(t, map[string]string{

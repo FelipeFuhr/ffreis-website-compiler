@@ -32,6 +32,7 @@ export-site-data      Export merged site data (incl. layers) as JSON/YAML
 validate-site-data    Validate site data against the local site contract
 validate-assets       Validate rendered pages only reference reachable local CSS/JS
 validate-sanity       Run baseline sanity checks (contract + invariants + optional assets)
+test-output           Run a website-owned manifest against compiled output
 check-lang-parity     Check YAML key parity across multilingual data directories
 help                  Show usage
 ```
@@ -61,6 +62,8 @@ Common flags (defaults in parentheses):
 | `-projects-file` / `-courses-file` | YAML data files enabling paginated `/projects/` and `/courses/` |
 | `-sanity` (`true`) | Fail the build if sanity checks fail |
 | `-strict-contract` (`true`) | Fail if an allowed contract path is never referenced by a template |
+| `-run-output-tests` (`false`) | Run the website-owned `tests/output.yaml` manifest after compiling |
+| `-output-test-manifest` | Override the default output-test manifest path |
 | `-tracker-enabled` (`false`) | Inject the tracker SDK + `Tracker.init(...)`; needs `-tracker-sdk-version`, `-tracker-site-id`, `-tracker-endpoint` |
 
 ### serve
@@ -77,7 +80,37 @@ Flags: `-website-root` (`.`), `-addr` (`:8080`), `-site-data`, `-sanity` (`true`
 website-compiler validate-site-data -website-root ../my-website
 website-compiler validate-assets    -website-root ../my-website
 website-compiler validate-sanity    -website-root ../my-website
+website-compiler test-output        -website-root ../my-website -out ../my-website/dist
 ```
+
+### Website-owned compiled-output tests
+
+`test-output` is a deliberately small, declarative post-compilation test runner.
+The compiler owns the runner only; routes and assertions stay in the website under
+`tests/output.yaml`, so adding a test for one product never changes compiler logic
+or another website's build.
+
+```yaml
+version: 1
+pages:
+  - name: checkout
+    path: /checkout/
+    contains:
+      - "Checkout"
+      - "data-payment-scenario"
+    not_contains:
+      - "real_provider_secret"
+  - name: retired-route
+    path: /legacy-checkout/
+    exists: false
+```
+
+`path` is a public route (`/checkout/` resolves to `checkout/index.html`) or a
+relative output file. Each entry defaults to `exists: true`; use `contains` and
+`not_contains` for stable public HTML assertions. Paths cannot escape the output
+directory and manifests cannot execute shell commands. Run it explicitly after a
+build, or use `build -run-output-tests` / `build-static -run-output-tests` to make
+it part of the same compiler invocation.
 
 All accept `-website-root`, `-templates-dir`, `-site-data` (and `validate-assets` also `-assets-dir`). `validate-sanity` adds `-check-assets` (`true`) and runs executable checks from `<sanity-dir>/checks.d/`.
 

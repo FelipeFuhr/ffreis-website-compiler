@@ -53,3 +53,18 @@ func TestParseBuildOptions_ContentSourceGuard(t *testing.T) {
 		}
 	})
 }
+
+func TestParseBuildOptions_OutputTests(t *testing.T) {
+	t.Parallel()
+	opts, err := parseBuildOptions([]string{
+		"-website-root", "site",
+		"-run-output-tests",
+		"-output-test-manifest", "tests/release.yaml",
+	})
+	if err != nil {
+		t.Fatalf("parseBuildOptions() error = %v", err)
+	}
+	if !opts.runOutputTests || opts.outputTestManifest != "tests/release.yaml" {
+		t.Fatalf("output test options = %+v, want enabled custom manifest", opts)
+	}
+}
