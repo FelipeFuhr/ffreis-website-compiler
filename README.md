@@ -112,6 +112,54 @@ directory and manifests cannot execute shell commands. Run it explicitly after a
 build, or use `build -run-output-tests` / `build-static -run-output-tests` to make
 it part of the same compiler invocation.
 
+#### Composable rules
+
+The `pages:` form above stays supported and is the right choice for a handful of
+literal assertions. When a site needs the same assertion on every route, a regex,
+or a check that only the whole site can answer, use `rules:` instead. A rule is a
+*selector* (where it applies) plus *checks* (what it asserts); the two are
+independent, so a check can be reused at any scope.
+
+```yaml
+version: 1
+include:
+  - a11y-baseline           # reusable bundle; see below
+rules:
+  - name: checkout collects no card data
+    routes: ["/checkout/"]
+    checks:
+      - type: not_matches
+        pattern: '(?i)name="(cardnumber|cvv|cvc)"'
+  - name: every page outside admin shares the primary navigation
+    routes: ["*"]
+    exclude_routes: ["/admin/"]
+    checks:
+      - type: matches
+        pattern: '<nav[^>]+aria-label='
+  - name: english marketing copy
+    langs: ["en"]           # never evaluated against another language tree
+    checks:
+      - type: contains
+        value: "Start learning"
+corpus:
+  - type: link_integrity
+    base_path: /en
+```
+
+Built-in check types: `contains`, `not_contains`, `matches`, `not_matches`, and
+the whole-site `link_integrity` (which delegates to the same validator `build`
+runs, so the two can never disagree). Presets: `a11y-baseline`.
+
+**Language scoping is the point of `langs:`.** Without it, a copy assertion
+written for one language tree is silently evaluated against every other one,
+which forces a bilingual site to keep untranslated text in order to stay green.
+Scope copy assertions by language, or assert on `data-*` markers instead, which
+are language-neutral by construction.
+
+Adding a check type means registering one factory — the runner, the manifest
+schema and other checks are untouched. Findings are collected rather than
+failing fast, so one run reports everything that is wrong.
+
 All accept `-website-root`, `-templates-dir`, `-site-data` (and `validate-assets` also `-assets-dir`). `validate-sanity` adds `-check-assets` (`true`) and runs executable checks from `<sanity-dir>/checks.d/`.
 
 ### check-lang-parity
