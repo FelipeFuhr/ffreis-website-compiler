@@ -21,11 +21,19 @@ type options struct {
 	websiteRoot string
 	out         string
 	manifest    string
+	lang        string
 }
 
 type manifest struct {
-	Version int        `yaml:"version"`
-	Pages   []pageTest `yaml:"pages"`
+	Version int `yaml:"version"`
+	// Include composes named rule bundles, e.g. "a11y-baseline".
+	Include []string `yaml:"include"`
+	// Pages is the original per-file form: existence plus literal assertions.
+	Pages []pageTest `yaml:"pages"`
+	// Rules is the composable form: a selector plus registered checks.
+	Rules []ruleSpec `yaml:"rules"`
+	// Corpus holds whole-site checks, such as link integrity.
+	Corpus []map[string]any `yaml:"corpus"`
 }
 
 type pageTest struct {
@@ -92,6 +100,33 @@ func Run(args []string, logger *slog.Logger) error {
 			return err
 		}
 	}
+
+	suite, err := buildSuite(tests, registry(outRoot))
+	if err != nil {
+		return fmt.Errorf("building output test suite from %s: %w", manifestPath, err)
+	}
+	rules := len(suite.Rules) + len(suite.Corpus)
+	if rules > 0 {
+		targets, err := loadTargets(outRoot, opts.lang)
+		if err != nil {
+			return fmt.Errorf("loading compiled pages from %s: %w", outRoot, err)
+		}
+		if findings := suite.Run(targets); len(findings) > 0 {
+			// Report every finding, not just the first: one run should surface
+			// everything that is wrong.
+			for _, finding := range findings {
+				logger.Error("compiled output check failed",
+					"rule", finding.Rule, "check", finding.Check,
+					"lang", finding.Lang, "route", finding.Route, "detail", finding.Message)
+			}
+			return fmt.Errorf("%d compiled output check(s) failed", len(findings))
+		}
+		logger.Info("compiled output checks passed",
+			"manifest", manifestPath, "output", outRoot,
+			"pages", len(tests.Pages), "rules", rules, "targets", len(targets))
+		return nil
+	}
+
 	logger.Info("compiled output tests passed", "manifest", manifestPath, "output", outRoot, "pages", len(tests.Pages))
 	return nil
 }
@@ -102,6 +137,7 @@ func parseOptions(args []string) (options, error) {
 	fs.StringVar(&opts.websiteRoot, "website-root", ".", "website project root; used to resolve the default tests/output.yaml manifest")
 	fs.StringVar(&opts.out, "out", "dist", "compiled output directory to test")
 	fs.StringVar(&opts.manifest, "manifest", "", "website-owned output test manifest (defaults to tests/output.yaml under website-root)")
+	fs.StringVar(&opts.lang, "lang", "", "language tree being tested; enables language-scoped rules and link resolution")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
@@ -112,8 +148,8 @@ func validateManifest(tests manifest) error {
 	if tests.Version != 1 {
 		return fmt.Errorf("version must be 1")
 	}
-	if len(tests.Pages) == 0 {
-		return fmt.Errorf("pages must contain at least one test")
+	if len(tests.Pages) == 0 && len(tests.Rules) == 0 && len(tests.Corpus) == 0 && len(tests.Include) == 0 {
+		return fmt.Errorf("manifest must declare at least one of: pages, rules, corpus, include")
 	}
 	seen := make(map[string]struct{}, len(tests.Pages))
 	for i, page := range tests.Pages {
