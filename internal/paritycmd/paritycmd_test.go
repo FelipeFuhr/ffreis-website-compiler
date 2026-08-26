@@ -96,8 +96,8 @@ func TestCompareAllLangs_clean(t *testing.T) {
 	writeYAML(t, dir, "en", "50-ui.yaml", "nav:\n  home: Home\nfooter:\n  text: Footer\n")
 	writeYAML(t, dir, "pt", "50-ui.yaml", "nav:\n  home: Início\nfooter:\n  text: Rodapé\n")
 
-	enLD, _ := loadLangData(dir, "en", 3)
-	ptLD, _ := loadLangData(dir, "pt", 3)
+	enLD, _ := loadLangData(dir, "en")
+	ptLD, _ := loadLangData(dir, "pt")
 
 	report := compareAllLangs([]LangData{enLD, ptLD}, SkipConfig{Skip: map[string]map[string]struct{}{}}, Options{DataRoot: dir, MaxDepth: 3})
 	if len(report.FilesOnlyInLang) != 0 {
@@ -113,8 +113,8 @@ func TestCompareAllLangs_keyMismatch(t *testing.T) {
 	writeYAML(t, dir, "en", "50-ui.yaml", "nav:\n  home: Home\nextra_section:\n  key: val\n")
 	writeYAML(t, dir, "pt", "50-ui.yaml", "nav:\n  home: Início\n")
 
-	enLD, _ := loadLangData(dir, "en", 3)
-	ptLD, _ := loadLangData(dir, "pt", 3)
+	enLD, _ := loadLangData(dir, "en")
+	ptLD, _ := loadLangData(dir, "pt")
 
 	report := compareAllLangs([]LangData{enLD, ptLD}, SkipConfig{Skip: map[string]map[string]struct{}{}}, Options{DataRoot: dir, MaxDepth: 3})
 	if len(report.KeyMismatches) == 0 {
@@ -131,8 +131,8 @@ func TestCompareAllLangs_fileMissing(t *testing.T) {
 	writeYAML(t, dir, "en", "99-new.yaml", "key: value\n")
 	// pt does not have 99-new.yaml
 
-	enLD, _ := loadLangData(dir, "en", 3)
-	ptLD, _ := loadLangData(dir, "pt", 3)
+	enLD, _ := loadLangData(dir, "en")
+	ptLD, _ := loadLangData(dir, "pt")
 
 	report := compareAllLangs([]LangData{enLD, ptLD}, SkipConfig{Skip: map[string]map[string]struct{}{}}, Options{DataRoot: dir, MaxDepth: 3})
 	if len(report.FilesOnlyInLang) == 0 {
@@ -152,8 +152,8 @@ func TestCompareAllLangs_skipApplied(t *testing.T) {
 		"en": {"10-courses.yaml": {}},
 	}}
 
-	enLD, _ := loadLangData(dir, "en", 3)
-	ptLD, _ := loadLangData(dir, "pt", 3)
+	enLD, _ := loadLangData(dir, "en")
+	ptLD, _ := loadLangData(dir, "pt")
 
 	report := compareAllLangs([]LangData{enLD, ptLD}, sc, Options{DataRoot: dir})
 	if len(report.FilesOnlyInLang) != 0 {

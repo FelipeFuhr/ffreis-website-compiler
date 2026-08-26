@@ -14,7 +14,11 @@ GOVULNCHECK ?= govulncheck
 # — sit at ~59-64%; several internal/*cmd packages have zero tests). Set to
 # a real, currently-passing ratchet baseline instead of an unenforced
 # aspirational number; raise it as buildcmd/sitegen get more test coverage.
-COVERAGE_MIN ?= 55
+# Raised 55 -> 80 alongside the test pass that took real coverage from 65.6% to
+# 80.3%. This is a ratchet: dropping below it fails the build rather than
+# quietly eroding. Raise it again when coverage climbs; never lower it to make a
+# change fit.
+COVERAGE_MIN ?= 80
 INTEGRATION_COVERAGE_MIN ?= 75
 
 LEFTHOOK_VERSION ?= 1.7.10

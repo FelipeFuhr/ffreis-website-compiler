@@ -435,6 +435,24 @@ skip:
 ```
 A skip entry for any lang suppresses the entire file from all presence and key checks.
 
+## Coverage gate
+
+`make coverage-gate` fails the build below `COVERAGE_MIN` (currently **80%**,
+raised from 55% alongside the test pass that took real coverage from 65.6% to
+80.3%). It is a **ratchet**: raise it when coverage climbs, never lower it to
+make a change fit. `make quality-gates` and the lefthook `complex` tier both
+call it, so a drop is caught before promotion rather than in review.
+
+Two things the gate cannot tell you, so they are conventions instead:
+
+- **Cover behaviour, not statements.** Every package added in that pass tests
+  both the wanted and the unwanted path — the guard firing *and* the permitted
+  shape still working — because a guard that rejects everything passes a
+  rejection-only suite.
+- **Prove a new guard fails without its fix.** The tests protecting a specific
+  defect (section gates, draft filtering, the mock marker, `-skip-keys`) were
+  each verified by removing the fix and confirming the matching test goes red.
+
 ## Keeping this file current
 
 - **If you discover a fact not reflected here:** add it before finishing your task.
