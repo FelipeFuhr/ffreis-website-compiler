@@ -17,14 +17,18 @@ import (
 
 // PostMeta holds the frontmatter fields parsed from a post's index.md.
 type PostMeta struct {
-	Title              string
-	Date               string
-	Slug               string
-	Summary            string
-	Thumbnail          string // root-relative path: /blog/slug/images/thumb.webp (empty if none)
-	Tags               []string
-	CanonicalURL       string
-	MediumPublished    bool
+	Title           string
+	Date            string
+	Slug            string
+	Summary         string
+	Thumbnail       string // root-relative path: /blog/slug/images/thumb.webp (empty if none)
+	Tags            []string
+	CanonicalURL    string
+	MediumPublished bool
+	// Draft keeps an unfinished post out of every build that does not pass
+	// -include-drafts, so a draft can be committed and previewed on dev without
+	// relying on branch discipline to keep it off production.
+	Draft              bool
 	AvailableLanguages []string // nil = available in all site languages
 }
 
@@ -126,6 +130,9 @@ func parsePostMeta(fm map[string]any, slug, postDir string) (PostMeta, error) {
 	if v, ok := fm["medium_published"].(bool); ok {
 		m.MediumPublished = v
 	}
+	if v, ok := fm["draft"].(bool); ok {
+		m.Draft = v
+	}
 
 	// Validate slug matches directory name
 	if slugField, ok := fm["slug"].(string); ok && slugField != "" && slugField != slug {
@@ -217,4 +224,16 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, data, 0o644) //nolint:gosec
+}
+
+// WithoutDrafts returns the posts that are not marked draft in frontmatter.
+// Applied by the build unless -include-drafts is set.
+func WithoutDrafts(list []Post) []Post {
+	out := make([]Post, 0, len(list))
+	for _, p := range list {
+		if !p.Meta.Draft {
+			out = append(out, p)
+		}
+	}
+	return out
 }

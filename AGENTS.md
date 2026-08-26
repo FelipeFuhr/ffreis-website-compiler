@@ -317,6 +317,59 @@ post pages receive a `CurrentPost` map with: `title`, `date`, `summary`, `thumbn
 **New dependency:** `github.com/yuin/goldmark` + `github.com/yuin/goldmark-meta`
 for Markdown rendering and frontmatter parsing.
 
+## Content section gates (`flags/flags.json`, `-enable-sections`, `-disable-sections`)
+
+A site can hide whole content sections (`blog`, `courses`, `projects`): their
+pages, nav/footer links, home-page blocks, RSS and sitemap entries all disappear.
+Which sections ship is resolved in one place, `resolveSectionGates` in
+`internal/buildcmd/sectiongates.go`, and there are two modes.
+
+**Registry mode (preferred).** A site declares `flags/flags.json` at its root — a
+`section_<name>` gate flag per known section, each with a boolean `default`.
+The compiler discovers the file automatically (like `sitemap.yaml`). Per-environment
+overrides come in as `-enable-sections a,b`; `-disable-sections` still forces a
+section off and wins over `-enable-sections` on conflict.
+
+The point of the registry is that **the safe state no longer requires configuration**.
+When a not-ready section declares `default: false`, a build whose per-environment
+config goes missing — dropped in a promote, lost to a branch divergence — falls back
+to "off" and publishes nothing. Three things are hard errors, so an undeclared or
+mistyped point of variation fails the build instead of deciding silently:
+
+- a section in `knownSections` with no gate declared in a registry that exists;
+- a gate declared for a section the compiler does not know (a dangling declaration);
+- a name in `-enable-sections`/`-disable-sections` that the registry does not declare.
+
+**Legacy mode.** With no `flags/flags.json`, sections are on unless
+`-disable-sections` names them, and `-enable-sections` is rejected as meaningless.
+Only for sites that have not adopted a registry yet.
+
+Schema: `flags/flag-registry.schema.json` (fleet reference copy in
+`heavy-heater/flags/`). Registry parsing lives in `internal/flagregistry`.
+
+## Drafts (`-include-drafts`)
+
+Posts (`draft: true` in frontmatter), projects and courses (`draft: true` in YAML)
+are dropped from every build that does not pass `-include-drafts`, which defaults
+to off and is never defaulted on by the registry. This lets an unfinished item be
+committed to the content branch and previewed on dev without branch discipline
+being the only thing keeping it off production. The deployer refuses to set
+`include_drafts` for a non-dev environment.
+
+## Mock content isolation (`-content-source`)
+
+`-content-source` is `prod` (default) or `mock`. A non-mock build that is handed
+mock content is a **fatal error**, detected two independent ways in
+`internal/buildcmd/mockguard.go`:
+
+1. a `/mock/` path segment, and
+2. a committed `.mock-content` marker file at the corpus root (searched up to
+   `mockMarkerSearchDepth` ancestors of each content path).
+
+The marker exists because the path check alone is defeated by renaming a directory;
+the marker travels with the content. Mock content reaching production is the failure
+being guarded, so neither check is ever a warning.
+
 ## Template extensibility blocks
 
 Two `{{block}}` overrides in `head.gohtml` allow page templates to inject custom

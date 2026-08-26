@@ -230,6 +230,9 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		if err != nil {
 			return nil, fmt.Errorf("loading blog posts: %w", err)
 		}
+		if !opts.includeDrafts {
+			loaded = posts.WithoutDrafts(loaded)
+		}
 		if err := posts.CopyPostImages(loaded, opts.outDir); err != nil {
 			return nil, fmt.Errorf("copying post images: %w", err)
 		}
@@ -242,6 +245,9 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		if err != nil {
 			return nil, fmt.Errorf("loading projects: %w", err)
 		}
+		if !opts.includeDrafts {
+			loaded = projects.WithoutDrafts(loaded)
+		}
 		content.projects = loaded
 		injectProjectsHomeCarousel(siteData, loaded, opts.itemsPerPage)
 	}
@@ -250,6 +256,9 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		loaded, err := courses.LoadCoursesFile(opts.coursesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading courses: %w", err)
+		}
+		if !opts.includeDrafts {
+			loaded = courses.WithoutDrafts(loaded)
 		}
 		content.courses = loaded
 		injectCoursesHomeCarousel(siteData, loaded, opts.itemsPerPage)

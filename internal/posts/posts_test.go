@@ -212,3 +212,33 @@ body
 		t.Errorf("Thumbnail = %q, want %q", posts[0].Meta.Thumbnail, want)
 	}
 }
+
+func TestLoadPostsDir_ParsesDraftFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []struct{ slug, draft string }{
+		{"published-post", ""},
+		{"work-in-progress", "draft: true\n"},
+	} {
+		postDir := filepath.Join(dir, p.slug)
+		if err := os.MkdirAll(postDir, 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		body := "---\ntitle: \"T\"\ndate: \"2026-08-01\"\n" + p.draft + "---\n\nBody.\n"
+		if err := os.WriteFile(filepath.Join(postDir, "index.md"), []byte(body), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	loaded, err := LoadPostsDir(dir)
+	if err != nil {
+		t.Fatalf("LoadPostsDir: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("loaded %d posts, want 2", len(loaded))
+	}
+
+	kept := WithoutDrafts(loaded)
+	if len(kept) != 1 || kept[0].Meta.Slug != "published-post" {
+		t.Fatalf("kept = %v, want only the published post", kept)
+	}
+}

@@ -28,6 +28,9 @@ type Course struct {
 	LocalizedCTALabels  map[string]string `yaml:"localized_cta_labels"`
 	LocalizedPriceNotes string            `yaml:"localized_price_notes"`
 	Order               int               `yaml:"order"`
+	// Draft keeps an unfinished course out of every build that does not pass
+	// -include-drafts.
+	Draft bool `yaml:"draft"`
 
 	// Landing-page + checkout fields.
 	Slug            string   `yaml:"slug"`
@@ -167,4 +170,16 @@ func ToCurrentCourse(c Course) map[string]any {
 	m["curriculum"] = modules
 	m["long_description"] = c.LongDescription
 	return m
+}
+
+// WithoutDrafts returns the courses that are not marked draft. Applied by the
+// build unless -include-drafts is set.
+func WithoutDrafts(list []Course) []Course {
+	out := make([]Course, 0, len(list))
+	for _, c := range list {
+		if !c.Draft {
+			out = append(out, c)
+		}
+	}
+	return out
 }
