@@ -79,7 +79,7 @@ func TestToSiteDataList_ExposesLinksToTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProjectsFile: %v", err)
 	}
-	item, ok := ToSiteDataList(list)[0].(map[string]any)
+	item, ok := ToSiteDataList(list, "")[0].(map[string]any)
 	if !ok {
 		t.Fatal("site data item is not a map")
 	}
@@ -112,5 +112,47 @@ func TestWithoutDrafts_DropsDraftEntries(t *testing.T) {
 	kept := WithoutDrafts(list)
 	if len(kept) != 1 || kept[0].Title != "Published" {
 		t.Fatalf("kept = %+v, want only the published entry", kept)
+	}
+}
+
+func TestToSiteDataList_PrefixesInternalLinksWithBasePath(t *testing.T) {
+	list, err := LoadProjectsFile(writeProjects(t, showcaseYAML))
+	if err != nil {
+		t.Fatalf("LoadProjectsFile: %v", err)
+	}
+	item := ToSiteDataList(list, "/en")[0].(map[string]any)
+	links := item["links"].([]any)
+
+	external := links[0].(map[string]any)
+	if external["href"] != "https://flemming.com.br" {
+		t.Errorf("external href = %v, want it untouched", external["href"])
+	}
+	internal := links[1].(map[string]any)
+	if internal["href"] != "/en/blog/building-flemming/" {
+		t.Errorf("internal href = %v, want the base path prefixed", internal["href"])
+	}
+}
+
+func TestResolveHref(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		href     string
+		external bool
+		basePath string
+		want     string
+	}{
+		{"internal gains the prefix", "/blog/x/", false, "/en", "/en/blog/x/"},
+		{"external is untouched", "https://example.com", true, "/en", "https://example.com"},
+		{"no base path is a no-op", "/blog/x/", false, "", "/blog/x/"},
+		{"relative href is untouched", "blog/x/", false, "/en", "blog/x/"},
+		{"already prefixed is not doubled", "/en/blog/x/", false, "/en", "/en/blog/x/"},
+		{"prefix match must be on a boundary", "/english/x/", false, "/en", "/en/english/x/"},
+		{"base path itself is not doubled", "/en", false, "/en", "/en"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveHref(tc.href, tc.external, tc.basePath); got != tc.want {
+				t.Errorf("resolveHref(%q, %v, %q) = %q, want %q", tc.href, tc.external, tc.basePath, got, tc.want)
+			}
+		})
 	}
 }

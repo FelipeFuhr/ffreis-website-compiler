@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -74,7 +75,14 @@ func LoadProjectsFile(path string) ([]Project, error) {
 
 // ToSiteDataList converts a slice of Project to the []any map format expected
 // by Go templates via the dig/range template functions.
-func ToSiteDataList(list []Project) []any {
+//
+// basePath is the deployment's language prefix ("/en", "/pt", or "" for a
+// single-language site). Root-absolute hrefs in links are resolved against it,
+// because content authors write "/blog/x/" and mean "this site's blog", not the
+// unprefixed root — which on a prefixed deployment is a 404 that the internal
+// link checker cannot even see (it skips paths outside the deployment root as
+// belonging to a sibling deployment).
+func ToSiteDataList(list []Project, basePath string) []any {
 	out := make([]any, len(list))
 	for i, p := range list {
 		stack := make([]any, len(p.Stack))
@@ -85,7 +93,7 @@ func ToSiteDataList(list []Project) []any {
 		for j, l := range p.Links {
 			links[j] = map[string]any{
 				"label":    l.Label,
-				"href":     l.Href,
+				"href":     resolveHref(l.Href, l.External, basePath),
 				"external": l.External,
 			}
 		}
@@ -112,4 +120,18 @@ func WithoutDrafts(list []Project) []Project {
 		}
 	}
 	return out
+}
+
+// resolveHref prefixes a site-internal, root-absolute href with the deployment's
+// base path. External links and relative hrefs are returned untouched, and an
+// href that already starts with basePath is left alone so a hand-prefixed value
+// does not become "/en/en/...".
+func resolveHref(href string, external bool, basePath string) string {
+	if external || basePath == "" || !strings.HasPrefix(href, "/") {
+		return href
+	}
+	if href == basePath || strings.HasPrefix(href, basePath+"/") {
+		return href
+	}
+	return basePath + href
 }

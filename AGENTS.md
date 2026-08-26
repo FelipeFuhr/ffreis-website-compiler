@@ -317,6 +317,23 @@ post pages receive a `CurrentPost` map with: `title`, `date`, `summary`, `thumbn
 **New dependency:** `github.com/yuin/goldmark` + `github.com/yuin/goldmark-meta`
 for Markdown rendering and frontmatter parsing.
 
+## Project cards (`-projects-file`)
+
+`projects.yaml` entries carry either the legacy single `href` or a `links` list of
+`{label, href, external}`, so a showcase card can point at both the thing itself
+and the write-up about it. `internal/projects.ToSiteDataList` takes the
+deployment's `base_path` and prefixes root-absolute, non-external link hrefs with
+it: authors write `/blog/x/` meaning "this site's blog", and on a prefixed
+deployment that must resolve to `/en/blog/x/`.
+
+That prefixing is load-bearing beyond correctness. `linkcheck` skips paths outside
+the deployment root as belonging to a sibling deployment, so an unprefixed
+`/blog/x/` was invisible to it — a card could link to a page that was never
+generated and the build stayed green. Prefixed links are inside the root, so the
+existing checker now catches them, and a card whose write-up has not been
+published fails the build. The legacy `href` field is left unprefixed (its data
+already carries a hand-written prefix); prefer `links` for anything new.
+
 ## Content section gates (`flags/flags.json`, `-enable-sections`, `-disable-sections`)
 
 A site can hide whole content sections (`blog`, `courses`, `projects`): their
