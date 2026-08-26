@@ -242,3 +242,22 @@ func TestLoadPostsDir_ParsesDraftFrontmatter(t *testing.T) {
 		t.Fatalf("kept = %v, want only the published post", kept)
 	}
 }
+
+// draft exists to keep a post unpublished, so a value that fails the type check
+// must not quietly mean "not a draft".
+func TestLoadPostsDir_RejectsNonBooleanDraft(t *testing.T) {
+	dir := t.TempDir()
+	postDir := filepath.Join(dir, "typo-draft")
+	if err := os.MkdirAll(postDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "---\ntitle: \"T\"\ndate: \"2026-08-01\"\ndraft: \"yes\"\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(postDir, "index.md"), []byte(body), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := LoadPostsDir(dir)
+	if err == nil || !strings.Contains(err.Error(), "'draft' must be a boolean") {
+		t.Fatalf("err = %v, want a non-boolean draft rejection", err)
+	}
+}

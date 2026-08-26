@@ -130,7 +130,14 @@ func parsePostMeta(fm map[string]any, slug, postDir string) (PostMeta, error) {
 	if v, ok := fm["medium_published"].(bool); ok {
 		m.MediumPublished = v
 	}
-	if v, ok := fm["draft"].(bool); ok {
+	// draft must fail closed: it exists to keep a post unpublished, so a value
+	// the type check rejects cannot be allowed to mean "not a draft". `draft:
+	// "yes"` would otherwise publish the post with no error anywhere.
+	if raw, present := fm["draft"]; present {
+		v, ok := raw.(bool)
+		if !ok {
+			return PostMeta{}, fmt.Errorf("frontmatter 'draft' must be a boolean, got %v (%T)", raw, raw)
+		}
 		m.Draft = v
 	}
 
