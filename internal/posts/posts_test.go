@@ -212,3 +212,189 @@ body
 		t.Errorf("Thumbnail = %q, want %q", posts[0].Meta.Thumbnail, want)
 	}
 }
+
+func TestLoadPostsDir_ParsesDraftFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []struct{ slug, draft string }{
+		{"published-post", ""},
+		{"work-in-progress", "draft: true\n"},
+	} {
+		postDir := filepath.Join(dir, p.slug)
+		if err := os.MkdirAll(postDir, 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		body := "---\ntitle: \"T\"\ndate: \"2026-08-01\"\n" + p.draft + "---\n\nBody.\n"
+		if err := os.WriteFile(filepath.Join(postDir, "index.md"), []byte(body), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	loaded, err := LoadPostsDir(dir)
+	if err != nil {
+		t.Fatalf("LoadPostsDir: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("loaded %d posts, want 2", len(loaded))
+	}
+
+	kept := WithoutDrafts(loaded)
+	if len(kept) != 1 || kept[0].Meta.Slug != "published-post" {
+		t.Fatalf("kept = %v, want only the published post", kept)
+	}
+}
+
+// draft exists to keep a post unpublished, so a value that fails the type check
+// must not quietly mean "not a draft".
+func TestLoadPostsDir_RejectsNonBooleanDraft(t *testing.T) {
+	dir := t.TempDir()
+	postDir := filepath.Join(dir, "typo-draft")
+	if err := os.MkdirAll(postDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "---\ntitle: \"T\"\ndate: \"2026-08-01\"\ndraft: \"yes\"\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(postDir, "index.md"), []byte(body), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := LoadPostsDir(dir)
+	if err == nil || !strings.Contains(err.Error(), "'draft' must be a boolean") {
+		t.Fatalf("err = %v, want a non-boolean draft rejection", err)
+	}
+}
+
+// Same invariant as projects and courses, reached a different way: post
+// frontmatter arrives untyped, so a value that is not a YAML boolean is an
+// error rather than being coerced. Either outcome is safe; a post that quietly
+// becomes publishable is not.
+func TestLoadPostsDir_DraftIsNeverSilentlyFalse(t *testing.T) {
+	for _, value := range []string{`yes`, `"yes"`, `on`, `"true"`, `1`, `True`, `TRUE`, `true`} {
+		t.Run(value, func(t *testing.T) {
+			dir := t.TempDir()
+			postDir := filepath.Join(dir, "probe")
+			if err := os.MkdirAll(postDir, 0o750); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			body := "---\ntitle: \"T\"\ndate: \"2026-08-01\"\ndraft: " + value + "\n---\n\nBody.\n"
+			if err := os.WriteFile(filepath.Join(postDir, "index.md"), []byte(body), 0o600); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+
+			loaded, err := LoadPostsDir(dir)
+			if err != nil {
+				return // rejected outright — also safe
+			}
+			if !loaded[0].Meta.Draft {
+				t.Fatalf("draft: %s parsed as NOT a draft — the post would publish", value)
+			}
+		})
+	}
+}
+
+// ── CopyPostImages ──────────────────────────────────────────────────────────
+
+// Post images are referenced as ./images/x.webp and rewritten to
+// /blog/<slug>/images/x.webp, so the copy is what makes those URLs resolve. A
+// silently skipped copy is a broken image on a live page.
+
+func TestCopyPostImages_CopiesImagesUnderTheSlugPath(t *testing.T) {
+	postDir := filepath.Join(t.TempDir(), "a-post")
+	imagesDir := filepath.Join(postDir, "images")
+	if err := os.MkdirAll(filepath.Join(imagesDir, "nested"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for path, body := range map[string]string{
+		filepath.Join(imagesDir, "hero.webp"):           "hero-bytes",
+		filepath.Join(imagesDir, "nested", "deep.webp"): "deep-bytes",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	outDir := t.TempDir()
+	post := Post{Meta: PostMeta{Slug: "a-post"}, Dir: postDir}
+	if err := CopyPostImages([]Post{post}, outDir); err != nil {
+		t.Fatalf("CopyPostImages: %v", err)
+	}
+
+	for rel, want := range map[string]string{
+		filepath.Join("blog", "a-post", "images", "hero.webp"):           "hero-bytes",
+		filepath.Join("blog", "a-post", "images", "nested", "deep.webp"): "deep-bytes",
+	} {
+		raw, err := os.ReadFile(filepath.Join(outDir, rel))
+		if err != nil {
+			t.Errorf("expected %s to be copied: %v", rel, err)
+			continue
+		}
+		if string(raw) != want {
+			t.Errorf("%s = %q, want %q", rel, raw, want)
+		}
+	}
+}
+
+// Most posts have no images; that must be a silent skip, not an error.
+func TestCopyPostImages_SkipsPostsWithNoImagesDirectory(t *testing.T) {
+	postDir := filepath.Join(t.TempDir(), "text-only")
+	if err := os.MkdirAll(postDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	outDir := t.TempDir()
+
+	if err := CopyPostImages([]Post{{Meta: PostMeta{Slug: "text-only"}, Dir: postDir}}, outDir); err != nil {
+		t.Fatalf("a post with no images must be skipped silently: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "blog")); !os.IsNotExist(err) {
+		t.Error("an empty blog/ tree was created for a post with no images")
+	}
+}
+
+func TestCopyPostImages_NamesThePostWhenACopyFails(t *testing.T) {
+	postDir := filepath.Join(t.TempDir(), "broken")
+	imagesDir := filepath.Join(postDir, "images")
+	if err := os.MkdirAll(imagesDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(imagesDir, "a.webp"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// A file where the destination directory needs to be makes the copy fail.
+	outDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outDir, "blog"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+
+	err := CopyPostImages([]Post{{Meta: PostMeta{Slug: "broken"}, Dir: postDir}}, outDir)
+	if err == nil {
+		t.Fatal("expected an error when images cannot be copied")
+	}
+	if !strings.Contains(err.Error(), "broken") {
+		t.Errorf("err = %v, want the failing post's slug named", err)
+	}
+}
+
+func TestCopyPostImages_HandlesEveryPostInTheList(t *testing.T) {
+	root := t.TempDir()
+	var postList []Post
+	for _, slug := range []string{"first", "second"} {
+		imagesDir := filepath.Join(root, slug, "images")
+		if err := os.MkdirAll(imagesDir, 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(imagesDir, "a.webp"), []byte(slug), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		postList = append(postList, Post{Meta: PostMeta{Slug: slug}, Dir: filepath.Join(root, slug)})
+	}
+
+	outDir := t.TempDir()
+	if err := CopyPostImages(postList, outDir); err != nil {
+		t.Fatalf("CopyPostImages: %v", err)
+	}
+	for _, slug := range []string{"first", "second"} {
+		raw, err := os.ReadFile(filepath.Join(outDir, "blog", slug, "images", "a.webp"))
+		if err != nil || string(raw) != slug {
+			t.Errorf("post %q images not copied correctly: %v", slug, err)
+		}
+	}
+}

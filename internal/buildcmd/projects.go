@@ -9,10 +9,17 @@ import (
 	"ffreis-website-compiler/internal/sitemap"
 )
 
+// siteBasePath returns the deployment's language prefix ("/en", "/pt") from
+// site data, or "" for a single-language site.
+func siteBasePath(siteData map[string]any) string {
+	bp, _ := siteData["base_path"].(string)
+	return bp
+}
+
 // injectProjectsHomeCarousel puts the first n projects into siteData["projects"]
 // so the home-page carousel template can range over them.
 func injectProjectsHomeCarousel(siteData map[string]any, list []projects.Project, n int) {
-	all := projects.ToSiteDataList(list)
+	all := projects.ToSiteDataList(list, siteBasePath(siteData))
 	if n > 0 && n < len(all) {
 		all = all[:n]
 	}
@@ -53,7 +60,7 @@ func writeProjectPages(
 		logger:      logger,
 		opts:        opts,
 		tmpl:        projectTpl,
-		items:       projects.ToSiteDataList(list),
+		items:       projects.ToSiteDataList(list, siteBasePath(siteData)),
 		sectionName: "projects",
 		siteData:    siteData,
 		assetsDir:   assetsDir,

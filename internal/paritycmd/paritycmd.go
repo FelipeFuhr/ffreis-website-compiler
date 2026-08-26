@@ -25,10 +25,15 @@ type Options struct {
 }
 
 // LangData holds the loaded data for one language directory.
+//
+// It deliberately carries no key set. Key comparison is per FILE and re-reads
+// each file from disk (see perFileKeys), so a merged whole-language key set
+// would be a second source of truth that nothing consults — which is exactly
+// how -skip-keys came to be silently inert: it filtered a field no comparison
+// ever read.
 type LangData struct {
-	Lang   string
-	Files  []string
-	KeySet map[string]struct{}
+	Lang  string
+	Files []string
 }
 
 // SkipConfig holds intentional parity exceptions read from .lang-parity-skip.yaml.
@@ -93,15 +98,11 @@ func Run(args []string, logger *slog.Logger) error {
 		return fmt.Errorf("loading skip config: %w", err)
 	}
 
-	skipKeySet := toSet(opts.SkipKeys)
 	var langDataList []LangData
 	for _, lang := range langs {
-		ld, err := loadLangData(opts.DataRoot, lang, opts.MaxDepth)
+		ld, err := loadLangData(opts.DataRoot, lang)
 		if err != nil {
 			return fmt.Errorf("loading lang %q: %w", lang, err)
-		}
-		for k := range skipKeySet {
-			delete(ld.KeySet, k)
 		}
 		langDataList = append(langDataList, ld)
 	}
@@ -150,17 +151,18 @@ func detectLangs(dataRoot string) ([]string, error) {
 	return langs, nil
 }
 
-// loadLangData reads <dataRoot>/<lang>/site.d/*.yaml, merges them additively,
-// and returns the flattened dotted key paths up to maxDepth.
-func loadLangData(dataRoot, lang string, maxDepth int) (LangData, error) {
+// loadLangData lists <dataRoot>/<lang>/site.d/*.yaml and reports which files
+// the language has. It still parses every file — a malformed YAML must fail the
+// run here rather than being silently skipped later by perFileKeys — but the
+// merged result is not retained: key comparison is per file and re-reads from
+// disk.
+func loadLangData(dataRoot, lang string) (LangData, error) {
 	siteDDir := filepath.Join(dataRoot, lang, siteDirName)
-	merged, files, err := loadSiteD(siteDDir)
-	if err != nil {
+	if _, files, err := loadSiteD(siteDDir); err != nil {
 		return LangData{}, err
+	} else {
+		return LangData{Lang: lang, Files: files}, nil
 	}
-	keys := flattenKeys(merged, "", maxDepth)
-	keySet := toSet(keys)
-	return LangData{Lang: lang, Files: files, KeySet: keySet}, nil
 }
 
 // loadSiteD reads all *.yaml files from siteDDir and merges them into a single map.
@@ -281,7 +283,12 @@ func compareAllLangs(langs []LangData, skipConfig SkipConfig, opts Options) Pari
 		if fd, ok := checkPresence(langs, filename, skipConfig); ok {
 			report.FilesOnlyInLang = append(report.FilesOnlyInLang, fd)
 		}
-		diffs := checkKeyParity(langs, filename, skipConfig, opts.DataRoot, opts.MaxDepth)
+		diffs := checkKeyParity(langs, filename, keyParityContext{
+			skipConfig: skipConfig,
+			dataRoot:   opts.DataRoot,
+			maxDepth:   opts.MaxDepth,
+			skipKeys:   toSet(opts.SkipKeys),
+		})
 		report.KeyMismatches = append(report.KeyMismatches, diffs...)
 	}
 
@@ -310,9 +317,21 @@ func checkPresence(langs []LangData, filename string, skipConfig SkipConfig) (Fi
 	return FileDiff{Filename: filename, PresentIn: present, AbsentIn: absent}, true
 }
 
+// keyParityContext carries everything the per-file key comparison needs,
+// keeping the parameter lists inside the guideline as the inputs grew.
+type keyParityContext struct {
+	skipConfig SkipConfig
+	dataRoot   string
+	maxDepth   int
+	// skipKeys are the dotted key paths -skip-keys excluded. They are removed
+	// from every language's set BEFORE comparison, which is the only place the
+	// exclusion can take effect: the sets are re-read from disk per file.
+	skipKeys map[string]struct{}
+}
+
 // checkKeyParity compares key sets for a file across all langs that have it.
-func checkKeyParity(langs []LangData, filename string, skipConfig SkipConfig, dataRoot string, maxDepth int) []KeyDiff {
-	sets := buildPerFileSets(langs, filename, skipConfig, dataRoot, maxDepth)
+func checkKeyParity(langs []LangData, filename string, ctx keyParityContext) []KeyDiff {
+	sets := buildPerFileSets(langs, filename, ctx)
 	if len(sets) < 2 {
 		return nil
 	}
@@ -320,13 +339,17 @@ func checkKeyParity(langs []LangData, filename string, skipConfig SkipConfig, da
 }
 
 // buildPerFileSets loads per-file key sets for all langs that have the file and aren't skipped.
-func buildPerFileSets(langs []LangData, filename string, skipConfig SkipConfig, dataRoot string, maxDepth int) map[string]map[string]struct{} {
+func buildPerFileSets(langs []LangData, filename string, ctx keyParityContext) map[string]map[string]struct{} {
 	sets := map[string]map[string]struct{}{}
 	for _, ld := range langs {
-		if skipConfig.isFileSkipped(ld.Lang, filename) || !langHasFile(ld, filename) {
+		if ctx.skipConfig.isFileSkipped(ld.Lang, filename) || !langHasFile(ld, filename) {
 			continue
 		}
-		sets[ld.Lang] = perFileKeys(dataRoot, ld.Lang, filename, maxDepth)
+		keys := perFileKeys(ctx.dataRoot, ld.Lang, filename, ctx.maxDepth)
+		for k := range ctx.skipKeys {
+			delete(keys, k)
+		}
+		sets[ld.Lang] = keys
 	}
 	return sets
 }

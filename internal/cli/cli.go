@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"ffreis-website-compiler/internal/buildcmd"
@@ -15,16 +16,24 @@ import (
 	"ffreis-website-compiler/internal/validatesanitycmd"
 )
 
+// Run dispatches os.Args and terminates the process with the resulting exit
+// code. It is the entry point every cmd/ main calls.
 func Run(programName string) {
-	logger := logx.New(programName)
+	os.Exit(Dispatch(programName, os.Args[1:], logx.New(programName)))
+}
 
-	if len(os.Args) < 2 {
+// Dispatch runs one command and RETURNS its exit code rather than terminating,
+// so the command table can be exercised in tests. Run is the thin os.Exit
+// wrapper around it; keeping the exit out of here is what makes the dispatch
+// testable at all.
+func Dispatch(programName string, argv []string, logger *slog.Logger) int {
+	if len(argv) < 1 {
 		printUsage(programName)
-		os.Exit(1)
+		return 1
 	}
 
-	cmd := os.Args[1]
-	args := os.Args[2:]
+	cmd := argv[0]
+	args := argv[1:]
 
 	var err error
 	switch cmd {
@@ -46,17 +55,18 @@ func Run(programName string) {
 		err = outputtestcmd.Run(args, logger)
 	case "help", "-h", "--help":
 		printUsage(programName)
-		return
+		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", cmd)
 		printUsage(programName)
-		os.Exit(1)
+		return 1
 	}
 
 	if err != nil {
 		logger.Error("command failed", "command", cmd, "error", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func printUsage(programName string) {

@@ -10,6 +10,12 @@ import (
 	"ffreis-website-compiler/internal/cmdutil"
 )
 
+// Content source values for -content-source.
+const (
+	contentSourceProd = "prod"
+	contentSourceMock = "mock"
+)
+
 type buildOptions struct {
 	websiteRoot    string
 	assetsDir      string
@@ -47,6 +53,12 @@ type buildOptions struct {
 	// omitted. Injected into siteData as sections.<name>: false AFTER contract
 	// validation, so it needs no contract entry and cannot dangle.
 	disabledSections []string
+	// includeDrafts admits content marked `draft: true` (posts, projects,
+	// courses) into the build. Off by default and never registry-defaulted on,
+	// so an in-progress item can live on the content branch without any risk of
+	// a prod build picking it up. The deployer additionally refuses to set it
+	// for a non-dev environment.
+	includeDrafts bool
 	// basePath mirrors site_data["base_path"] (e.g. "/en") and is populated by
 	// the build command after siteData is loaded. It is prepended to absolute
 	// asset references emitted by fingerprintLocalAssets so they remain
@@ -95,6 +107,9 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
 	var disableSectionsFlag string
 	fs.StringVar(&disableSectionsFlag, "disable-sections", "", "comma-separated content sections to hide entirely (blog,courses,projects): drops their pages, nav/footer links, home-page blocks and sitemap entries")
+	var enableSectionsFlag string
+	fs.StringVar(&enableSectionsFlag, "enable-sections", "", "comma-separated content sections to enable for this environment, overriding their declared default in <website-root>/flags/flags.json; requires a flag registry")
+	fs.BoolVar(&opts.includeDrafts, "include-drafts", false, "include content marked `draft: true`; dev builds only — a prod build must never pass this")
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
@@ -105,7 +120,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
 	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
 	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")
-	fs.StringVar(&opts.contentSource, "content-source", "prod", `content source: "prod" (default) or "mock". When "prod", any content path containing /mock/ is a fatal error so mock data cannot reach production by accident.`)
+	fs.StringVar(&opts.contentSource, "content-source", contentSourceProd, `content source: "prod" (default) or "mock". When "prod", mock content (a /mock/ path segment or a .mock-content marker) is a fatal error so mock data cannot reach production by accident.`)
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
 
 	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint")
@@ -119,19 +134,10 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 		return buildOptions{}, err
 	}
 
-	// Anti-leak guard: reject /mock/ paths when content-source is prod (the default).
-	// This makes it impossible to bake mock content into a prod build by accident.
-	if opts.contentSource != "mock" {
-		for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile} {
-			if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
-				return buildOptions{}, fmt.Errorf(
-					"content path %q contains /mock/ but --content-source=%q: "+
-						"mock content cannot be used in a prod build; "+
-						"pass --content-source=mock to enable mock content",
-					p, opts.contentSource,
-				)
-			}
-		}
+	// Anti-leak guard: mock content can never enter a non-mock build. Checked on
+	// both the path shape and a committed marker file — see assertNoMockContent.
+	if err := assertNoMockContent(opts.contentSource, opts.postsDir, opts.projectsFile, opts.coursesFile); err != nil {
+		return buildOptions{}, err
 	}
 
 	if assetsDirFlag == "" && siteDirFlag != "" {
@@ -149,13 +155,28 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 		}
 	}
 
-	for _, s := range strings.Split(disableSectionsFlag, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			opts.disabledSections = append(opts.disabledSections, s)
-		}
+	disabled, err := resolveSectionGates(
+		findFlagRegistry(opts.websiteRoot),
+		splitSectionList(enableSectionsFlag),
+		splitSectionList(disableSectionsFlag),
+	)
+	if err != nil {
+		return buildOptions{}, err
 	}
+	opts.disabledSections = disabled
 
 	return opts, nil
+}
+
+// splitSectionList parses a comma-separated section list, dropping empties.
+func splitSectionList(raw string) []string {
+	var out []string
+	for _, s := range strings.Split(raw, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func resolveBuildPaths(opts buildOptions) (assetsDir string, templatesDir string, err error) {

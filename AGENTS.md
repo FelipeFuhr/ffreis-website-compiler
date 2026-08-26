@@ -317,6 +317,76 @@ post pages receive a `CurrentPost` map with: `title`, `date`, `summary`, `thumbn
 **New dependency:** `github.com/yuin/goldmark` + `github.com/yuin/goldmark-meta`
 for Markdown rendering and frontmatter parsing.
 
+## Project cards (`-projects-file`)
+
+`projects.yaml` entries carry either the legacy single `href` or a `links` list of
+`{label, href, external}`, so a showcase card can point at both the thing itself
+and the write-up about it. `internal/projects.ToSiteDataList` takes the
+deployment's `base_path` and prefixes root-absolute, non-external link hrefs with
+it: authors write `/blog/x/` meaning "this site's blog", and on a prefixed
+deployment that must resolve to `/en/blog/x/`.
+
+That prefixing is load-bearing beyond correctness. `linkcheck` skips paths outside
+the deployment root as belonging to a sibling deployment, so an unprefixed
+`/blog/x/` was invisible to it — a card could link to a page that was never
+generated and the build stayed green. Prefixed links are inside the root, so the
+existing checker now catches them, and a card whose write-up has not been
+published fails the build. The legacy `href` field is left unprefixed (its data
+already carries a hand-written prefix); prefer `links` for anything new.
+
+## Content section gates (`flags/flags.json`, `-enable-sections`, `-disable-sections`)
+
+A site can hide whole content sections (`blog`, `courses`, `projects`): their
+pages, nav/footer links, home-page blocks, RSS and sitemap entries all disappear.
+Which sections ship is resolved in one place, `resolveSectionGates` in
+`internal/buildcmd/sectiongates.go`, and there are two modes.
+
+**Registry mode (preferred).** A site declares `flags/flags.json` at its root — a
+`section_<name>` gate flag per known section, each with a boolean `default`.
+The compiler discovers the file automatically (like `sitemap.yaml`). Per-environment
+overrides come in as `-enable-sections a,b`; `-disable-sections` still forces a
+section off and wins over `-enable-sections` on conflict.
+
+The point of the registry is that **the safe state no longer requires configuration**.
+When a not-ready section declares `default: false`, a build whose per-environment
+config goes missing — dropped in a promote, lost to a branch divergence — falls back
+to "off" and publishes nothing. Three things are hard errors, so an undeclared or
+mistyped point of variation fails the build instead of deciding silently:
+
+- a section in `knownSections` with no gate declared in a registry that exists;
+- a gate declared for a section the compiler does not know (a dangling declaration);
+- a name in `-enable-sections`/`-disable-sections` that the registry does not declare.
+
+**Legacy mode.** With no `flags/flags.json`, sections are on unless
+`-disable-sections` names them, and `-enable-sections` is rejected as meaningless.
+Only for sites that have not adopted a registry yet.
+
+Schema: `flags/flag-registry.schema.json` (fleet reference copy in
+`heavy-heater/flags/`). Registry parsing lives in `internal/flagregistry`.
+
+## Drafts (`-include-drafts`)
+
+Posts (`draft: true` in frontmatter), projects and courses (`draft: true` in YAML)
+are dropped from every build that does not pass `-include-drafts`, which defaults
+to off and is never defaulted on by the registry. This lets an unfinished item be
+committed to the content branch and previewed on dev without branch discipline
+being the only thing keeping it off production. The deployer refuses to set
+`include_drafts` for a non-dev environment.
+
+## Mock content isolation (`-content-source`)
+
+`-content-source` is `prod` (default) or `mock`. A non-mock build that is handed
+mock content is a **fatal error**, detected two independent ways in
+`internal/buildcmd/mockguard.go`:
+
+1. a `/mock/` path segment, and
+2. a committed `.mock-content` marker file at the corpus root (searched up to
+   `mockMarkerSearchDepth` ancestors of each content path).
+
+The marker exists because the path check alone is defeated by renaming a directory;
+the marker travels with the content. Mock content reaching production is the failure
+being guarded, so neither check is ever a warning.
+
 ## Template extensibility blocks
 
 Two `{{block}}` overrides in `head.gohtml` allow page templates to inject custom
@@ -364,6 +434,24 @@ skip:
   - en/site.d/10-courses.yaml   # suppresses all checks for this file across all langs
 ```
 A skip entry for any lang suppresses the entire file from all presence and key checks.
+
+## Coverage gate
+
+`make coverage-gate` fails the build below `COVERAGE_MIN` (currently **80%**,
+raised from 55% alongside the test pass that took real coverage from 65.6% to
+80.3%). It is a **ratchet**: raise it when coverage climbs, never lower it to
+make a change fit. `make quality-gates` and the lefthook `complex` tier both
+call it, so a drop is caught before promotion rather than in review.
+
+Two things the gate cannot tell you, so they are conventions instead:
+
+- **Cover behaviour, not statements.** Every package added in that pass tests
+  both the wanted and the unwanted path — the guard firing *and* the permitted
+  shape still working — because a guard that rejects everything passes a
+  rejection-only suite.
+- **Prove a new guard fails without its fix.** The tests protecting a specific
+  defect (section gates, draft filtering, the mock marker, `-skip-keys`) were
+  each verified by removing the fix and confirming the matching test goes red.
 
 ## Keeping this file current
 

@@ -230,6 +230,9 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		if err != nil {
 			return nil, fmt.Errorf("loading blog posts: %w", err)
 		}
+		if !opts.includeDrafts {
+			loaded = posts.WithoutDrafts(loaded)
+		}
 		if err := posts.CopyPostImages(loaded, opts.outDir); err != nil {
 			return nil, fmt.Errorf("copying post images: %w", err)
 		}
@@ -242,6 +245,9 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		if err != nil {
 			return nil, fmt.Errorf("loading projects: %w", err)
 		}
+		if !opts.includeDrafts {
+			loaded = projects.WithoutDrafts(loaded)
+		}
 		content.projects = loaded
 		injectProjectsHomeCarousel(siteData, loaded, opts.itemsPerPage)
 	}
@@ -250,6 +256,9 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		loaded, err := courses.LoadCoursesFile(opts.coursesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading courses: %w", err)
+		}
+		if !opts.includeDrafts {
+			loaded = courses.WithoutDrafts(loaded)
 		}
 		content.courses = loaded
 		injectCoursesHomeCarousel(siteData, loaded, opts.itemsPerPage)
@@ -770,15 +779,23 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 // and returns the set of asset paths (without leading "/") that appear on more than one page.
 // These scripts benefit from being cached externally rather than inlined into every HTML file.
 func collectSharedScripts(renderedPages map[string]string) map[string]bool {
+	// Count PAGES, not references. A script tagged twice on one page is still
+	// used by one page, and inlining it there is correct — counting references
+	// would mark it shared and push it out to a cached file for no benefit.
 	usageCount := make(map[string]int, 16)
 	for _, html := range renderedPages {
-		matches := scriptTagRE.FindAllStringSubmatch(html, -1)
-		for _, m := range matches {
+		seenOnPage := make(map[string]bool, 8)
+		for _, m := range scriptTagRE.FindAllStringSubmatch(html, -1) {
 			src := m[1]
 			if isExternalRef(src) {
 				continue
 			}
-			usageCount[strings.TrimPrefix(src, "/")]++
+			path := strings.TrimPrefix(src, "/")
+			if seenOnPage[path] {
+				continue
+			}
+			seenOnPage[path] = true
+			usageCount[path]++
 		}
 	}
 	shared := make(map[string]bool, len(usageCount))
