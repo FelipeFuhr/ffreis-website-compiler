@@ -261,3 +261,31 @@ func TestLoadPostsDir_RejectsNonBooleanDraft(t *testing.T) {
 		t.Fatalf("err = %v, want a non-boolean draft rejection", err)
 	}
 }
+
+// Same invariant as projects and courses, reached a different way: post
+// frontmatter arrives untyped, so a value that is not a YAML boolean is an
+// error rather than being coerced. Either outcome is safe; a post that quietly
+// becomes publishable is not.
+func TestLoadPostsDir_DraftIsNeverSilentlyFalse(t *testing.T) {
+	for _, value := range []string{`yes`, `"yes"`, `on`, `"true"`, `1`, `True`, `TRUE`, `true`} {
+		t.Run(value, func(t *testing.T) {
+			dir := t.TempDir()
+			postDir := filepath.Join(dir, "probe")
+			if err := os.MkdirAll(postDir, 0o750); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			body := "---\ntitle: \"T\"\ndate: \"2026-08-01\"\ndraft: " + value + "\n---\n\nBody.\n"
+			if err := os.WriteFile(filepath.Join(postDir, "index.md"), []byte(body), 0o600); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+
+			loaded, err := LoadPostsDir(dir)
+			if err != nil {
+				return // rejected outright — also safe
+			}
+			if !loaded[0].Meta.Draft {
+				t.Fatalf("draft: %s parsed as NOT a draft — the post would publish", value)
+			}
+		})
+	}
+}

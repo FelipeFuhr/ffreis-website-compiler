@@ -123,3 +123,53 @@ func TestToCurrentCourse_HasLongFormContent(t *testing.T) {
 		t.Fatalf("module lessons should be a 2-element list, got %v", mod["lessons"])
 	}
 }
+
+func TestWithoutDrafts_DropsDraftCourses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "courses.yaml")
+	body := `
+- title: "Published Course"
+  description: "d"
+  order: 1
+- title: "Unfinished Course"
+  description: "d"
+  order: 2
+  draft: true
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	list, err := LoadCoursesFile(path)
+	if err != nil {
+		t.Fatalf("LoadCoursesFile: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("loaded %d courses, want both (drafts are filtered by the build, not the loader)", len(list))
+	}
+
+	kept := WithoutDrafts(list)
+	if len(kept) != 1 || kept[0].Title != "Published Course" {
+		t.Fatalf("kept = %+v, want only the published course", kept)
+	}
+}
+
+// Same invariant as projects: no value meaning "hold this back" may leave the
+// course publishable. Either the load fails or Draft is true.
+func TestLoadCoursesFile_DraftIsNeverSilentlyFalse(t *testing.T) {
+	for _, value := range []string{`yes`, `"yes"`, `on`, `"true"`, `1`, `True`, `TRUE`, `true`} {
+		t.Run(value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "courses.yaml")
+			body := "- title: \"C\"\n  description: d\n  order: 1\n  draft: " + value + "\n"
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			list, err := LoadCoursesFile(path)
+			if err != nil {
+				return // rejected outright — also safe
+			}
+			if !list[0].Draft {
+				t.Fatalf("draft: %s parsed as NOT a draft — the course would publish", value)
+			}
+		})
+	}
+}

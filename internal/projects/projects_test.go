@@ -156,3 +156,39 @@ func TestResolveHref(t *testing.T) {
 		})
 	}
 }
+
+// The invariant that matters is not "non-booleans are rejected" — YAML is more
+// forgiving than that, and `draft: yes` is a perfectly ordinary way to write
+// true. It is that no value a person could plausibly type MEANING "hold this
+// back" may result in the entry shipping. Either the load fails, or Draft is
+// true; silently false is the one outcome that is never acceptable.
+func TestLoadProjectsFile_DraftIsNeverSilentlyFalse(t *testing.T) {
+	for _, value := range []string{`yes`, `"yes"`, `on`, `"true"`, `1`, `True`, `TRUE`, `true`} {
+		t.Run(value, func(t *testing.T) {
+			list, err := LoadProjectsFile(writeProjects(t,
+				"- title: \"P\"\n  description: d\n  order: 1\n  draft: "+value+"\n"))
+			if err != nil {
+				return // rejected outright — also safe
+			}
+			if !list[0].Draft {
+				t.Fatalf("draft: %s parsed as NOT a draft — the entry would publish", value)
+			}
+		})
+	}
+}
+
+// The mirror image: values meaning "publish this" must not accidentally withhold.
+func TestLoadProjectsFile_ExplicitNonDraftPublishes(t *testing.T) {
+	for _, value := range []string{`false`, `no`, `"no"`, `off`} {
+		t.Run(value, func(t *testing.T) {
+			list, err := LoadProjectsFile(writeProjects(t,
+				"- title: \"P\"\n  description: d\n  order: 1\n  draft: "+value+"\n"))
+			if err != nil {
+				return
+			}
+			if list[0].Draft {
+				t.Fatalf("draft: %s parsed as a draft — the entry would be withheld unexpectedly", value)
+			}
+		})
+	}
+}
