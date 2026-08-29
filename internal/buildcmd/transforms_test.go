@@ -456,6 +456,67 @@ func TestRun_FaviconAndRobotsCopiedToRoot(t *testing.T) {
 	mustStat(t, filepath.Join(outDir, "robots.txt"))
 }
 
+func TestRun_WellKnownDiscoveryAssetsCopiedToRoot(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", ".well-known"))
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):            mainCSSContent,
+		filepath.Join(websiteRoot, "src", "assets", "llms.txt"):                    "# Example\n\nAn example site.",
+		filepath.Join(websiteRoot, "src", "assets", "humans.txt"):                  "/* TEAM */\nFelipe Fuhr",
+		filepath.Join(websiteRoot, "src", "assets", "manifest.json"):               `{"name":"Example"}`,
+		filepath.Join(websiteRoot, "src", "assets", ".well-known", "security.txt"): "Contact: mailto:security@example.com",
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):            "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML):  `{{define "page"}}<p>ok</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	mustStat(t, filepath.Join(outDir, "llms.txt"))
+	mustStat(t, filepath.Join(outDir, "humans.txt"))
+	mustStat(t, filepath.Join(outDir, "manifest.json"))
+	mustStat(t, filepath.Join(outDir, ".well-known", "security.txt"))
+}
+
+func TestRun_SiteWebmanifestCopiedToRoot(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "assets", "site.webmanifest"):           `{"name":"Example"}`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>ok</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	mustStat(t, filepath.Join(outDir, "site.webmanifest"))
+}
+
+func TestRun_WellKnownDiscoveryAssetsAbsentAreNoop(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>ok</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	for _, missing := range []string{"llms.txt", "humans.txt", "manifest.json", "site.webmanifest", filepath.Join(".well-known", "security.txt")} {
+		if _, err := os.Stat(filepath.Join(outDir, missing)); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be absent from output when not present in source, got err=%v", missing, err)
+		}
+	}
+}
+
 // ── CSS url() path rewriting in head (integration) ────────────────────────────
 
 func TestRun_HeadCSSURLRewrittenToRootRelative(t *testing.T) {

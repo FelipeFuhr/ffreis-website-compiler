@@ -21,9 +21,12 @@ import (
 )
 
 const (
-	sitemapXML  = "sitemap.xml"
-	mimeTextCSS = "text/css"
-	extWoff2    = ".woff2"
+	sitemapXML          = "sitemap.xml"
+	fileManifestJSON    = "manifest.json"
+	fileSiteWebmanifest = "site.webmanifest"
+	wellKnownDir        = ".well-known"
+	mimeTextCSS         = "text/css"
+	extWoff2            = ".woff2"
 
 	errFmtWriting = "writing %s: %w"
 

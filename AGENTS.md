@@ -277,9 +277,10 @@ automatically cached long-term. Fingerprinting covers: `<img src>`, `<img data-s
 `url()` inside inline `<style>` blocks. Data URIs and external URLs are left unchanged.
 
 Only fingerprinted copies are written to the output directory. Originals (css/, fonts/,
-images/, js/) are **not** copied to dist — only `ld/` (JSON-LD) and root files
-(`favicon.ico`, `robots.txt`) are copied wholesale. This prevents dead unreferenced files
-from accumulating in S3.
+images/, js/) are **not** copied to dist — only `ld/` (JSON-LD), `.well-known/` (e.g.
+`security.txt`), and root discovery files (`favicon.ico`, `robots.txt`, `llms.txt`,
+`humans.txt`, `manifest.json`, `site.webmanifest`) are copied wholesale, if present in
+`src/assets/`. This prevents dead unreferenced files from accumulating in S3.
 
 ### 8. External asset mirroring (flag: `-mirror-external-assets`)
 
