@@ -72,9 +72,10 @@ func detectMimeType(p string, content []byte) string {
 func copyStaticAssets(srcRoot, dstRoot string) error {
 	// css, fonts, images, and js are written directly as fingerprinted copies by
 	// writeHashedAssets; copying the originals would produce unreferenced dead files.
-	// ld/ (JSON-LD structured data) is served verbatim and is not fingerprinted.
-	dirs := []string{"ld"}
-	files := []string{"favicon.ico", "robots.txt", sitemapXML}
+	// ld/ (JSON-LD structured data) and .well-known/ (e.g. security.txt) are served
+	// verbatim and are not fingerprinted.
+	dirs := []string{"ld", wellKnownDir}
+	files := []string{"favicon.ico", "robots.txt", sitemapXML, "llms.txt", "humans.txt", fileManifestJSON, fileSiteWebmanifest}
 
 	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
 		return err

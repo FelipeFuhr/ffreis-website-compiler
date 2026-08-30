@@ -21,7 +21,10 @@ func cachedAttrSearchRE(attr string) *regexp.Regexp {
 			return re
 		}
 	}
-	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(attr) + `\s*=\s*["'][^"']*["']`)
+	// regexp.QuoteMeta escapes regex metacharacters but doesn't fix invalid UTF-8;
+	// regexp.MustCompile rejects any pattern that isn't valid UTF-8 outright (unlike
+	// matching, which tolerates it in the subject text), so sanitize first.
+	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(strings.ToValidUTF8(attr, "")) + `\s*=\s*["'][^"']*["']`)
 	attrSearchCache.Store(attr, re)
 	return re
 }
@@ -33,7 +36,7 @@ func cachedAttrValueRE(attr string) *regexp.Regexp {
 			return re
 		}
 	}
-	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(attr) + `\s*=\s*["']([^"']+)["']`)
+	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(strings.ToValidUTF8(attr, "")) + `\s*=\s*["']([^"']+)["']`)
 	attrValueCache.Store(attr, re)
 	return re
 }
