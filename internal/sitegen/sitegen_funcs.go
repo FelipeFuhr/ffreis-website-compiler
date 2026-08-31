@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // pageSlugFunc returns the URL slug for pageName by reading pages.<pageName>.slug
@@ -84,6 +85,18 @@ func required(value any, message string) (any, error) {
 
 func normalizeYAMLValue(value any) (any, error) {
 	switch typed := value.(type) {
+	case time.Time:
+		// A bare scalar like `date: 2026-05-19` in YAML is resolved to the
+		// !!timestamp tag and decoded as time.Time, not a string. Left as-is,
+		// html/template prints it via time.Time.String() ("2026-09-03
+		// 00:00:00 +0000 UTC"), which is not a valid HTML datetime string and
+		// fails vnu validation wherever a template embeds it in a <time
+		// datetime="..."> attribute. Normalize to RFC3339 here so every
+		// consumer (templates and export-site-data's JSON output) sees a
+		// plain, valid string -- this matches the RFC3339 shape
+		// time.Time's own JSON marshaling already produced, so JSON output
+		// is unchanged.
+		return typed.UTC().Format(time.RFC3339), nil
 	case map[string]any:
 		normalized := make(map[string]any, len(typed))
 		for key, item := range typed {
