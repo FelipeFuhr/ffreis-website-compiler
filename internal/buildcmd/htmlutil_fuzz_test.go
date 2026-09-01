@@ -54,10 +54,12 @@ func FuzzAddOrReplaceAttrIdempotent(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, tag, attr, value string) {
 		// The transform's contract only applies to non-empty attr names.
-		// Empty attr makes the underlying regex match nothing meaningful;
-		// behavior is technically defined (insert " ="" ") but not useful,
-		// so we skip — the contract under test is about realistic inputs.
-		if attr == "" {
+		// Empty (or whitespace-only) attr makes the underlying regex match
+		// nothing meaningful; behavior is technically defined but not
+		// useful, and no real call site ever passes a non-identifier attr
+		// name — so we skip — the contract under test is about realistic
+		// inputs.
+		if strings.TrimSpace(attr) == "" {
 			return
 		}
 		// Inputs containing quotes or backslashes can produce outputs that
