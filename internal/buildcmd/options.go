@@ -24,24 +24,29 @@ type buildOptions struct {
 	// contentSource is "prod" (default) or "mock". When "prod", the build fails
 	// if any content path contains /mock/ — prevents mock data reaching prod by
 	// accident. Set to "mock" explicitly to opt in to dev content.
-	contentSource           string
-	itemsPerPage            int
-	copyAssets              bool
-	inlineAssets            bool
-	jsInlineThreshold       int
-	jsSharedInlineThreshold int             // -1 = disabled; use jsInlineThreshold for all scripts
-	sharedScripts           map[string]bool // populated at runtime by collectSharedScripts
-	embedFonts              bool
-	inlineBodyCSS           bool
-	rasterInlineThreshold   int
-	siblingBasePaths        []string
-	mirrorExternalAssets    bool
-	mirroredAssetsDir       string
-	enableSanity            bool
-	strictContract          bool
-	cleanURLs               bool
-	runOutputTests          bool
-	outputTestManifest      string
+	contentSource string
+	// allowBlanketRobotsDisallow opts out of checkRobotsTxtSafety's guard
+	// against a committed robots.txt that disallows all crawlers on a non-mock
+	// (real content) build. False by default: such a robots.txt fails the
+	// build instead of silently shipping to prod.
+	allowBlanketRobotsDisallow bool
+	itemsPerPage               int
+	copyAssets                 bool
+	inlineAssets               bool
+	jsInlineThreshold          int
+	jsSharedInlineThreshold    int             // -1 = disabled; use jsInlineThreshold for all scripts
+	sharedScripts              map[string]bool // populated at runtime by collectSharedScripts
+	embedFonts                 bool
+	inlineBodyCSS              bool
+	rasterInlineThreshold      int
+	siblingBasePaths           []string
+	mirrorExternalAssets       bool
+	mirroredAssetsDir          string
+	enableSanity               bool
+	strictContract             bool
+	cleanURLs                  bool
+	runOutputTests             bool
+	outputTestManifest         string
 	// disabledSections lists content sections ("blog", "courses", "projects") to
 	// hide: their pages, nav/footer entries, home-page blocks, and sitemap URLs are
 	// omitted. Injected into siteData as sections.<name>: false AFTER contract
@@ -106,6 +111,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
 	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")
 	fs.StringVar(&opts.contentSource, "content-source", "prod", `content source: "prod" (default) or "mock". When "prod", any content path containing /mock/ is a fatal error so mock data cannot reach production by accident.`)
+	fs.BoolVar(&opts.allowBlanketRobotsDisallow, "allow-blanket-robots-disallow", false, "allow a committed robots.txt that disallows all crawlers under User-agent: * even on a non-mock (real content) build; without this flag, such a robots.txt fails the build so a dev-only block cannot silently ship to prod")
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
 
 	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint")
@@ -214,6 +220,9 @@ func ensureOutDir(outDir string) error {
 func maybeCopyAssets(opts buildOptions, assetsDir string) error {
 	if !opts.copyAssets || opts.inlineAssets {
 		return nil
+	}
+	if err := checkRobotsTxtSafety(assetsDir, opts); err != nil {
+		return err
 	}
 	if err := copyStaticAssets(assetsDir, opts.outDir); err != nil {
 		return fmt.Errorf("copying assets: %w", err)
