@@ -83,6 +83,73 @@ func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
 	}
 }
 
+func TestRun_GeneratesListingDetailPagesFromListingsFile(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteYAML): `pages:
+  listing:
+    internal: true
+`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", "listing.gohtml"): `{{define "page"}}<main data-listing-id="{{dig .CurrentListing "id"}}"><h1>{{dig .CurrentListing "title"}}</h1><p>{{dig .CurrentListing "price"}}</p></main>{{end}}`,
+	})
+
+	listingsPath := filepath.Join(t.TempDir(), "listings.yaml")
+	testutil.WriteFiles(t, map[string]string{
+		listingsPath: `
+listings:
+  - id: test-listing-1
+    title: "Test Listing One"
+    price: "$100"
+    reasons: ["good location"]
+    breakdown: { "Preço": 90 }
+  - id: test-listing-2
+    title: "Test Listing Two"
+    price: "$200"
+`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
+		"-listings-file", listingsPath,
+		"-sitemap-base-url", "https://example.com",
+	}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	// The internal "listing" template itself must not produce a standalone
+	// /listing.html page.
+	if _, err := os.Stat(filepath.Join(outDir, "listing.html")); !os.IsNotExist(err) {
+		t.Fatalf("expected internal listing template to be excluded from direct output, got err=%v", err)
+	}
+
+	page1 := mustReadFile(t, filepath.Join(outDir, "listings", "test-listing-1", "index.html"))
+	if !strings.Contains(string(page1), `data-listing-id="test-listing-1"`) {
+		t.Fatalf("expected listing id in rendered detail page, got %s", string(page1))
+	}
+	if !strings.Contains(string(page1), "<h1>Test Listing One</h1>") {
+		t.Fatalf("expected listing title in rendered detail page, got %s", string(page1))
+	}
+	if !strings.Contains(string(page1), "$100") {
+		t.Fatalf("expected listing price in rendered detail page, got %s", string(page1))
+	}
+
+	page2 := mustReadFile(t, filepath.Join(outDir, "listings", "test-listing-2", "index.html"))
+	if !strings.Contains(string(page2), "Test Listing Two") {
+		t.Fatalf("expected second listing detail page to render, got %s", string(page2))
+	}
+
+	sitemapRaw := mustReadFile(t, filepath.Join(outDir, "sitemap.xml"))
+	for _, wantURL := range []string{"/listings/test-listing-1/", "/listings/test-listing-2/"} {
+		if !strings.Contains(string(sitemapRaw), wantURL) {
+			t.Fatalf("expected sitemap.xml to contain %s, got %s", wantURL, string(sitemapRaw))
+		}
+	}
+}
+
 func TestRun_ExecutesWebsiteOwnedOutputTests(t *testing.T) {
 	websiteRoot, err := filepath.Abs(filepath.Join("..", "..", "examples", "hello-world"))
 	if err != nil {

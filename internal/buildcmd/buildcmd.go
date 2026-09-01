@@ -13,6 +13,7 @@ import (
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/linkcheck"
+	"ffreis-website-compiler/internal/listings"
 	"ffreis-website-compiler/internal/outputtestcmd"
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/projects"
@@ -81,12 +82,14 @@ var (
 // optionalContent holds the blog posts, projects, and courses loaded from
 // optional input flags, plus the page templates needed to render them.
 type optionalContent struct {
-	posts          []posts.Post
-	projects       []projects.Project
-	courses        []courses.Course
-	postTemplate   *sitegen.PageTemplate
-	blogTemplate   *sitegen.PageTemplate
-	courseTemplate *sitegen.PageTemplate // the internal "course" landing template
+	posts           []posts.Post
+	projects        []projects.Project
+	courses         []courses.Course
+	listings        []listings.Listing
+	postTemplate    *sitegen.PageTemplate
+	blogTemplate    *sitegen.PageTemplate
+	courseTemplate  *sitegen.PageTemplate // the internal "course" landing template
+	listingTemplate *sitegen.PageTemplate // the internal "listing" detail template
 }
 
 func Run(args []string, logger *slog.Logger) error {
@@ -258,6 +261,15 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		injectCoursesHomeCarousel(siteData, loaded, opts.itemsPerPage)
 	}
 
+	if opts.listingsFile != "" && sectionEnabled(siteData, "listings") {
+		loaded, err := listings.LoadListingsFile(opts.listingsFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading listings: %w", err)
+		}
+		content.listings = loaded
+		injectListingsData(siteData, loaded)
+	}
+
 	pruneDisabledSectionData(siteData, opts.disabledSections)
 
 	return content, nil
@@ -278,6 +290,9 @@ func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalCont
 		case "course":
 			tmp := pages[i]
 			content.courseTemplate = &tmp
+		case "listing":
+			tmp := pages[i]
+			content.listingTemplate = &tmp
 		}
 	}
 }
@@ -305,6 +320,12 @@ func writeAllPaginatedContent(
 		return nil, err
 	}
 	extraSitemapURLs = append(extraSitemapURLs, courseLandingURLs...)
+
+	listingDetailURLs, err := maybeWriteListingDetailPages(logger, opts, content, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, err
+	}
+	extraSitemapURLs = append(extraSitemapURLs, listingDetailURLs...)
 
 	blogURLs, err := maybeWriteBlogListings(logger, opts, content, siteData, assetsDir, mirrorer)
 	if err != nil {
