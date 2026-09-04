@@ -25,16 +25,17 @@ import (
 
 // migratedCollections is the set of collections the engine actually drives.
 //
-// The built-in definitions cover projects, courses and listings, but courses
-// and listings still load through internal/courses and internal/listings until
-// decision-record Phases 3 and 5 migrate them. Running the engine for those two
-// now would double-publish their site-data keys and double-write their pages,
-// so the engine is gated on this list and each later phase adds one name.
+// The built-in definitions cover projects, courses and listings, but listings
+// still loads through internal/listings until decision-record Phase 5 migrates
+// it. Running the engine for it now would double-publish its site-data key and
+// double-write its pages, so the engine is gated on this list and each later
+// phase adds one name.
 //
 // A collection defined by a site's own collections.yaml is always driven: it
 // has no typed loader to conflict with.
 var migratedCollections = map[string]bool{
 	"projects": true,
+	"courses":  true,
 }
 
 // collectionSet is the resolved, per-build view of every collection: the merged
@@ -47,6 +48,13 @@ type collectionSet struct {
 	// contributed records this build. A collection whose section is disabled,
 	// or whose source yielded nothing, is absent.
 	projected map[string]collections.Projection
+	// detailTemplates holds each collection's detail page template, captured
+	// BEFORE filterInternalPages removes it. A detail template is marked
+	// pages.<name>.internal so its .CurrentX-less validation render never
+	// reaches disk (decision record Q8) — which also means it is gone from the
+	// page slice by the time the writers run, exactly like content.courseTemplate
+	// had to be captured early before this collection existed.
+	detailTemplates map[string]sitegen.PageTemplate
 }
 
 // collectionRecords returns the projected records for one collection, or nil
@@ -58,14 +66,39 @@ func collectionRecords(set *collectionSet, name string) []any {
 	return set.projected[name].Records
 }
 
-// names returns the collections that produced records, in stable order.
+// names returns the collections that produced records, in the engine's
+// processing order (collections.Order — declaration order, not alphabetical).
+// Nil-safe so a caller with no collection state needs no guard.
 func (s *collectionSet) names() []string {
-	out := make([]string, 0, len(s.projected))
-	for name := range s.projected {
-		out = append(out, name)
+	if s == nil {
+		return nil
 	}
-	sort.Strings(out)
+	out := make([]string, 0, len(s.projected))
+	for _, name := range collections.Order(s.defs) {
+		if _, ok := s.projected[name]; ok {
+			out = append(out, name)
+		}
+	}
 	return out
+}
+
+// captureDetailTemplates records every driven collection's detail template
+// while the page slice still contains internal pages. Called from
+// findPaginationTemplates, which runs before filterInternalPages for exactly
+// this reason.
+func (s *collectionSet) captureDetailTemplates(pages []sitegen.PageTemplate) {
+	if s == nil {
+		return
+	}
+	s.detailTemplates = make(map[string]sitegen.PageTemplate)
+	for name, def := range s.defs {
+		if def.Detail == nil || !def.Detail.Enabled || def.Detail.Template == "" {
+			continue
+		}
+		if tpl := findTemplate(pages, def.Detail.Template); tpl != nil {
+			s.detailTemplates[name] = *tpl
+		}
+	}
 }
 
 // loadCollections resolves the collections config, validates the requested
@@ -99,7 +132,7 @@ func loadCollections(logger *slog.Logger, opts buildOptions, siteData map[string
 	}
 
 	basePath, _ := siteData["base_path"].(string)
-	for _, name := range sortedDefNames(set.defs) {
+	for _, name := range collections.Order(set.defs) {
 		def := set.defs[name]
 
 		if !migratedCollections[name] && !siteDefined(cfg, name) {
@@ -176,9 +209,46 @@ func sortedDefNames(defs map[string]collections.Collection) []string {
 	return names
 }
 
-// writeCollectionPages writes the index and detail pages for every collection
-// that produced records, returning their sitemap entries.
-func writeCollectionPages(
+// The index and detail writers are two separate passes, called from two
+// different points in writeAllPaginatedContent rather than one loop that does
+// both per collection.
+//
+// That is not stylistic. Before the migration every collection had its own
+// hand-written call, and all the DETAIL writers ran ahead of all the paginated
+// INDEX writers (maybeWriteCourseLandingPages and maybeWriteListingDetailPages,
+// then the blog/projects/courses listings). Since extraSitemapURLs is emitted
+// in call order and generateSitemapFromPages does not re-sort it, folding the
+// two into one per-collection loop would reshuffle sitemap.xml on every site
+// that has a detail page. Keeping the two passes — and iterating each in
+// collections.Order — reproduces the legacy sequence exactly, which is what
+// lets the Phase 3 golden files be byte-identical rather than "same set,
+// different order".
+
+// writeAllCollectionDetailPages writes the per-record detail pages for every
+// collection that produced records, returning their sitemap entries.
+func writeAllCollectionDetailPages(
+	logger *slog.Logger,
+	opts buildOptions,
+	set *collectionSet,
+	siteData map[string]any,
+	assetsDir string,
+	mirrorer *externalAssetMirrorer,
+) ([]sitemap.URLItem, error) {
+	var urls []sitemap.URLItem
+	for _, name := range set.names() {
+		detailURLs, err := writeCollectionDetailPages(
+			logger, opts, set, set.defs[name], set.projected[name], siteData, assetsDir, mirrorer)
+		if err != nil {
+			return nil, err
+		}
+		urls = append(urls, detailURLs...)
+	}
+	return urls, nil
+}
+
+// writeAllCollectionIndexPages writes the paginated index pages for every
+// collection that produced records, returning their sitemap entries.
+func writeAllCollectionIndexPages(
 	logger *slog.Logger,
 	opts buildOptions,
 	pages []sitegen.PageTemplate,
@@ -188,24 +258,14 @@ func writeCollectionPages(
 	mirrorer *externalAssetMirrorer,
 ) ([]sitemap.URLItem, error) {
 	var urls []sitemap.URLItem
-
 	for _, name := range set.names() {
-		def := set.defs[name]
-		projection := set.projected[name]
-
-		indexURLs, err := writeCollectionIndexPages(logger, opts, pages, def, projection, siteData, assetsDir, mirrorer)
+		indexURLs, err := writeCollectionIndexPages(
+			logger, opts, pages, set.defs[name], set.projected[name], siteData, assetsDir, mirrorer)
 		if err != nil {
 			return nil, err
 		}
 		urls = append(urls, indexURLs...)
-
-		detailURLs, err := writeCollectionDetailPages(logger, opts, pages, def, projection, siteData, assetsDir, mirrorer)
-		if err != nil {
-			return nil, err
-		}
-		urls = append(urls, detailURLs...)
 	}
-
 	return urls, nil
 }
 
@@ -258,13 +318,16 @@ func writeCollectionIndexPages(
 // writeCollectionDetailPages renders one page per record using the detail
 // template, generalising writeCourseLandingPages and writeListingDetailPages.
 //
-// Not reachable for `projects` (detail.enabled is false) — it is the Phase 3
-// (courses) and Phase 5 (listings) writer, landed here so the engine is whole
-// and unit-testable before either migration starts.
+// Not reachable for `projects` (detail.enabled is false); it is the courses
+// (Phase 3) and listings (Phase 5) writer.
+//
+// The template comes from set.detailTemplates rather than the page slice: a
+// detail template is pages.<name>.internal, so filterInternalPages has already
+// removed it by the time any writer runs (decision record Q8).
 func writeCollectionDetailPages(
 	logger *slog.Logger,
 	opts buildOptions,
-	pages []sitegen.PageTemplate,
+	set *collectionSet,
 	def collections.Collection,
 	projection collections.Projection,
 	siteData map[string]any,
@@ -274,8 +337,10 @@ func writeCollectionDetailPages(
 	if def.Detail == nil || !def.Detail.Enabled || len(projection.Details) == 0 {
 		return nil, nil
 	}
-	tpl := findTemplate(pages, def.Detail.Template)
-	if tpl == nil {
+	tpl, ok := set.detailTemplates[def.Name]
+	if !ok {
+		// Matches maybeWriteCourseLandingPages: a site without the detail page
+		// template simply gets no detail pages, rather than a build failure.
 		return nil, nil
 	}
 
@@ -291,7 +356,7 @@ func writeCollectionDetailPages(
 		toCopy, err := renderAndWriteCollectionDetail(detailPageParams{
 			logger:   logger,
 			opts:     opts,
-			tmpl:     *tpl,
+			tmpl:     tpl,
 			def:      def,
 			record:   record,
 			urlPath:  urlPath,

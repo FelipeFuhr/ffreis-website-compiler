@@ -35,8 +35,8 @@ type paginatedPagesParams struct {
 // writePaginatedPages generates page 1 at /<sectionName>/index.html and
 // subsequent pages at /<sectionName>/page/N/index.html.
 //
-// items must already be converted to []any by the caller (e.g. via
-// projects.ToSiteDataList, courses.ToSiteDataList, or postToMap).
+// items must already be converted to []any by the caller — a collection's
+// projected records, or postToMap for the blog.
 //
 // It returns the sitemap URL entries for all generated pages.
 func writePaginatedPages(p paginatedPagesParams) ([]sitemap.URLItem, error) {

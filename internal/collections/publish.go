@@ -40,8 +40,8 @@ func limitRecords(records []any, n int) []any {
 //     injectProjectsHomeCarousel.
 //   - "pages.index.courses_carousel_items" is a NO-OP when siteData["pages"] is
 //     absent, but CREATES the "index" map when only that is missing — exactly
-//     what injectCoursesHomeCarousel does today. The silent no-op is deliberate
-//     current behaviour (decision record §3.2), not an oversight to fix here.
+//     what injectCoursesHomeCarousel did. The silent no-op is deliberate
+//     preserved behaviour (decision record §3.2), not an oversight to fix here.
 //
 // The rule generalising both: the first segment's container must already
 // exist; deeper intermediates are created on demand.

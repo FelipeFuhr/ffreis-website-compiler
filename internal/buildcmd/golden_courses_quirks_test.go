@@ -283,8 +283,9 @@ func TestCoursesSortedByOrderThenTitle(t *testing.T) {
 }
 
 // TestCoursesHomeCarouselHonoursItemsPerPage pins the `publish:` half of the
-// courses collection: injectCoursesHomeCarousel writes the FIRST -items-per-page
-// records to pages.index.courses_carousel_items, which the home page ranges over.
+// courses collection: the FIRST -items-per-page records land in
+// pages.index.courses_carousel_items, which the home page ranges over — the
+// truncation injectCoursesHomeCarousel used to do.
 func TestCoursesHomeCarouselHonoursItemsPerPage(t *testing.T) {
 	// pt-real runs at -items-per-page 2 over 3 records, so the carousel must
 	// truncate to 2 — a limit of 0 or "all" would render 3.

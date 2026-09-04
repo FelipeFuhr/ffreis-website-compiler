@@ -14,11 +14,19 @@ GOVULNCHECK ?= govulncheck
 # Ratcheted 55 -> 65 by the P1.2 collection-engine work. Measured after it:
 # 68.4% overall, with internal/collections at 86.1% and internal/buildcmd
 # lifted from ~59% to 71.1% by the golden-file harness and the collection
-# tests. 65 keeps ~3pt of headroom so the gate does not go brittle on
-# unrelated PRs, while making sure the new engine cannot be extended with
-# untested code under a floor that predates it. Raise again as
-# buildcmd/sitegen (the two >500-line "god files") gain coverage.
-COVERAGE_MIN ?= 65
+# tests. 65 kept ~3pt of headroom so the gate did not go brittle on
+# unrelated PRs, while making sure the new engine could not be extended with
+# untested code under a floor that predates it.
+#
+# Ratcheted 65 -> 66 by the P1.3 courses migration. Measured after it: 69.5%
+# overall, with internal/collections at 89.2% (Order and RenderPath gained
+# unit tests) and internal/buildcmd at 73.9% (the courses golden cells, the
+# quirks assertions, and the courses half of the flag-alias and
+# section-gating proofs). Deleting internal/courses removed a small, fully
+# covered package, so the rise is real coverage of the ENGINE rather than an
+# artefact of the deletion. 66 keeps the same ~3pt of headroom. Raise again
+# as buildcmd/sitegen (the two >500-line "god files") gain coverage.
+COVERAGE_MIN ?= 66
 INTEGRATION_COVERAGE_MIN ?= 75
 
 LEFTHOOK_VERSION ?= 1.7.10
