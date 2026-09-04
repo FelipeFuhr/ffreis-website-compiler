@@ -1,0 +1,115 @@
+# Reference petlook-mobile bundle-projection config for `emit-content-bundle -bundle-config`.
+#
+# This reproduces, byte-for-byte, the whitelist/CDN-base/lang-alias values that used to be
+# hardcoded in internal/bundlecmd/bundlecmd.go before it became config-driven (see
+# bundlecmd_test.go TestEmit_MatchesGolden, which passes this file to Run and diffs the output
+# against testdata/golden/). It mirrors petlook-mobile/contract/content-bundle.schema.json.
+#
+# petlook's own deploy pipeline (ffreis-website-deployer's "Emit content bundle" step) does not
+# yet pass -bundle-config — see this change's PR description for that follow-up. A copy of this
+# file (or an equivalent one) needs to be committed somewhere petlook's CI can reach it (e.g.
+# petlook-data or petlook-website) and threaded through as -bundle-config.
+
+cdn_base: https://petlook.app
+
+lang_aliases:
+  jp: ja
+  pt: pt-BR
+
+ui_sections:
+  - name: nav
+    keys:
+      - skip_link
+      - logo_aria
+      - nav_aria
+      - recommendations
+      - contact
+      - donate
+      - donate_url
+      - lang_links
+    required:
+      - recommendations
+      - contact
+      - donate
+      - donate_url
+      - lang_links
+  - name: generator
+    keys:
+      - headline
+      - subtext
+      - url_label
+      - url_placeholder
+      - url_hint
+      - photo_label
+      - photo_drop_label
+      - photo_hint
+      - photo_remove_label
+      - url_add
+      - url_remove_label
+      - cta
+      - generating_label
+      - loading_stages
+      - result_download
+      - result_retry
+      - result_alt
+      - convert_16bit_cta
+      - convert_16bit_loading
+      - convert_16bit_label
+      - convert_16bit_alt
+      - convert_16bit_download
+      - convert_16bit_retry
+      - convert_16bit_error
+      - result_products_heading
+      - disclosure_inline
+      - disclosure_more
+      - disclosure_title
+      - disclosure_close
+      - disclosure_body_intro
+      - disclosure_items
+    required:
+      - headline
+      - subtext
+      - url_label
+      - url_placeholder
+      - photo_label
+      - cta
+      - generating_label
+      - result_download
+      - result_retry
+      - convert_16bit_cta
+      - result_products_heading
+      - disclosure_inline
+  - name: errors
+    keys:
+      - url_required
+      - photo_required
+      - generic
+    required:
+      - url_required
+      - photo_required
+      - generic
+
+lang_link_keys:
+  - lang
+  - label
+  - flag
+  - href
+  - active
+
+recommendation_keys:
+  - id
+  - store
+  - name
+  - url
+  - image_url
+  - price
+
+brand_keys:
+  - brand_id
+  - brand_name
+  - brand_url
+  - logo_url
+  - description
+  - placement_type
+  - disclosure_label
+  - priority
