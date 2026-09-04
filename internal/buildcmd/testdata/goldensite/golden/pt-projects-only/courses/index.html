@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Cursos — Golden</title>
+  <meta name="description" content="Catálogo de cursos do site golden.">
+  <link rel="canonical" href="https://golden.example/pt/courses/">
+  <style>
+body{color:#111;margin:0}.site-nav{display:flex}.site-footer{border-top:1px solid #ddd}
+</style>
+  
+  <style>
+.courses-grid{display:grid;gap:1rem}.course-card{border:1px solid #ddd}.course-badge{font-size:0.75rem}
+</style>
+
+
+<style>@view-transition{navigation:auto}</style>
+    <script type="speculationrules">{"prerender":[{"where":{"href_matches":"/*"},"eagerness":"moderate"}]}</script>
+<link rel="alternate" hreflang="en" href="https://golden.example/en/courses/">
+<link rel="alternate" hreflang="pt-BR" href="https://golden.example/pt/courses/">
+<link rel="alternate" hreflang="x-default" href="https://golden.example/en/courses/">
+</head>
+<body>
+
+<nav class="site-nav" aria-label="Navegação principal">
+  <ul class="nav-list">
+    <li><a href="/">Início</a></li>
+    <li><a href="/projects/">Projetos</a></li>
+    <li><a href="/contact/">Contato</a></li>
+  </ul>
+  <div class="lang-switcher"><a class="lang-flag" href="/en/courses/" title="English">🇺🇸</a><span class="lang-flag lang-flag--active" title="Português">🇧🇷</span></div>
+</nav>
+
+
+
+
+
+
+
+
+
+
+<main class="courses-main" id="main-content">
+  <section class="courses-header-section">
+    <div class="container">
+      <h1 class="section-heading">Cursos</h1>
+      <p class="courses-copy">Cursos práticos sobre ML em produção.</p>
+    </div>
+  </section>
+
+  <section class="courses-list-section">
+    <div class="container">
+      
+      <p class="courses-empty">Nenhum curso por enquanto.</p>
+      
+
+      
+    </div>
+  </section>
+</main>
+<script>
+// Progressive-enhancement stub for the paginated projects grid.
+(function () {
+  var list = document.querySelector('[data-filter-list]');
+  if (!list) {
+    return;
+  }
+  list.setAttribute('data-paginated', 'true');
+})();
+
+</script>
+
+
+<footer class="site-footer">
+  <p>© 2026 Felipe Reis</p>
+</footer>
+
+</body>
+</html>

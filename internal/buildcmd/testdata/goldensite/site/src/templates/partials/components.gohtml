@@ -44,6 +44,23 @@
 </article>
 {{end}}
 
+{{/* ── Course card (preview — used in the home carousel) ──────────────────── */}}
+{{/* Reads pages.index.courses_carousel_items, which injectCoursesHomeCarousel
+     populates with the FIRST -items-per-page records. Present so the golden
+     files also pin the `publish:` half of the courses collection — including
+     its derived fields, since href comes from `derive` and price_*_display
+     from `money`. */}}
+{{define "course-card-preview"}}
+{{$c    := required (index . "Course") "missing course for preview card"}}
+{{$href := required (dig $c "href") "missing course href"}}
+<article class="course-card course-card--preview">
+  <h3 class="course-title">{{required (dig $c "title") "missing course title"}}</h3>
+  {{with dig $c "platform"}}<p class="course-platform">{{.}}</p>{{end}}
+  {{with dig $c "price_usd_display"}}<p class="course-price">{{.}}</p>{{end}}
+  <a href="{{$href}}" class="course-link">View course</a>
+</article>
+{{end}}
+
 {{/* ── Pagination bar ──────────────────────────────────────────────────────── */}}
 {{/* Copied VERBATIM from ffreis-website/src/templates/partials/components.gohtml. */}}
 {{/* Expects dict "Pagination" $pagination */}}

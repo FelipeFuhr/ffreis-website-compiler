@@ -1,0 +1,80 @@
+{{/* Mirrors ffreis-website/src/templates/pages/courses.gohtml.
+
+     The card markup below is copied VERBATIM from the real template, including
+     the `available_languages` badge filter. That key is decision-record Q1 in
+     its courses form: the mock content declares `supported_languages` (which
+     courses.Course DOES map) but never `available_languages`, so $availLangs is
+     always nil and EVERY badge renders on EVERY card. A passthrough projection
+     would not change this one — but a well-meaning rename would, so it is
+     pinned by golden bytes like the projects version. */}}
+{{define "page_title"}}{{$p := dig .SiteData "pages" "courses"}}{{if $p}}{{dig $p "title"}}{{else}}Courses{{end}}{{end}}
+
+{{define "page_styles"}}
+  <link rel="stylesheet" href="/css/courses.css">
+{{end}}
+
+{{define "page"}}
+{{$pageData   := required (dig .SiteData "pages" "courses") "missing pages.courses"}}
+{{$bp         := required (dig .SiteData "base_path") "missing base_path"}}
+{{$items      := dig $pageData "items"}}
+{{$pagination := dig $pageData "pagination"}}
+{{$coursesUI  := dig (dig .SiteData "ui") "courses"}}
+{{$viewCta    := dig $pageData "view_course_cta"}}
+{{$langLinks  := dig (dig .SiteData "ui") "nav" "lang_links"}}
+
+<main class="courses-main" id="main-content">
+  <section class="courses-header-section">
+    <div class="container">
+      <h1 class="section-heading">{{required (dig $pageData "heading") "missing courses heading"}}</h1>
+      <p class="courses-copy">{{required (dig $pageData "copy") "missing courses copy"}}</p>
+    </div>
+  </section>
+
+  <section class="courses-list-section">
+    <div class="container">
+      {{if $items}}
+      <div class="courses-grid" data-filter-list>
+        {{range $items}}
+        {{$avail    := dig . "availability_type"}}
+        {{$ctaLabel := dig (dig . "localized_cta_labels") "primary"}}
+        <article class="course-card" data-paginated-item data-filterable-item data-filter-tags="{{toJSON (list (dig . "level"))}}">
+          {{with dig . "platform"}}
+          <p class="course-platform">{{.}}</p>
+          {{end}}
+
+          {{if eq $avail "udemy_only"}}
+          <span class="course-badge course-badge--udemy">{{dig $coursesUI "udemy_badge"}}</span>
+          {{else if eq $avail "coming_soon"}}
+          <span class="course-badge course-badge--coming-soon">{{dig $coursesUI "coming_soon_badge"}}</span>
+          {{else if eq $avail "hybrid"}}
+          <span class="course-badge course-badge--hybrid">{{dig $coursesUI "hybrid_badge"}}</span>
+          {{else if eq $avail "website_only"}}
+          <span class="course-badge course-badge--website">{{dig $coursesUI "website_badge"}}</span>
+          {{end}}
+
+          {{$availLangs := dig . "available_languages"}}
+          {{if $langLinks}}<span class="lang-badges">{{range $langLinks}}{{if or (not $availLangs) (has $availLangs .prefix)}}<span class="lang-badge" title="{{.label}}">{{.flag}}</span>{{end}}{{end}}</span>{{end}}
+          <h2 class="course-title"><a href="{{$bp}}{{required (dig . "href") "missing course href"}}" class="course-title-link">{{required (dig . "title") "missing course title"}}</a></h2>
+
+          {{with dig . "description"}}
+          <p class="course-desc">{{.}}</p>
+          {{end}}
+
+          <a href="{{$bp}}{{required (dig . "href") "missing course href"}}" class="course-cta" data-track-cta="course-view">
+            {{if $ctaLabel}}{{$ctaLabel}}{{else}}{{$viewCta}}{{end}} <span aria-hidden="true">&rarr;</span>
+          </a>
+        </article>
+        {{end}}
+      </div>
+      {{else}}
+      <p class="courses-empty">{{dig $pageData "empty_state"}}</p>
+      {{end}}
+
+      {{if $pagination}}
+      {{template "pagination" (dict "Pagination" $pagination)}}
+      {{end}}
+    </div>
+  </section>
+</main>
+<script src="/js/pagination.js" defer></script>
+{{end}}

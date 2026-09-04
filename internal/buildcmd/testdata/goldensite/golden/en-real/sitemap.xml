@@ -5,6 +5,10 @@
     <lastmod>2020-01-02</lastmod>
   </url>
   <url>
+    <loc>https://golden.example/courses</loc>
+    <lastmod>2020-01-02</lastmod>
+  </url>
+  <url>
     <loc>https://golden.example/</loc>
     <lastmod>2020-01-02</lastmod>
   </url>
@@ -13,9 +17,30 @@
     <lastmod>2020-01-02</lastmod>
   </url>
   <url>
+    <loc>https://golden.example/courses/mlops-in-production-from-notebook-to-platform/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://golden.example/courses/retrieval-augmented-generation-build-production-rag-systems/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://golden.example/courses/aws-for-ml-engineers-serverless-infrastructure/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://golden.example/projects/</loc>
   </url>
   <url>
     <loc>https://golden.example/projects/page/2/</loc>
+  </url>
+  <url>
+    <loc>https://golden.example/courses/</loc>
+  </url>
+  <url>
+    <loc>https://golden.example/courses/page/2/</loc>
   </url>
 </urlset>

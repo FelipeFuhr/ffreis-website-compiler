@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Projetos — Golden</title>
+  <meta name="description" content="Lista de projetos do site golden.">
+  <link rel="canonical" href="https://golden.example/pt/projects/">
+  <style>
+body{color:#111;margin:0}.site-nav{display:flex}.site-footer{border-top:1px solid #ddd}
+</style>
+  
+  <style>
+.projects-grid{display:grid;gap:1rem}.project-card{border:1px solid #ddd}.pagination-list{display:flex;list-style:none}
+</style>
+
+
+<style>@view-transition{navigation:auto}</style>
+    <script type="speculationrules">{"prerender":[{"where":{"href_matches":"/*"},"eagerness":"moderate"}]}</script>
+</head>
+<body>
+
+<nav class="site-nav" aria-label="Navegação principal">
+  <ul class="nav-list">
+    <li><a href="/">Início</a></li>
+    <li><a href="/projects/">Projetos</a></li>
+    <li><a href="/contact/">Contato</a></li>
+  </ul>
+  <div class="lang-switcher"><a class="lang-flag" href="/en/" title="English">🇺🇸</a><span class="lang-flag lang-flag--active" title="Português">🇧🇷</span></div>
+</nav>
+
+
+
+
+
+
+
+<main class="projects-main" id="main-content">
+  <section class="projects-header-section">
+    <div class="container">
+      <h1 class="section-heading">Projetos</h1>
+      <p class="projects-copy">Uma seleção de trabalhos recentes.</p>
+    </div>
+  </section>
+
+  <section class="projects-list-section">
+    <div class="container">
+      
+      <div class="projects-grid" data-filter-list>
+        
+        
+
+
+
+<article class="project-card" data-paginated-item data-filterable-item data-filter-tags="[&#34;AWS&#34;,&#34;Kubernetes&#34;,&#34;MLflow&#34;,&#34;SageMaker&#34;,&#34;Python&#34;,&#34;Terraform&#34;]">
+  <div class="project-card-body">
+    
+    
+    <span class="lang-badges"><span class="lang-badge" title="English">🇺🇸</span><span class="lang-badge" title="Português">🇧🇷</span></span>
+    <h2 class="project-title"><a href="/pt/contact/" class="project-title-link" rel="noopener noreferrer">Production ML Platform</a></h2>
+    <p class="project-desc">Designed and deployed an end-to-end ML platform covering model training, serving, and monitoring on AWS and Kubernetes. Experiment tracking with MLflow; inference via SageMaker endpoints. Case study coming soon.</p>
+  </div>
+  
+  <ul class="project-stack">
+    <li class="stack-chip">AWS</li><li class="stack-chip">Kubernetes</li><li class="stack-chip">MLflow</li><li class="stack-chip">SageMaker</li><li class="stack-chip">Python</li><li class="stack-chip">Terraform</li>
+  </ul>
+  
+  
+  <a href="/pt/contact/" class="project-link" rel="noopener noreferrer">View project <span aria-hidden="true">→</span></a>
+  
+</article>
+
+        
+        
+
+
+
+<article class="project-card" data-paginated-item data-filterable-item data-filter-tags="[&#34;LLMs&#34;,&#34;RAG&#34;,&#34;AWS&#34;,&#34;Lambda&#34;,&#34;Python&#34;,&#34;FastAPI&#34;]">
+  <div class="project-card-body">
+    
+    
+    <span class="lang-badges"><span class="lang-badge" title="English">🇺🇸</span><span class="lang-badge" title="Português">🇧🇷</span></span>
+    <h2 class="project-title"><a href="/pt/contact/" class="project-title-link" rel="noopener noreferrer">LLM/RAG Application</a></h2>
+    <p class="project-desc">Built a production RAG pipeline with document ingestion, vector search, and LLM-generated responses. Deployed as a scalable API on AWS Lambda. Case study coming soon.</p>
+  </div>
+  
+  <ul class="project-stack">
+    <li class="stack-chip">LLMs</li><li class="stack-chip">RAG</li><li class="stack-chip">AWS</li><li class="stack-chip">Lambda</li><li class="stack-chip">Python</li><li class="stack-chip">FastAPI</li>
+  </ul>
+  
+  
+  <a href="/pt/contact/" class="project-link" rel="noopener noreferrer">View project <span aria-hidden="true">→</span></a>
+  
+</article>
+
+        
+      </div>
+      
+
+      
+      
+
+
+
+
+
+
+<nav class="pagination" aria-label="Page navigation">
+  <ul class="pagination-list">
+    <li class="pagination-item">
+      
+      <span class="pagination-link pagination-link--arrow pagination-link--disabled" aria-hidden="true">‹</span>
+      
+    </li>
+    
+    
+    
+    <li class="pagination-item pagination-item--active">
+      
+      <span class="pagination-link pagination-link--current" aria-current="page">1</span>
+      
+    </li>
+    
+    
+    
+    
+    <li class="pagination-item">
+      
+      <a href="/projects/page/2/" class="pagination-link">2</a>
+      
+    </li>
+    
+    
+    <li class="pagination-item">
+      
+      <a href="/projects/page/2/" class="pagination-link pagination-link--arrow" aria-label="Next page" rel="next">›</a>
+      
+    </li>
+  </ul>
+</nav>
+
+
+      
+    </div>
+  </section>
+</main>
+<script>
+// Progressive-enhancement stub for the paginated projects grid.
+(function () {
+  var list = document.querySelector('[data-filter-list]');
+  if (!list) {
+    return;
+  }
+  list.setAttribute('data-paginated', 'true');
+})();
+
+</script>
+
+
+<footer class="site-footer">
+  <p>© 2026 Felipe Reis</p>
+</footer>
+
+</body>
+</html>
