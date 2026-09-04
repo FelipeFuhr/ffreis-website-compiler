@@ -74,13 +74,63 @@ func copyStaticAssets(srcRoot, dstRoot string) error {
 	// writeHashedAssets; copying the originals would produce unreferenced dead files.
 	// ld/ (JSON-LD structured data) and .well-known/ (e.g. security.txt) are served
 	// verbatim and are not fingerprinted.
+	//
+	// manifest.json and site.webmanifest are NOT copied here even though they are
+	// "well-known" files: unlike the files below, their icons[].src entries name
+	// other local assets, which must stay in sync with those assets' fingerprinted
+	// filenames. writeManifestFiles (called from writePages, once basePath and the
+	// page-fingerprinting pass are available) rewrites and writes them instead.
 	dirs := []string{"ld", wellKnownDir}
-	files := []string{"favicon.ico", "robots.txt", sitemapXML, "llms.txt", "humans.txt", fileManifestJSON, fileSiteWebmanifest}
+	files := []string{"favicon.ico", "robots.txt", sitemapXML, "llms.txt", "humans.txt"}
 
 	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
 		return err
 	}
 	return copyExistingFiles(srcRoot, dstRoot, files)
+}
+
+// manifestFiles lists the JSON web-app-manifest files whose icons[].src entries
+// must be rewritten to their content-fingerprinted paths — see writeManifestFiles.
+var manifestFiles = []string{fileManifestJSON, fileSiteWebmanifest}
+
+// writeManifestFiles reads each file in manifestFiles from srcRoot — a site may
+// ship neither, one, or both, so a missing file is silently skipped exactly
+// like copyExistingFiles does for the other well-known files — rewrites any
+// icons[].src entries to their content-fingerprinted paths via
+// fingerprintManifestIcons, and writes the result to dstRoot. Discovered
+// hashedRelPath → originalRelPath copy instructions are merged into toCopy so
+// the caller's single writeHashedAssets pass (shared with page-level HTML
+// fingerprinting) copies the icon files too.
+//
+// Unlike copyExistingFiles, this never does a verbatim byte copy of a *present*
+// file: even a manifest with no icons key is still re-written to dstRoot
+// (unchanged), so its presence in dist keeps matching its presence in srcRoot
+// exactly as copyExistingFiles would have produced.
+func writeManifestFiles(srcRoot, dstRoot, basePath string, toCopy map[string]string) error {
+	for _, file := range manifestFiles {
+		src := filepath.Join(srcRoot, file)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+
+		rewritten, err := fingerprintManifestIcons(data, srcRoot, basePath, toCopy)
+		if err != nil {
+			return fmt.Errorf("fingerprinting icons in %s: %w", file, err)
+		}
+
+		dst := filepath.Join(dstRoot, file)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(dst, rewritten, 0o644); err != nil { //nolint:gosec
+			return fmt.Errorf(errFmtWriting, dst, err)
+		}
+	}
+	return nil
 }
 
 func copyExistingDirs(srcRoot, dstRoot string, dirs []string) error {
