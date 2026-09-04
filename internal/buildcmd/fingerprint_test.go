@@ -498,6 +498,203 @@ func TestReadAsset_AbsoluteLeadingSlashNormalized(t *testing.T) {
 	}
 }
 
+// ── fingerprintManifestIcons ──────────────────────────────────────────────────
+
+func TestFingerprintManifestIcons_RewritesIconSrc(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{"images/logo-256.png": "pngdata"})
+	manifest := []byte(`{"name":"App","icons":[{"src":"/images/logo-256.png","sizes":"256x256","type":"image/png"}]}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(string(got), `"src":"/images/logo-256.png"`) {
+		t.Errorf("expected icon src fingerprinted, got: %s", got)
+	}
+	hash := assetContentHash([]byte("pngdata"))
+	if !strings.Contains(string(got), hash) {
+		t.Errorf("expected hash %q in rewritten manifest, got: %s", hash, got)
+	}
+	if len(toCopy) != 1 {
+		t.Fatalf("expected 1 toCopy entry, got %d: %v", len(toCopy), toCopy)
+	}
+	for hashed, orig := range toCopy {
+		if orig != "images/logo-256.png" {
+			t.Errorf("expected original=images/logo-256.png, got %q", orig)
+		}
+		if !strings.Contains(hashed, hash) {
+			t.Errorf("expected hash %q in hashed path %q", hash, hashed)
+		}
+	}
+}
+
+func TestFingerprintManifestIcons_MultipleIconsAllRewritten(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{
+		"images/logo-192.png": "small",
+		"images/logo-512.png": "large",
+	})
+	manifest := []byte(`{"icons":[
+		{"src":"/images/logo-192.png","sizes":"192x192"},
+		{"src":"/images/logo-512.png","sizes":"512x512"}
+	]}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(toCopy) != 2 {
+		t.Fatalf("expected 2 toCopy entries, got %d: %v", len(toCopy), toCopy)
+	}
+	for _, want := range []string{assetContentHash([]byte("small")), assetContentHash([]byte("large"))} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("expected hash %q in output, got: %s", want, got)
+		}
+	}
+}
+
+func TestFingerprintManifestIcons_NoIconsKeyLeftByteForByteUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	manifest := []byte(`{"name":"Example"}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(manifest) {
+		t.Errorf("expected byte-for-byte unchanged output for a manifest with no icons key, got: %s", got)
+	}
+	if len(toCopy) != 0 {
+		t.Errorf("expected empty toCopy, got %v", toCopy)
+	}
+}
+
+func TestFingerprintManifestIcons_EmptyIconsArrayIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	manifest := []byte(`{"name":"Example","icons":[]}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(manifest) {
+		t.Errorf("expected unchanged output for an empty icons array, got: %s", got)
+	}
+}
+
+func TestFingerprintManifestIcons_NonArrayIconsIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	manifest := []byte(`{"name":"Example","icons":"not-an-array"}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(manifest) {
+		t.Errorf("expected unchanged output for malformed icons field, got: %s", got)
+	}
+}
+
+func TestFingerprintManifestIcons_InvalidJSONLeftUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	manifest := []byte(`{not valid json`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(manifest) {
+		t.Errorf("expected invalid JSON left unchanged, got: %s", got)
+	}
+}
+
+func TestFingerprintManifestIcons_EmptyManifestLeftUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons([]byte{}, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty manifest to stay empty, got: %s", got)
+	}
+}
+
+func TestFingerprintManifestIcons_IconMissingSrcFieldSkipped(t *testing.T) {
+	dir := t.TempDir()
+	manifest := []byte(`{"icons":[{"sizes":"192x192"}]}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(manifest) {
+		t.Errorf("expected manifest unchanged when no icon has a src, got: %s", got)
+	}
+	if len(toCopy) != 0 {
+		t.Errorf("expected empty toCopy, got %v", toCopy)
+	}
+}
+
+func TestFingerprintManifestIcons_MissingAssetLeftAsIs(t *testing.T) {
+	dir := t.TempDir()
+	manifest := []byte(`{"icons":[{"src":"/images/ghost.png"}]}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(got), `/images/ghost.png`) {
+		t.Errorf("expected missing icon asset left unchanged, got: %s", got)
+	}
+	if len(toCopy) != 0 {
+		t.Errorf("expected empty toCopy for missing asset, got %v", toCopy)
+	}
+}
+
+func TestFingerprintManifestIcons_BasePathPrependedToAbsoluteSrc(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{"images/logo.png": "p"})
+	manifest := []byte(`{"icons":[{"src":"/images/logo.png"}]}`)
+	toCopy := make(map[string]string)
+
+	got, err := fingerprintManifestIcons(manifest, dir, "/en", toCopy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hash := assetContentHash([]byte("p"))
+	wantSubstr := "/en/images/logo." + hash + ".png"
+	if !strings.Contains(string(got), wantSubstr) {
+		t.Errorf("expected %q in output, got: %s", wantSubstr, got)
+	}
+	// toCopy keys are on-disk paths (unprefixed), matching fingerprintLocalAssets.
+	for hashed := range toCopy {
+		if strings.HasPrefix(hashed, "en/") || strings.HasPrefix(hashed, "/en/") {
+			t.Errorf("toCopy key must not include base_path; got %q", hashed)
+		}
+	}
+}
+
+func TestFingerprintManifestIcons_SameIconTwiceHashedOnce(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{"images/logo.png": "p"})
+	manifest := []byte(`{"icons":[{"src":"/images/logo.png","sizes":"192x192"},{"src":"/images/logo.png","sizes":"512x512"}]}`)
+	toCopy := make(map[string]string)
+
+	if _, err := fingerprintManifestIcons(manifest, dir, "", toCopy); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(toCopy) != 1 {
+		t.Errorf("expected 1 deduplicated toCopy entry, got %d: %v", len(toCopy), toCopy)
+	}
+}
+
 // ── detectMimeType ────────────────────────────────────────────────────────────
 
 func TestDetectMimeType(t *testing.T) {

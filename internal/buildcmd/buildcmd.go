@@ -444,6 +444,18 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		fmt.Fprintln(os.Stdout, target)
 	}
 
+	// Manifest icons are fingerprinted here (rather than in maybeCopyAssets,
+	// which runs before siteData/basePath are known) so the rewrite can prepend
+	// basePath to root-absolute icon refs exactly like fingerprintLocalAssets
+	// does for HTML, and so the resulting toCopy entries are covered by the same
+	// writeHashedAssets pass below. Gated the same way maybeCopyAssets is: no
+	// static assets at all means no manifest processing either.
+	if opts.copyAssets && !opts.inlineAssets {
+		if err := writeManifestFiles(assetsDir, opts.outDir, opts.basePath, allToCopy); err != nil {
+			return fmt.Errorf("writing manifest files: %w", err)
+		}
+	}
+
 	return writeHashedAssets(opts.outDir, assetsDir, allToCopy)
 }
 
