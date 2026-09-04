@@ -3,6 +3,7 @@ package collections
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -259,6 +260,85 @@ func TestResolveMergesOverBuiltins(t *testing.T) {
 	a["projects"] = Collection{Name: "mutated"}
 	if b["projects"].Name != "projects" {
 		t.Error("Builtins() returned a shared map; mutating one caller's copy affected another")
+	}
+}
+
+// TestOrderIsDeclarationThenAlphabetical pins the processing order that decides
+// which collection's pages are written — and therefore which sitemap entries are
+// emitted — first. See builtinOrder: it is DECLARATION order, because the
+// hand-written writers it replaced ran projects before courses, and sorting the
+// names would rewrite sitemap.xml on every site running both.
+func TestOrderIsDeclarationThenAlphabetical(t *testing.T) {
+	t.Run("built-ins keep declaration order", func(t *testing.T) {
+		got := Order(Builtins())
+		want := []string{"projects", "courses", "listings"}
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("Order = %v, want %v (alphabetical would start with courses)", got, want)
+		}
+	})
+
+	t.Run("site-defined collections follow, alphabetically", func(t *testing.T) {
+		defs := Builtins()
+		for _, name := range []string{"zebras", "articles"} {
+			defs[name] = Collection{Name: name}
+		}
+		got := Order(defs)
+		want := []string{"projects", "courses", "listings", "articles", "zebras"}
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("Order = %v, want %v: built-ins first in declaration order, then "+
+				"site-defined names sorted so the result is deterministic", got, want)
+		}
+	})
+
+	t.Run("a deleted built-in is skipped, not emitted empty", func(t *testing.T) {
+		defs := Builtins()
+		delete(defs, "courses")
+		got := Order(defs)
+		want := []string{"projects", "listings"}
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("Order = %v, want %v; builtinOrder names a collection that is no "+
+				"longer defined, and Order must drop it rather than return a phantom", got, want)
+		}
+	})
+}
+
+// TestRenderPath covers the detail-page path template, which decides both the
+// on-disk target and the sitemap entry — so a divergence between the two is
+// impossible by construction only if this one function is right.
+func TestRenderPath(t *testing.T) {
+	record := map[string]any{"slug": "mlops-in-production", "id": "l-42"}
+
+	cases := []struct {
+		name     string
+		tmpl     string
+		basePath string
+		want     string
+	}{
+		{"courses directory form", "/courses/{{.slug}}/", "/pt", "/courses/mlops-in-production/"},
+		{"listings directory form", "/listings/{{.id}}/", "", "/listings/l-42/"},
+		// forma's flat URLs — decision record §5.3 flags this as genuinely new.
+		{"flat html form", "/product-{{.slug}}.html", "", "/product-mlops-in-production.html"},
+		// base_path is exposed but deliberately NOT prepended by default: courses
+		// and listings compensate on the consuming side (§3.4).
+		{"base path is available, not implicit", "{{.__base_path}}/blog/{{.slug}}/", "/en", "/en/blog/mlops-in-production/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := RenderPath(tc.tmpl, record, tc.basePath)
+			if err != nil {
+				t.Fatalf("RenderPath(%q): %v", tc.tmpl, err)
+			}
+			if got != tc.want {
+				t.Errorf("RenderPath(%q) = %q, want %q", tc.tmpl, got, tc.want)
+			}
+		})
+	}
+
+	if _, err := RenderPath("/courses/{{.slug", record, ""); err == nil {
+		t.Error("expected a parse error for a malformed path template")
+	}
+	if _, err := RenderPath(`/courses/{{call .slug}}/`, record, ""); err == nil {
+		t.Error("expected an execution error for a path template that cannot run")
 	}
 }
 

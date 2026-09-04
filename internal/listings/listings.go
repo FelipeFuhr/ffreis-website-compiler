@@ -1,7 +1,9 @@
 // Package listings loads curated real-estate listing entries from a YAML
 // file and converts them into the map shapes consumed by Go templates: the
 // existing client-rendered grid data, and a new per-listing detail-page data
-// map. It mirrors the internal/courses package's shape and conventions.
+// map. It is the last typed content loader; decision-record Phase 5 replaces
+// it with the internal/collections `listings` built-in, which
+// TestBuiltinListingsMatchesListingsPackage already proves equivalent.
 package listings
 
 import (

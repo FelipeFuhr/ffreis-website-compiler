@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"testing"
 
-	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/listings"
 )
 
@@ -20,6 +19,11 @@ import (
 // as the oracle". Deep equality also catches the failure modes the record flags
 // as silent: an absent list becoming nil instead of []any{}, an absent bool
 // vanishing instead of being false, a dropped or added key.
+//
+// projects and courses have already migrated, so their oracles are the frozen,
+// test-only copies of the deleted packages (frozen_projects_oracle_test.go,
+// frozen_courses_oracle_test.go). listings still imports its live package
+// because it migrates in Phase 5.
 
 func loadRaw(t *testing.T, c Collection, name string) []map[string]any {
 	t.Helper()
@@ -62,15 +66,21 @@ func TestBuiltinProjectsMatchesProjectsPackage(t *testing.T) {
 }
 
 func TestBuiltinCoursesMatchesCoursesPackage(t *testing.T) {
-	for _, file := range []string{"courses.yaml", "courses-mock.yaml"} {
+	// courses-rich.yaml is synthetic: the two real files leave 8 of the 17
+	// struct fields unset, so without it the oracle would never compare a
+	// non-zero price, an explicit slug, or a nested curriculum. See the header
+	// of that file.
+	for _, file := range []string{"courses.yaml", "courses-mock.yaml", "courses-rich.yaml"} {
 		t.Run(file, func(t *testing.T) {
 			path := filepath.Join("testdata", file)
 
-			loaded, err := courses.LoadCoursesFile(path)
+			// Oracle: a frozen copy of the typed loader Phase 3 deleted
+			// (see frozen_courses_oracle_test.go).
+			loaded, err := frozenLoadCoursesFile(path)
 			if err != nil {
-				t.Fatalf("oracle LoadCoursesFile: %v", err)
+				t.Fatalf("oracle frozenLoadCoursesFile: %v", err)
 			}
-			want := courses.ToSiteDataList(loaded)
+			want := frozenCoursesToSiteDataList(loaded)
 
 			c := builtinCourses()
 			got, err := c.Project(loadRaw(t, c, file), ProjectOptions{})
@@ -86,7 +96,7 @@ func TestBuiltinCoursesMatchesCoursesPackage(t *testing.T) {
 				t.Fatalf("got %d detail records, want %d", len(got.Details), len(loaded))
 			}
 			for i, course := range loaded {
-				wantDetail := courses.ToCurrentCourse(course)
+				wantDetail := frozenToCurrentCourse(course)
 				if !reflect.DeepEqual(wantDetail, got.Details[i]) {
 					t.Errorf("detail record %d (%s) differs from ToCurrentCourse:\n%s",
 						i, course.Title, describeMapDiff(wantDetail, got.Details[i]))
@@ -143,7 +153,8 @@ func TestBuiltinListingsMatchesListingsPackage(t *testing.T) {
 }
 
 // TestSlugifyMatchesCoursesOracle cross-checks the engine's copy of Slugify
-// against courses.Slugify rather than trusting that the copy is faithful.
+// against the frozen courses.Slugify rather than trusting that the copy is
+// faithful.
 func TestSlugifyMatchesCoursesOracle(t *testing.T) {
 	inputs := []string{
 		"MLOps in Production!",
@@ -160,21 +171,22 @@ func TestSlugifyMatchesCoursesOracle(t *testing.T) {
 		"Mixed: colons, commas & ampersands",
 	}
 	for _, in := range inputs {
-		if want, got := courses.Slugify(in), Slugify(in); want != got {
-			t.Errorf("Slugify(%q) = %q, courses.Slugify = %q", in, got, want)
+		if want, got := frozenSlugify(in), Slugify(in); want != got {
+			t.Errorf("Slugify(%q) = %q, frozen courses.Slugify = %q", in, got, want)
 		}
 	}
 }
 
-// TestFormatMoneyMatchesCoursesOracle cross-checks FormatMoney against
-// courses.formatMoney. That function is unexported, so the oracle is reached
-// through the price_usd_display / price_brl_display keys ToSiteDataList emits.
+// TestFormatMoneyMatchesCoursesOracle cross-checks FormatMoney against the
+// frozen courses.formatMoney. That function was unexported, so the oracle is
+// reached through the price_usd_display / price_brl_display keys the frozen
+// ToSiteDataList emits — the same indirection the live package needed.
 //
 // The values cover the cases §6.1 calls out as easy to get wrong: the
 // cents <= 0 -> "" rule and the %02d fraction.
 func TestFormatMoneyMatchesCoursesOracle(t *testing.T) {
 	for _, cents := range []int{-100, -1, 0, 1, 5, 9, 99, 100, 101, 110, 999, 4900, 4999, 100000} {
-		oracle := courses.ToSiteDataList([]courses.Course{{
+		oracle := frozenCoursesToSiteDataList([]frozenCourse{{
 			Title:         "x",
 			PriceUsdCents: cents,
 			PriceBrlCents: cents,
@@ -185,10 +197,10 @@ func TestFormatMoneyMatchesCoursesOracle(t *testing.T) {
 		}
 
 		if want, got := rec["price_usd_display"], FormatMoney("$", cents); want != got {
-			t.Errorf("FormatMoney($, %d) = %q, courses gives %q", cents, got, want)
+			t.Errorf("FormatMoney($, %d) = %q, frozen courses gives %q", cents, got, want)
 		}
 		if want, got := rec["price_brl_display"], FormatMoney("R$", cents); want != got {
-			t.Errorf("FormatMoney(R$, %d) = %q, courses gives %q", cents, got, want)
+			t.Errorf("FormatMoney(R$, %d) = %q, frozen courses gives %q", cents, got, want)
 		}
 	}
 }

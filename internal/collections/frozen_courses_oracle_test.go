@@ -1,4 +1,4 @@
-package courses
+package collections
 
 import (
 	"fmt"
@@ -10,14 +10,36 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Module is one section of a course curriculum.
-type Module struct {
+// A FROZEN copy of internal/courses as it stood immediately before Phase 3
+// deleted it (docs/decisions/0001-generic-content-collections.md §6).
+//
+// Same rationale as frozen_projects_oracle_test.go: the oracle test for a
+// migrated collection has to keep running after its typed loader is gone, or
+// the equivalence proof is deleted along with the production code. Only
+// listings still imports a live package, because it migrates in Phase 5.
+//
+// Do NOT "fix" or refactor anything below. Its entire value is being a
+// byte-faithful record of the behaviour the engine has to reproduce:
+//
+//   - the exact field set of baseMap, including the keys the YAML never sets
+//     (udemy_url "", price_usd_cents 0, supported_languages []any{})
+//   - the exact zero values — []any{} and map[string]any{}, never nil, because
+//     nil and empty print differently through dig/toJSON
+//   - Slugify's collapse-and-trim, and the "slug defaults from title" rule
+//   - formatMoney's cents <= 0 -> "" and its %02d fraction
+//   - the (order, title) comparator and the required-title error
+//   - ToCurrentCourse's extra three keys, including Module's nested shape
+//
+// If the engine and this disagree, the engine is wrong.
+//
+// Source: internal/courses/courses.go at commit 4b881eb.
+
+type frozenModule struct {
 	Title   string   `yaml:"title"`
 	Lessons []string `yaml:"lessons"`
 }
 
-// Course holds data for a single course catalog entry.
-type Course struct {
+type frozenCourse struct {
 	Title               string            `yaml:"title"`
 	Description         string            `yaml:"description"`
 	Platform            string            `yaml:"platform"`
@@ -30,35 +52,30 @@ type Course struct {
 	Order               int               `yaml:"order"`
 
 	// Landing-page + checkout fields.
-	Slug            string   `yaml:"slug"`
-	SaleMode        string   `yaml:"sale_mode"`
-	PriceUsdCents   int      `yaml:"price_usd_cents"`
-	PriceBrlCents   int      `yaml:"price_brl_cents"`
-	LongDescription string   `yaml:"long_description"`
-	WhatYouLearn    []string `yaml:"what_you_learn"`
-	Curriculum      []Module `yaml:"curriculum"`
+	Slug            string         `yaml:"slug"`
+	SaleMode        string         `yaml:"sale_mode"`
+	PriceUsdCents   int            `yaml:"price_usd_cents"`
+	PriceBrlCents   int            `yaml:"price_brl_cents"`
+	LongDescription string         `yaml:"long_description"`
+	WhatYouLearn    []string       `yaml:"what_you_learn"`
+	Curriculum      []frozenModule `yaml:"curriculum"`
 }
 
 var (
-	slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
-	slugTrim     = regexp.MustCompile(`^-+|-+$`)
+	frozenSlugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+	frozenSlugTrim     = regexp.MustCompile(`^-+|-+$`)
 )
 
-// Slugify converts a title to a URL slug: lowercase, non-alphanumerics collapsed
-// to single hyphens, trimmed. "MLOps in Production!" -> "mlops-in-production".
-func Slugify(title string) string {
-	s := slugNonAlnum.ReplaceAllString(strings.ToLower(title), "-")
-	return slugTrim.ReplaceAllString(s, "")
+func frozenSlugify(title string) string {
+	s := frozenSlugNonAlnum.ReplaceAllString(strings.ToLower(title), "-")
+	return frozenSlugTrim.ReplaceAllString(s, "")
 }
 
-// coursePath is the site path for a course's landing page.
-func coursePath(slug string) string {
+func frozenCoursePath(slug string) string {
 	return "/courses/" + slug + "/"
 }
 
-// formatMoney renders a price in cents as a currency string, dropping ".00" for
-// whole amounts. 4900 -> "$49"; 4999 -> "$49.99"; 0 -> "" (no price).
-func formatMoney(symbol string, cents int) string {
+func frozenFormatMoney(symbol string, cents int) string {
 	if cents <= 0 {
 		return ""
 	}
@@ -70,16 +87,13 @@ func formatMoney(symbol string, cents int) string {
 	return fmt.Sprintf("%s%d.%02d", symbol, whole, frac)
 }
 
-// LoadCoursesFile reads a YAML list of courses from path and returns them
-// sorted ascending by Order, then by Title for ties. A missing slug is derived
-// from the title so every course has a stable landing-page path.
-func LoadCoursesFile(path string) ([]Course, error) {
+func frozenLoadCoursesFile(path string) ([]frozenCourse, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading courses file %s: %w", path, err)
 	}
 
-	var list []Course
+	var list []frozenCourse
 	if err := yaml.Unmarshal(raw, &list); err != nil {
 		return nil, fmt.Errorf("parsing courses file %s: %w", path, err)
 	}
@@ -89,7 +103,7 @@ func LoadCoursesFile(path string) ([]Course, error) {
 			return nil, fmt.Errorf("courses[%d]: missing required field 'title'", i)
 		}
 		if list[i].Slug == "" {
-			list[i].Slug = Slugify(list[i].Title)
+			list[i].Slug = frozenSlugify(list[i].Title)
 		}
 	}
 
@@ -103,8 +117,7 @@ func LoadCoursesFile(path string) ([]Course, error) {
 	return list, nil
 }
 
-// baseMap returns the fields shared by the catalog list and the landing page.
-func baseMap(c Course) map[string]any {
+func frozenCourseBaseMap(c frozenCourse) map[string]any {
 	langs := make([]any, len(c.SupportedLanguages))
 	for j, l := range c.SupportedLanguages {
 		langs[j] = l
@@ -116,7 +129,7 @@ func baseMap(c Course) map[string]any {
 	return map[string]any{
 		"title":                 c.Title,
 		"slug":                  c.Slug,
-		"href":                  coursePath(c.Slug),
+		"href":                  frozenCoursePath(c.Slug),
 		"description":           c.Description,
 		"platform":              c.Platform,
 		"level":                 c.Level,
@@ -124,8 +137,8 @@ func baseMap(c Course) map[string]any {
 		"sale_mode":             c.SaleMode,
 		"price_usd_cents":       c.PriceUsdCents,
 		"price_brl_cents":       c.PriceBrlCents,
-		"price_usd_display":     formatMoney("$", c.PriceUsdCents),
-		"price_brl_display":     formatMoney("R$", c.PriceBrlCents),
+		"price_usd_display":     frozenFormatMoney("$", c.PriceUsdCents),
+		"price_brl_display":     frozenFormatMoney("R$", c.PriceBrlCents),
 		"udemy_url":             c.UdemyURL,
 		"supported_languages":   langs,
 		"localized_cta_labels":  ctaLabels,
@@ -134,21 +147,16 @@ func baseMap(c Course) map[string]any {
 	}
 }
 
-// ToSiteDataList converts a slice of Course to the []any map format expected
-// by Go templates via the dig/range template functions (the /courses/ listing
-// and the home carousel).
-func ToSiteDataList(list []Course) []any {
+func frozenCoursesToSiteDataList(list []frozenCourse) []any {
 	out := make([]any, len(list))
 	for i, c := range list {
-		out[i] = baseMap(c)
+		out[i] = frozenCourseBaseMap(c)
 	}
 	return out
 }
 
-// ToCurrentCourse builds the per-course landing-page data map (the "CurrentCourse"
-// template key), extending the catalog fields with the long-form landing content.
-func ToCurrentCourse(c Course) map[string]any {
-	m := baseMap(c)
+func frozenToCurrentCourse(c frozenCourse) map[string]any {
+	m := frozenCourseBaseMap(c)
 
 	learn := make([]any, len(c.WhatYouLearn))
 	for i, item := range c.WhatYouLearn {

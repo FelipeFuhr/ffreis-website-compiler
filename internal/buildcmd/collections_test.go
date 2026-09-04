@@ -39,15 +39,40 @@ func TestEveryBuiltinCollectionRegistersItsSection(t *testing.T) {
 	}
 }
 
-// TestProjectsCollectionIndexTemplateIsGatedBySection guards the pairing the
-// other direction: the projects section must own the "projects" page template
-// the built-in collection's index renders, or disabling the section would drop
-// the collection's pages while leaving the base page behind.
-func TestProjectsCollectionIndexTemplateIsGatedBySection(t *testing.T) {
-	c := collections.Builtins()["projects"]
-	if got := pageSection(c.Index.Template); got != c.Section {
-		t.Errorf("page template %q maps to section %q, want %q",
-			c.Index.Template, got, c.Section)
+// TestBuiltinIndexTemplatesAreGatedBySection guards the pairing the other
+// direction: each collection's section must own the page template its index
+// renders, or disabling the section would drop the collection's pages while
+// leaving the base page behind.
+func TestBuiltinIndexTemplatesAreGatedBySection(t *testing.T) {
+	for name, c := range collections.Builtins() {
+		if c.Index == nil || !c.Index.Enabled {
+			continue
+		}
+		if got := pageSection(c.Index.Template); got != c.Section {
+			t.Errorf("collection %q: page template %q maps to section %q, want %q",
+				name, c.Index.Template, got, c.Section)
+		}
+	}
+}
+
+// TestCollectionOrderIsDeclarationOrder pins the ordering contract the sitemap
+// depends on. collections.Order must NOT be alphabetical: before the migration
+// each collection had its own writer call and projects' index pages were
+// written before courses'. Sorting the names would swap them and rewrite
+// sitemap.xml for no reason, which is exactly what the golden files exist to
+// catch.
+func TestCollectionOrderIsDeclarationOrder(t *testing.T) {
+	got := collections.Order(collections.Builtins())
+	want := []string{"projects", "courses", "listings"}
+
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("collections.Order = %v, want %v (declaration order, not alphabetical — "+
+			"see builtinOrder for why the order is part of the output contract)", got, want)
+	}
+	// Sharpen it: alphabetical would put courses first, so this asserts the
+	// difference rather than a coincidence.
+	if got[0] != "projects" {
+		t.Errorf("courses sorts before projects alphabetically; Order must still yield projects first")
 	}
 }
 
@@ -168,6 +193,90 @@ func TestCollectionSourceMatchesLegacyProjectsFlagOutput(t *testing.T) {
 	if legacy != modern {
 		t.Error("-projects-file and -collection-source projects=… produced different /projects/index.html; " +
 			"the deprecated flag must be a pure alias")
+	}
+}
+
+// TestCollectionSourceMatchesLegacyCoursesFlagOutput is the courses half of the
+// alias proof, and covers the whole /courses tree rather than one page: the
+// paginated index AND every per-record detail page must be byte-identical
+// whichever flag spelling supplied the file.
+func TestCollectionSourceMatchesLegacyCoursesFlagOutput(t *testing.T) {
+	tc := goldenCaseByName(t, "pt-real")
+	coursesFile, err := filepath.Abs(filepath.Join(goldenSiteDir, tc.coursesRel))
+	if err != nil {
+		t.Fatalf("resolving courses file: %v", err)
+	}
+
+	build := func(sourceFlag []string) map[string]string {
+		outDir := t.TempDir()
+		args := append([]string{
+			flagWebsiteRoot, assembleGoldenSite(t, tc.lang),
+			flagOut, outDir,
+			"-clean-urls",
+			"-items-per-page", "2",
+		}, sourceFlag...)
+		if err := Run(args, testutil.DiscardLogger()); err != nil {
+			t.Fatalf("build with %v failed: %v", sourceFlag, err)
+		}
+		tree := courseDetailPages(t, outDir)
+		tree["index"] = string(mustReadFile(t, filepath.Join(outDir, "courses", "index.html")))
+		tree["sitemap"] = string(mustReadFile(t, filepath.Join(outDir, "sitemap.xml")))
+		return tree
+	}
+
+	legacy := build([]string{"-courses-file", coursesFile})
+	modern := build([]string{"-collection-source", "courses=" + coursesFile})
+
+	if len(legacy) != len(modern) {
+		t.Fatalf("-courses-file produced %d files, -collection-source produced %d", len(legacy), len(modern))
+	}
+	for name, want := range legacy {
+		if modern[name] != want {
+			t.Errorf("-courses-file and -collection-source courses=… produced different %s; "+
+				"the deprecated flag must be a pure alias", name)
+		}
+	}
+}
+
+// TestDisabledCoursesSectionProducesNoCollectionOutput is the courses half of
+// the section-gating proof. Unlike projects it also has to cover DETAIL pages
+// and the prune hook: sectionTable's courses entry deletes
+// pages.index.courses_section, without which the home page would still render
+// an (empty) carousel block for a section that is supposed to be gone.
+func TestDisabledCoursesSectionProducesNoCollectionOutput(t *testing.T) {
+	tc := goldenCaseByName(t, "pt-real")
+	coursesFile, err := filepath.Abs(filepath.Join(goldenSiteDir, tc.coursesRel))
+	if err != nil {
+		t.Fatalf("resolving courses file: %v", err)
+	}
+
+	outDir := t.TempDir()
+	if err := Run([]string{
+		flagWebsiteRoot, assembleGoldenSite(t, tc.lang),
+		flagOut, outDir,
+		"-clean-urls",
+		"-collection-source", "courses=" + coursesFile,
+		"-disable-sections", "courses",
+	}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outDir, "courses")); !os.IsNotExist(err) {
+		t.Errorf("expected no courses/ output when the section is disabled, got err=%v", err)
+	}
+	sitemapRaw := string(mustReadFile(t, filepath.Join(outDir, "sitemap.xml")))
+	if strings.Contains(sitemapRaw, "/courses") {
+		t.Errorf("disabled section still has sitemap entries:\n%s", sitemapRaw)
+	}
+	home := string(mustReadFile(t, filepath.Join(outDir, "index.html")))
+	if strings.Contains(home, `class="courses-carousel"`) {
+		t.Errorf("the home courses carousel survived -disable-sections courses; " +
+			"sectionTable's prune hook must clear pages.index.courses_section")
+	}
+	// CONTROL: the rest of the build is intact, so "no /courses" is gating and
+	// not a failed build silently producing nothing.
+	if !strings.Contains(home, `class="site-heading"`) {
+		t.Fatal("CONTROL FAILED: the home page did not render at all")
 	}
 }
 
