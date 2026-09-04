@@ -16,3 +16,13 @@ ui:
         active: false
   footer:
     copyright_prefix: "© 2026"
+  # See the pt copy of this file: course_detail is verbatim from
+  # ffreis-website-data, and ui.courses is deliberately absent because it is
+  # absent there too.
+  course_detail:
+    back: "← Back to courses"
+    what_you_learn: "What you'll learn"
+    curriculum: "Course content"
+    buy: "Buy now"
+    view_udemy: "View on Udemy"
+    access_note: "Lifetime access — pay once, learn forever."

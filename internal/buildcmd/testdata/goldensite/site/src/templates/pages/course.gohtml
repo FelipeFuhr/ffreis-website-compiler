@@ -1,0 +1,94 @@
+{{/* Mirrors ffreis-website/src/templates/pages/course.gohtml — the per-course
+     landing page, rendered once per record with .CurrentCourse set.
+
+     Two things here are load-bearing for the golden files:
+
+     1. THE TWO-PHASE RENDER GUARD (decision record Q8). This template is also
+        executed once by sitegen.RenderPages with NO .CurrentCourse, for
+        asset-usage validation. pages.course.internal keeps that render off
+        disk, and the {{if .CurrentCourse}} guard keeps it from erroring. If the
+        guard is ever dropped, a /course/index.html appears in dist — which
+        TestCoursesQ8_NoUnrenderedDetailTemplatePage asserts against.
+
+     2. THE DURATION CHIP (decision record Q1). Every record in both
+        content/courses.yaml and content/mock/courses.yaml sets duration_hours,
+        and courses.Course has no such field, so the chip below NEVER renders
+        today. The line is copied verbatim precisely so the golden bytes prove
+        the migrated projection still drops the key.
+
+     Reduced relative to the real template: no breadcrumbs/canonical blocks
+     (this fixture's head partial has neither), and no /js/course.js reference
+     (no fixture record is sellable, so it would be an unused asset). */}}
+{{define "page_title"}}{{if .CurrentCourse}}{{dig .CurrentCourse "title"}} — Golden{{else}}Course — Golden{{end}}{{end}}
+
+{{define "page_styles"}}
+  <link rel="stylesheet" href="/css/course.css">
+{{end}}
+
+{{define "page"}}
+{{if .CurrentCourse}}
+{{$c    := .CurrentCourse}}
+{{$ui   := required (dig .SiteData "ui" "course_detail") "missing ui.course_detail"}}
+{{$isPt := eq (dig .SiteData "html_lang") "pt-BR"}}
+{{$sale := dig $c "sale_mode"}}
+{{$sellable := or (eq $sale "website") (eq $sale "both")}}
+{{$udemy := or (eq $sale "udemy") (eq $sale "both")}}
+{{/* Price by locale: BRL on PT pages when set, otherwise USD. */}}
+{{$price := dig $c "price_usd_display"}}
+{{if $isPt}}{{$brl := dig $c "price_brl_display"}}{{if $brl}}{{$price = $brl}}{{end}}{{end}}
+<main class="course-main" id="main-content">
+  <section class="course-hero">
+    <div class="container">
+      <a class="course-back" href="{{dig .SiteData "base_path"}}/courses/">{{dig $ui "back"}}</a>
+      {{with dig $c "level"}}<p class="section-eyebrow">{{.}}</p>{{end}}
+      <h1 class="section-heading">{{dig $c "title"}}</h1>
+      {{with dig $c "long_description"}}<p class="course-lead">{{.}}</p>{{else}}{{with dig $c "description"}}<p class="course-lead">{{.}}</p>{{end}}{{end}}
+
+      <div class="course-meta">
+        {{with dig $c "duration_hours"}}<span class="course-meta-item">&#9201; {{.}}h</span>{{end}}
+        {{with dig $c "level"}}<span class="course-meta-item">&#128246; {{.}}</span>{{end}}
+        {{with dig $c "platform"}}<span class="course-meta-item">&#127891; {{.}}</span>{{end}}
+      </div>
+
+      <div class="course-cta-row">
+        {{if and $sellable $price}}<span class="course-price">{{$price}}</span>{{end}}
+        {{if $sellable}}
+        <button type="button" class="btn btn-primary course-buy" data-course-buy data-slug="{{dig $c "slug"}}" data-track-cta="course-buy">{{dig $ui "buy"}}</button>
+        {{end}}
+        {{if $udemy}}
+        <a class="btn btn-outline" href="{{dig $c "udemy_url"}}" target="_blank" rel="noopener noreferrer" data-track-cta="course-udemy">{{dig $ui "view_udemy"}}</a>
+        {{end}}
+      </div>
+      {{if $sellable}}<p class="course-access-note">{{dig $ui "access_note"}}</p>{{end}}
+    </div>
+  </section>
+
+  <section class="course-body">
+    <div class="container">
+      {{with dig $c "what_you_learn"}}
+      <h2 class="course-section-title">{{dig $ui "what_you_learn"}}</h2>
+      <ul class="course-learn">
+        {{range .}}<li>{{.}}</li>{{end}}
+      </ul>
+      {{end}}
+
+      {{with dig $c "curriculum"}}
+      <h2 class="course-section-title">{{dig $ui "curriculum"}}</h2>
+      <ol class="course-curriculum">
+        {{range .}}
+        <li class="course-module">
+          <h3 class="course-module-title">{{dig . "title"}}</h3>
+          {{with dig . "lessons"}}
+          <ul class="course-lessons">
+            {{range .}}<li>{{.}}</li>{{end}}
+          </ul>
+          {{end}}
+        </li>
+        {{end}}
+      </ol>
+      {{end}}
+    </div>
+  </section>
+</main>
+{{end}}
+{{end}}

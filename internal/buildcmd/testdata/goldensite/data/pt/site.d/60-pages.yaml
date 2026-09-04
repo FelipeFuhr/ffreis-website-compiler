@@ -6,6 +6,12 @@ pages:
     heading: "Olá"
     projects_heading: "Projetos em destaque"
     projects_more: "Ver todos os projetos"
+    # Gates the home courses carousel, exactly like ffreis-website's index
+    # template. sectionTable's `courses` prune hook deletes this key when the
+    # section is disabled, which is what makes the whole block disappear.
+    courses_section:
+      heading: "Cursos em destaque"
+      view_all: "Ver todos os cursos"
   projects:
     title: "Projetos — Golden"
     meta_description: "Lista de projetos do site golden."
@@ -13,6 +19,24 @@ pages:
     heading: "Projetos"
     copy: "Uma seleção de trabalhos recentes."
     empty_state: "Nenhum projeto por enquanto."
+  courses:
+    title: "Cursos — Golden"
+    meta_description: "Catálogo de cursos do site golden."
+    canonical_url: "https://golden.example/pt/courses/"
+    heading: "Cursos"
+    copy: "Cursos práticos sobre ML em produção."
+    empty_state: "Nenhum curso por enquanto."
+    view_course_cta: "Ver curso"
+  # The per-course landing template. internal: true keeps sitegen.RenderPages'
+  # .CurrentCourse-less validation pass off disk (decision record Q8); the
+  # title/meta below are what that un-rendered pass would have used, and what
+  # every /courses/<slug>/ page's <head> carries in this reduced fixture (the
+  # real site overrides them from a page_canonical block the fixture omits).
+  course:
+    internal: true
+    title: "Curso — Golden"
+    meta_description: "Página de um curso do site golden."
+    canonical_url: "https://golden.example/pt/courses/"
   contact:
     title: "Contato — Golden"
     meta_description: "Página de contato do site golden."

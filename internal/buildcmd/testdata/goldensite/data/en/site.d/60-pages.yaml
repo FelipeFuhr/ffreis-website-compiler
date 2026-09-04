@@ -6,6 +6,11 @@ pages:
     heading: "Hello"
     projects_heading: "Featured projects"
     projects_more: "See all projects"
+    # See the pt copy: gates the home courses carousel and is what the courses
+    # section's prune hook removes.
+    courses_section:
+      heading: "Featured courses"
+      view_all: "See all courses"
   projects:
     title: "Projects — Golden"
     meta_description: "Project listing of the golden site."
@@ -13,6 +18,20 @@ pages:
     heading: "Projects"
     copy: "A selection of recent work."
     empty_state: "No projects yet."
+  courses:
+    title: "Courses — Golden"
+    meta_description: "Course catalog of the golden site."
+    canonical_url: "https://golden.example/en/courses/"
+    heading: "Courses"
+    copy: "Hands-on courses about ML in production."
+    empty_state: "No courses yet."
+    view_course_cta: "View course"
+  # See the pt copy of this file for why pages.course carries internal: true.
+  course:
+    internal: true
+    title: "Course — Golden"
+    meta_description: "A course page of the golden site."
+    canonical_url: "https://golden.example/en/courses/"
   contact:
     title: "Contact — Golden"
     meta_description: "Contact page of the golden site."

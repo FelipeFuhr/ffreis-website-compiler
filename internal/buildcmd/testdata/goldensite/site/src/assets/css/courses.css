@@ -1,0 +1,3 @@
+.courses-grid { display: grid; gap: 1rem; }
+.course-card { border: 1px solid #ddd; }
+.course-badge { font-size: 0.75rem; }

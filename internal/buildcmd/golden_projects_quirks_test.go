@@ -9,7 +9,7 @@ import (
 )
 
 // The named acceptance criteria from docs/decisions/0001-generic-content-collections.md
-// §5.4 and §6.1. TestGoldenProjects already pins every emitted byte; these
+// §5.4 and §6.1. TestGoldenSite already pins every emitted byte; these
 // tests exist on top of it so the INTENT behind three of those baselines is
 // legible, and so a regression reports "the projects index grew hreflang
 // alternates" instead of "4096 bytes differ".

@@ -18,3 +18,16 @@ ui:
         active: true
   footer:
     copyright_prefix: "© 2026"
+  # course_detail copied from ffreis-website-data/data/pt/site.d/50-ui.yaml.
+  #
+  # There is deliberately NO `ui.courses` block, matching the real data: the
+  # course card's availability badges read ui.courses.<x>_badge, and that key
+  # does not exist in ffreis-website-data, so every badge renders empty on the
+  # live site. The fixture reproduces that rather than "fixing" it.
+  course_detail:
+    back: "← Voltar aos cursos"
+    what_you_learn: "O que você vai aprender"
+    curriculum: "Conteúdo do curso"
+    buy: "Comprar agora"
+    view_udemy: "Ver na Udemy"
+    access_note: "Acesso vitalício — pague uma vez, aprenda para sempre."

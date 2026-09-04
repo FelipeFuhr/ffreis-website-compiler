@@ -1,15 +1,23 @@
-{{/* Home page. Two jobs in this fixture:
+{{/* Home page. Three jobs in this fixture:
      1. It renders the projects home carousel from siteData["projects"], which
         injectProjectsHomeCarousel fills with the FIRST -items-per-page records.
-     2. It is the hreflang CONTROL: this page goes through writePages, so it DOES
-        receive <link rel="alternate" hreflang=...>. /projects/ does not (Q2).
-        Without a control the "no hreflang on /projects/" assertion would pass
-        vacuously on a site where hreflang never runs at all. */}}
+     2. It renders the courses home carousel from
+        pages.index.courses_carousel_items, which injectCoursesHomeCarousel
+        fills the same way. Both are the `publish:` half of their collection, so
+        without them the golden files would only pin the page writers.
+        The {{if $coursesSection}} gate mirrors the real template and is what
+        sectionTable's courses prune hook removes when the section is off.
+     3. It is the hreflang CONTROL: this page goes through writePages, so it DOES
+        receive <link rel="alternate" hreflang=...>. /projects/ and /courses/ do
+        not (Q2). Without a control the "no hreflang on /projects/" assertion
+        would pass vacuously on a site where hreflang never runs at all. */}}
 {{define "page_title"}}{{$p := dig .SiteData "pages" "index"}}{{if $p}}{{dig $p "title"}}{{else}}Home{{end}}{{end}}
 
 {{define "page"}}
 {{$pageData := required (dig .SiteData "pages" "index") "missing pages.index"}}
 {{$carousel := dig .SiteData "projects"}}
+{{$coursesSection  := dig $pageData "courses_section"}}
+{{$coursesCarousel := dig $pageData "courses_carousel_items"}}
 <main class="home-main" id="main-content">
   <h1 class="site-heading">{{required (dig $pageData "heading") "missing index heading"}}</h1>
   {{if $carousel}}
@@ -21,6 +29,17 @@
       {{end}}
     </div>
     <a href="/projects/" class="carousel-more">{{required (dig $pageData "projects_more") "missing index projects_more"}}</a>
+  </section>
+  {{end}}
+  {{if $coursesSection}}
+  <section class="courses-carousel">
+    <h2>{{required (dig $coursesSection "heading") "missing index courses_section.heading"}}</h2>
+    <div class="carousel-track" data-carousel>
+      {{range $coursesCarousel}}
+      {{template "course-card-preview" (dict "Course" .)}}
+      {{end}}
+    </div>
+    <a href="/courses/" class="carousel-more">{{required (dig $coursesSection "view_all") "missing index courses_section.view_all"}}</a>
   </section>
   {{end}}
 </main>

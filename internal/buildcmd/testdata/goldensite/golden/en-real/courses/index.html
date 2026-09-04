@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Courses — Golden</title>
+  <meta name="description" content="Course catalog of the golden site.">
+  <link rel="canonical" href="https://golden.example/en/courses/">
+  <style>
+body{color:#111;margin:0}.site-nav{display:flex}.site-footer{border-top:1px solid #ddd}
+</style>
+  
+  <style>
+.courses-grid{display:grid;gap:1rem}.course-card{border:1px solid #ddd}.course-badge{font-size:0.75rem}
+</style>
+
+
+<style>@view-transition{navigation:auto}</style>
+    <script type="speculationrules">{"prerender":[{"where":{"href_matches":"/*"},"eagerness":"moderate"}]}</script>
+</head>
+<body>
+
+<nav class="site-nav" aria-label="Main navigation">
+  <ul class="nav-list">
+    <li><a href="/">Home</a></li>
+    <li><a href="/projects/">Projects</a></li>
+    <li><a href="/contact/">Contact</a></li>
+  </ul>
+  <div class="lang-switcher"><span class="lang-flag lang-flag--active" title="English">🇺🇸</span><a class="lang-flag" href="/pt/" title="Português">🇧🇷</a></div>
+</nav>
+
+
+
+
+
+
+
+
+
+
+<main class="courses-main" id="main-content">
+  <section class="courses-header-section">
+    <div class="container">
+      <h1 class="section-heading">Courses</h1>
+      <p class="courses-copy">Hands-on courses about ML in production.</p>
+    </div>
+  </section>
+
+  <section class="courses-list-section">
+    <div class="container">
+      
+      <div class="courses-grid" data-filter-list>
+        
+        
+        
+        <article class="course-card" data-paginated-item data-filterable-item data-filter-tags="[&#34;Intermediate&#34;]">
+          
+          <p class="course-platform">Udemy</p>
+          
+
+          
+          <span class="course-badge course-badge--coming-soon"></span>
+          
+
+          
+          <span class="lang-badges"><span class="lang-badge" title="English">🇺🇸</span><span class="lang-badge" title="Português">🇧🇷</span></span>
+          <h2 class="course-title"><a href="/en/courses/mlops-in-production-from-notebook-to-platform/" class="course-title-link">MLOps in Production: From Notebook to Platform</a></h2>
+
+          
+          <p class="course-desc">Build a production-grade ML platform from scratch. Covers experiment tracking with MLflow, model serving on SageMaker, automated retraining pipelines with Airflow, and monitoring for data drift and model degradation. All infrastructure as code with Terraform.</p>
+          
+
+          <a href="/en/courses/mlops-in-production-from-notebook-to-platform/" class="course-cta" data-track-cta="course-view">
+            View course <span aria-hidden="true">&rarr;</span>
+          </a>
+        </article>
+        
+        
+        
+        <article class="course-card" data-paginated-item data-filterable-item data-filter-tags="[&#34;Intermediate&#34;]">
+          
+          <p class="course-platform">Udemy</p>
+          
+
+          
+          <span class="course-badge course-badge--coming-soon"></span>
+          
+
+          
+          <span class="lang-badges"><span class="lang-badge" title="English">🇺🇸</span><span class="lang-badge" title="Português">🇧🇷</span></span>
+          <h2 class="course-title"><a href="/en/courses/retrieval-augmented-generation-build-production-rag-systems/" class="course-title-link">Retrieval-Augmented Generation: Build Production RAG Systems</a></h2>
+
+          
+          <p class="course-desc">Learn to design and ship reliable RAG pipelines. Covers vector databases, hybrid search, chunking strategies, reranking, and evaluation frameworks. Build a complete Q&amp;A system with AWS Lambda, API Gateway, and a managed vector store — serverless, scalable, and cheap to run.</p>
+          
+
+          <a href="/en/courses/retrieval-augmented-generation-build-production-rag-systems/" class="course-cta" data-track-cta="course-view">
+            View course <span aria-hidden="true">&rarr;</span>
+          </a>
+        </article>
+        
+      </div>
+      
+
+      
+      
+
+
+
+
+
+
+<nav class="pagination" aria-label="Page navigation">
+  <ul class="pagination-list">
+    <li class="pagination-item">
+      
+      <span class="pagination-link pagination-link--arrow pagination-link--disabled" aria-hidden="true">‹</span>
+      
+    </li>
+    
+    
+    
+    <li class="pagination-item pagination-item--active">
+      
+      <span class="pagination-link pagination-link--current" aria-current="page">1</span>
+      
+    </li>
+    
+    
+    
+    
+    <li class="pagination-item">
+      
+      <a href="/courses/page/2/" class="pagination-link">2</a>
+      
+    </li>
+    
+    
+    <li class="pagination-item">
+      
+      <a href="/courses/page/2/" class="pagination-link pagination-link--arrow" aria-label="Next page" rel="next">›</a>
+      
+    </li>
+  </ul>
+</nav>
+
+
+      
+    </div>
+  </section>
+</main>
+<script>
+// Progressive-enhancement stub for the paginated projects grid.
+(function () {
+  var list = document.querySelector('[data-filter-list]');
+  if (!list) {
+    return;
+  }
+  list.setAttribute('data-paginated', 'true');
+})();
+
+</script>
+
+
+<footer class="site-footer">
+  <p>© 2026 Felipe Reis</p>
+</footer>
+
+</body>
+</html>
