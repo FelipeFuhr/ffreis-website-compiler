@@ -41,6 +41,36 @@ type SiteDataContractLoadResult struct {
 	DefaultPath string
 }
 
+// templateFuncMap is the single source of truth for every helper function
+// available to page templates. LoadPageTemplatesFromRoot uses it directly to
+// parse templates, and TemplateFunctionNames introspects it so callers (the
+// CLI's version --json capability manifest) can discover the current set
+// without a hand-maintained duplicate list that could silently drift from
+// what's actually registered.
+var templateFuncMap = template.FuncMap{
+	"dict":       dict,
+	"list":       list,
+	"safeHTML":   safeHTML,
+	"toJSON":     toJSON,
+	"dig":        dig,
+	"required":   required,
+	"trimSuffix": strings.TrimSuffix,
+	"trimPrefix": strings.TrimPrefix,
+	"has":        hasString,
+	"pageSlug":   pageSlugFunc,
+}
+
+// TemplateFunctionNames returns the names of every template helper function
+// registered in templateFuncMap, sorted alphabetically.
+func TemplateFunctionNames() []string {
+	names := make([]string, 0, len(templateFuncMap))
+	for name := range templateFuncMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // LoadPageTemplatesFromRoot parses the shared layout/partials plus each page template.
 // templatesRoot is expected to contain: layout/, partials/, pages/.
 func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
@@ -61,18 +91,7 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 		parseFiles = append(parseFiles, partials...)
 		parseFiles = append(parseFiles, pageFile)
 
-		tpl, err := template.New("layout").Funcs(template.FuncMap{
-			"dict":       dict,
-			"list":       list,
-			"safeHTML":   safeHTML,
-			"toJSON":     toJSON,
-			"dig":        dig,
-			"required":   required,
-			"trimSuffix": strings.TrimSuffix,
-			"trimPrefix": strings.TrimPrefix,
-			"has":        hasString,
-			"pageSlug":   pageSlugFunc,
-		}).ParseFiles(parseFiles...)
+		tpl, err := template.New("layout").Funcs(templateFuncMap).ParseFiles(parseFiles...)
 		if err != nil {
 			return nil, err
 		}

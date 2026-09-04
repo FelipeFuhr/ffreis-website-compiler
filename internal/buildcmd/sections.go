@@ -80,6 +80,15 @@ func sectionNames() []string {
 	return names
 }
 
+// SectionNames returns the current -disable-sections registry (see
+// sectionTable): every content section this compiler build's section-gating
+// mechanisms recognize. Exported for the CLI's version --json capability
+// manifest so consumer CI can discover which sections a given compiler
+// build knows about instead of assuming a fixed, possibly-stale set.
+func SectionNames() []string {
+	return sectionNames()
+}
+
 // pageSection maps a page-template name to the content section that gates it,
 // or "" when the page is not section-gated. Used to drop a whole section's
 // pages (hub/listing + detail) when that section is disabled.
