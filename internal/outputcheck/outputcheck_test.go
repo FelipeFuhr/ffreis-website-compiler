@@ -1,6 +1,8 @@
 package outputcheck_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"ffreis-website-compiler/internal/outputcheck"
@@ -131,6 +133,178 @@ func TestAnInvalidRegexIsRejectedAtBuildTime(t *testing.T) {
 }
 
 // --- Corpus checks: assertions that need the whole site ---------------------
+
+// writeCompiledOutput lays out a tiny compiled-output tree (files keyed by
+// their path relative to the root, e.g. "site.webmanifest" or
+// "images/logo.png") and returns the root plus a Target list carrying that
+// root, mimicking what outputtestcmd's real loader hands the engine.
+func writeCompiledOutput(t *testing.T, files map[string]string) (root string, targets []outputcheck.Target) {
+	t.Helper()
+	root = t.TempDir()
+	for rel, content := range files {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	return root, []outputcheck.Target{{Route: "/", Lang: "en", Root: root}}
+}
+
+func TestJSONAssetsExistIsRegistered(t *testing.T) {
+	reg := outputcheck.DefaultRegistry()
+	if _, err := reg.BuildCorpus("json_assets_exist", map[string]any{"path": "x", "field": "y"}); err != nil {
+		t.Fatalf("json_assets_exist must be registered: %v", err)
+	}
+}
+
+func TestJSONAssetsExistCatchesAGenuinelyMissingAsset(t *testing.T) {
+	// The icon file was never fingerprinted/copied to dist — the manifest
+	// references a path that simply does not exist in the compiled output.
+	root, targets := writeCompiledOutput(t, map[string]string{
+		"site.webmanifest": `{"icons":[{"src":"/images/logo-256.png","sizes":"256x256"}]}`,
+	})
+	reg := outputcheck.DefaultRegistry()
+	check, err := reg.BuildCorpus("json_assets_exist", map[string]any{
+		"path": "site.webmanifest", "field": "icons[].src",
+	})
+	if err != nil {
+		t.Fatalf("BuildCorpus: %v", err)
+	}
+	findings := check.CheckAll(targets)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding for the missing icon, got %d: %v", len(findings), findings)
+	}
+	if findings[0].Message == "" || findings[0].Check != "json_assets_exist" {
+		t.Errorf("finding lacks context: %+v", findings[0])
+	}
+	_ = root
+}
+
+func TestJSONAssetsExistPassesWhenEveryAssetResolves(t *testing.T) {
+	root, targets := writeCompiledOutput(t, map[string]string{
+		"site.webmanifest":    `{"icons":[{"src":"/images/logo-256.png","sizes":"256x256"}]}`,
+		"images/logo-256.png": "pngdata",
+	})
+	reg := outputcheck.DefaultRegistry()
+	check, err := reg.BuildCorpus("json_assets_exist", map[string]any{
+		"path": "site.webmanifest", "field": "icons[].src",
+	})
+	if err != nil {
+		t.Fatalf("BuildCorpus: %v", err)
+	}
+	if findings := check.CheckAll(targets); len(findings) != 0 {
+		t.Fatalf("expected no findings when every referenced asset exists, got %v", findings)
+	}
+	_ = root
+}
+
+func TestJSONAssetsExistCatchesTheJSONFileItselfMissing(t *testing.T) {
+	root, targets := writeCompiledOutput(t, map[string]string{
+		"index.html": "<html></html>",
+	})
+	reg := outputcheck.DefaultRegistry()
+	check, err := reg.BuildCorpus("json_assets_exist", map[string]any{
+		"path": "manifest.json", "field": "icons[].src",
+	})
+	if err != nil {
+		t.Fatalf("BuildCorpus: %v", err)
+	}
+	findings := check.CheckAll(targets)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding when the JSON file itself is absent, got %d: %v", len(findings), findings)
+	}
+	_ = root
+}
+
+func TestJSONAssetsExistToleratesInvalidJSON(t *testing.T) {
+	root, targets := writeCompiledOutput(t, map[string]string{
+		"site.webmanifest": `{not valid json`,
+	})
+	reg := outputcheck.DefaultRegistry()
+	check, err := reg.BuildCorpus("json_assets_exist", map[string]any{
+		"path": "site.webmanifest", "field": "icons[].src",
+	})
+	if err != nil {
+		t.Fatalf("BuildCorpus: %v", err)
+	}
+	if findings := check.CheckAll(targets); len(findings) != 1 {
+		t.Fatalf("expected exactly 1 finding reporting invalid JSON, got %d: %v", len(findings), findings)
+	}
+	_ = root
+}
+
+func TestJSONAssetsExistNoIconsKeyPasses(t *testing.T) {
+	// Not every site declares icons; an absent key must not be a false failure.
+	root, targets := writeCompiledOutput(t, map[string]string{
+		"site.webmanifest": `{"name":"Example"}`,
+	})
+	reg := outputcheck.DefaultRegistry()
+	check, err := reg.BuildCorpus("json_assets_exist", map[string]any{
+		"path": "site.webmanifest", "field": "icons[].src",
+	})
+	if err != nil {
+		t.Fatalf("BuildCorpus: %v", err)
+	}
+	if findings := check.CheckAll(targets); len(findings) != 0 {
+		t.Fatalf("expected no findings when the field path is absent, got %v", findings)
+	}
+	_ = root
+}
+
+func TestJSONAssetsExistSkipsExternalRefs(t *testing.T) {
+	root, targets := writeCompiledOutput(t, map[string]string{
+		"site.webmanifest": `{"icons":[{"src":"https://cdn.example.com/icon.png"}]}`,
+	})
+	reg := outputcheck.DefaultRegistry()
+	check, err := reg.BuildCorpus("json_assets_exist", map[string]any{
+		"path": "site.webmanifest", "field": "icons[].src",
+	})
+	if err != nil {
+		t.Fatalf("BuildCorpus: %v", err)
+	}
+	if findings := check.CheckAll(targets); len(findings) != 0 {
+		t.Fatalf("expected external refs to be skipped, got %v", findings)
+	}
+	_ = root
+}
+
+func TestJSONAssetsExistGenericFieldPathNotHardcodedToWebmanifest(t *testing.T) {
+	// The check must work for an arbitrary JSON shape/field path, not just
+	// the web-app-manifest icons[].src convention.
+	root, targets := writeCompiledOutput(t, map[string]string{
+		"data/pins.json":   `{"pins":[{"thumb":"/images/pin-a.png"},{"thumb":"/images/pin-b.png"}]}`,
+		"images/pin-a.png": "a",
+		// pin-b.png intentionally absent.
+	})
+	reg := outputcheck.DefaultRegistry()
+	check, err := reg.BuildCorpus("json_assets_exist", map[string]any{
+		"path": "data/pins.json", "field": "pins[].thumb",
+	})
+	if err != nil {
+		t.Fatalf("BuildCorpus: %v", err)
+	}
+	findings := check.CheckAll(targets)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding for the one missing pin thumb, got %d: %v", len(findings), findings)
+	}
+	if findings[0].Message == "" {
+		t.Errorf("finding message must be clear about which path is missing")
+	}
+	_ = root
+}
+
+func TestJSONAssetsExistRejectsMissingConfigAtBuildTime(t *testing.T) {
+	reg := outputcheck.DefaultRegistry()
+	if _, err := reg.BuildCorpus("json_assets_exist", map[string]any{"field": "icons[].src"}); err == nil {
+		t.Fatal("a missing path field must be rejected at build time")
+	}
+	if _, err := reg.BuildCorpus("json_assets_exist", map[string]any{"path": "x"}); err == nil {
+		t.Fatal("a missing field field must be rejected at build time")
+	}
+}
 
 // --- Suite: composition of selectors and checks -----------------------------
 
