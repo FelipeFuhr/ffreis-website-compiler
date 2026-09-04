@@ -196,7 +196,7 @@ Besides the full `website-compiler` CLI, single-purpose binaries are built from 
 
 - `cmd/build-static` — build-only entrypoint (same flags as `build`); the CI/CD build path, also used by `make smoke-check`.
 - `cmd/web` — `serve` only; `cmd/check-lang-parity` — `check-lang-parity` only; `cmd/ffreis-website-compiler` — legacy alias of the full CLI.
-- `cmd/emit-content-bundle` — emits a per-language JSON content bundle from a data directory for a downstream consumer.
+- `cmd/emit-content-bundle` — emits a per-language JSON content bundle from a data directory for a downstream (mobile) consumer; the whitelisted keys, CDN base, and lang aliases are supplied via `-bundle-config` (see `internal/bundlecmd/testdata/petlook.bundle-config.yaml` for the reference config).
 
 ## Development
 
