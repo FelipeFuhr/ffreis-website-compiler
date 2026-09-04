@@ -1,0 +1,35 @@
+# Mirrors the shape of ffreis-website/src/data/site.contract.yaml: bare `ui`
+# and `pages` prefixes cover their subtrees, and anything the COMPILER reads
+# (rather than a template) lives under compiler_consumed so -strict-contract's
+# "allowed contract path not used by templates" check stays honest.
+compiler_consumed:
+  - language_variants
+  - language_default
+  # Read by the compiler, not by this fixture's reduced templates: base_url by
+  # sitemap generation + injectHreflangAlternates, base_path by
+  # fingerprintLocalAssets and linkcheck.
+  - base_url
+  - base_path
+
+required:
+  - person.first_name
+  - person.last_name
+  - nav
+  - ui
+  - pages
+
+allowed:
+  - html_lang
+  - person.first_name
+  - person.last_name
+  - nav
+  - nav.*.label
+  - nav.*.href
+  - ui
+  - ui.nav.nav_aria
+  - ui.footer.copyright_prefix
+  # projects: injected at build time; omitted from the contract deliberately
+  # (compiler-managed, not static YAML) — exactly as in ffreis-website.
+  - pages
+  - pages.projects.copy
+  - pages.projects.empty_state

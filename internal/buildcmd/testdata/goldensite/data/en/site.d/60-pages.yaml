@@ -1,0 +1,20 @@
+pages:
+  index:
+    title: "Home — Golden"
+    meta_description: "Home page of the golden site."
+    canonical_url: "https://golden.example/en/"
+    heading: "Hello"
+    projects_heading: "Featured projects"
+    projects_more: "See all projects"
+  projects:
+    title: "Projects — Golden"
+    meta_description: "Project listing of the golden site."
+    canonical_url: "https://golden.example/en/projects/"
+    heading: "Projects"
+    copy: "A selection of recent work."
+    empty_state: "No projects yet."
+  contact:
+    title: "Contact — Golden"
+    meta_description: "Contact page of the golden site."
+    canonical_url: "https://golden.example/en/contact/"
+    heading: "Contact"

@@ -1,0 +1,91 @@
+{{/* ── Project card (full — used on /projects/ listing page) ─────────────── */}}
+{{/* Copied VERBATIM from ffreis-website/src/templates/partials/components.gohtml.
+     Do not "improve" it here: the whole point of this fixture is that the
+     bytes it produces are the bytes the real site produces. In particular the
+     `available_languages` filter below is decision-record Q1 — the compiler's
+     typed projects.Project struct drops that YAML key, so $availLangs is
+     always nil today and EVERY badge always renders even on mock records that
+     declare a single language. */}}
+{{define "project-card-full"}}
+{{$p         := required (index . "Project") "missing project for card"}}
+{{$href      := dig $p "href"}}
+{{$langLinks := index . "LangLinks"}}
+<article class="project-card" data-paginated-item data-filterable-item data-filter-tags="{{toJSON (dig $p "stack")}}">
+  <div class="project-card-body">
+    {{with dig $p "date"}}<p class="project-date">{{.}}</p>{{end}}
+    {{$availLangs := dig $p "available_languages"}}
+    {{if $langLinks}}<span class="lang-badges">{{range $langLinks}}{{if or (not $availLangs) (has $availLangs .prefix)}}<span class="lang-badge" title="{{.label}}">{{.flag}}</span>{{end}}{{end}}</span>{{end}}
+    <h2 class="project-title">{{if $href}}<a href="{{$href}}" class="project-title-link" rel="noopener noreferrer">{{required (dig $p "title") "missing project title"}}</a>{{else}}{{required (dig $p "title") "missing project title"}}{{end}}</h2>
+    <p class="project-desc">{{required (dig $p "description") "missing project description"}}</p>
+  </div>
+  {{with dig $p "stack"}}
+  <ul class="project-stack">
+    {{range .}}<li class="stack-chip">{{.}}</li>{{end}}
+  </ul>
+  {{end}}
+  {{if $href}}
+  <a href="{{$href}}" class="project-link" rel="noopener noreferrer">View project <span aria-hidden="true">→</span></a>
+  {{end}}
+</article>
+{{end}}
+
+{{/* ── Project card (preview — used in the home carousel) ─────────────────── */}}
+{{/* Reads siteData["projects"], which injectProjectsHomeCarousel populates with
+     the FIRST -items-per-page records. Present so the golden files also pin the
+     `publish:` half of the collection (the home carousel), not just the index
+     pages. */}}
+{{define "project-card-preview"}}
+{{$p    := required (index . "Project") "missing project for preview card"}}
+{{$href := dig $p "href"}}
+<article class="project-card project-card--preview">
+  <h3 class="project-title">{{required (dig $p "title") "missing project title"}}</h3>
+  {{with dig $p "date"}}<p class="project-date">{{.}}</p>{{end}}
+  {{if $href}}<a href="{{$href}}" class="project-link">View project</a>{{end}}
+</article>
+{{end}}
+
+{{/* ── Pagination bar ──────────────────────────────────────────────────────── */}}
+{{/* Copied VERBATIM from ffreis-website/src/templates/partials/components.gohtml. */}}
+{{/* Expects dict "Pagination" $pagination */}}
+
+{{define "pagination"}}
+{{$p := required (index . "Pagination") "missing pagination data"}}
+{{$bar := dig $p "bar"}}
+{{$totalPages := dig $p "total_pages"}}
+{{$prevHref := dig $p "prev_href"}}
+{{$nextHref := dig $p "next_href"}}
+{{if and $bar (gt $totalPages 1)}}
+<nav class="pagination" aria-label="Page navigation">
+  <ul class="pagination-list">
+    <li class="pagination-item">
+      {{if $prevHref}}
+      <a href="{{$prevHref}}" class="pagination-link pagination-link--arrow" aria-label="Previous page" rel="prev">‹</a>
+      {{else}}
+      <span class="pagination-link pagination-link--arrow pagination-link--disabled" aria-hidden="true">‹</span>
+      {{end}}
+    </li>
+    {{range $bar}}
+    {{$item := .}}
+    {{if eq (dig $item "type") "ellipsis"}}
+    <li class="pagination-item pagination-item--ellipsis" aria-hidden="true">…</li>
+    {{else}}
+    <li class="pagination-item{{if dig $item "active"}} pagination-item--active{{end}}">
+      {{if dig $item "active"}}
+      <span class="pagination-link pagination-link--current" aria-current="page">{{dig $item "number"}}</span>
+      {{else}}
+      <a href="{{dig $item "href"}}" class="pagination-link">{{dig $item "number"}}</a>
+      {{end}}
+    </li>
+    {{end}}
+    {{end}}
+    <li class="pagination-item">
+      {{if $nextHref}}
+      <a href="{{$nextHref}}" class="pagination-link pagination-link--arrow" aria-label="Next page" rel="next">›</a>
+      {{else}}
+      <span class="pagination-link pagination-link--arrow pagination-link--disabled" aria-hidden="true">›</span>
+      {{end}}
+    </li>
+  </ul>
+</nav>
+{{end}}
+{{end}}

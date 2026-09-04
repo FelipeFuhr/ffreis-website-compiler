@@ -1,0 +1,13 @@
+{{define "nav"}}
+<nav class="site-nav" aria-label="{{required (dig .SiteData "ui" "nav" "nav_aria") "missing ui.nav.nav_aria"}}">
+  <ul class="nav-list">
+    {{- range dig .SiteData "nav"}}
+    <li><a href="{{dig . "href"}}">{{dig . "label"}}</a></li>
+    {{- end}}
+  </ul>
+  {{- $langLinks := dig .SiteData "ui" "nav" "lang_links"}}
+  {{- if $langLinks}}
+  <div class="lang-switcher">{{range $langLinks}}{{if dig . "active"}}<span class="lang-flag lang-flag--active" title="{{dig . "label"}}">{{dig . "flag"}}</span>{{else}}<a class="lang-flag" href="{{dig . "href"}}" title="{{dig . "label"}}">{{dig . "flag"}}</a>{{end}}{{end}}</div>
+  {{- end}}
+</nav>
+{{end}}
