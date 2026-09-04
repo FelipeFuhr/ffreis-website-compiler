@@ -16,14 +16,20 @@ import (
 // paginatedPagesParams bundles the arguments for writePaginatedPages to keep
 // the function signature within the allowed parameter count.
 type paginatedPagesParams struct {
-	logger      *slog.Logger
-	opts        buildOptions
-	tmpl        sitegen.PageTemplate
-	items       []any
+	logger *slog.Logger
+	opts   buildOptions
+	tmpl   sitegen.PageTemplate
+	items  []any
+	// sectionName is both the on-disk output directory and the pages.<key>
+	// site-data subtree the items and pagination are injected into.
 	sectionName string
-	siteData    map[string]any
-	assetsDir   string
-	mirrorer    *externalAssetMirrorer
+	// basePath is the URL prefix for the pagination hrefs and sitemap entries.
+	// Empty means "/" + sectionName, which is what every caller wanted before
+	// collections made the two independently configurable.
+	basePath  string
+	siteData  map[string]any
+	assetsDir string
+	mirrorer  *externalAssetMirrorer
 }
 
 // writePaginatedPages generates page 1 at /<sectionName>/index.html and
@@ -43,7 +49,10 @@ func writePaginatedPages(p paginatedPagesParams) ([]sitemap.URLItem, error) {
 	assetsDir := p.assetsDir
 	mirrorer := p.mirrorer
 
-	basePath := "/" + sectionName
+	basePath := p.basePath
+	if basePath == "" {
+		basePath = "/" + sectionName
+	}
 	pages := pagination.Paginate(items, opts.itemsPerPage, basePath)
 	allToCopy := make(map[string]string)
 	var sitemapURLs []sitemap.URLItem

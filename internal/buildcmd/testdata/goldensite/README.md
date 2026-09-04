@@ -68,3 +68,11 @@ reviewed**. Three of these goldens pin behaviour the decision record classifies
 as *bugs* (Q1, Q2, Q3); they are asserted explicitly and by name in
 `golden_projects_test.go` so that "fixing" one without meaning to fails loudly
 rather than silently rewriting a baseline.
+
+## Status
+
+These baselines were captured from the pre-`internal/collections` engine and
+have since been re-verified, unchanged, against the migrated code path
+(Phase 2: the `projects` collection now loads through `internal/collections`
+and `internal/projects` is deleted). Every byte in `golden/` is therefore
+output that BOTH implementations produced.

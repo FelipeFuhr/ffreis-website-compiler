@@ -16,7 +16,6 @@ import (
 	"ffreis-website-compiler/internal/listings"
 	"ffreis-website-compiler/internal/outputtestcmd"
 	"ffreis-website-compiler/internal/posts"
-	"ffreis-website-compiler/internal/projects"
 	"ffreis-website-compiler/internal/sitegen"
 	"ffreis-website-compiler/internal/sitemap"
 )
@@ -79,17 +78,22 @@ var (
 	htmlTagsRE        = regexp.MustCompile(`<[^>]+>`)
 )
 
-// optionalContent holds the blog posts, projects, and courses loaded from
-// optional input flags, plus the page templates needed to render them.
+// optionalContent holds the blog posts and the not-yet-migrated typed content
+// loaded from optional input flags, plus the page templates needed to render
+// them — and the collection engine's per-build state for everything that HAS
+// migrated (today: projects).
 type optionalContent struct {
 	posts           []posts.Post
-	projects        []projects.Project
 	courses         []courses.Course
 	listings        []listings.Listing
 	postTemplate    *sitegen.PageTemplate
 	blogTemplate    *sitegen.PageTemplate
 	courseTemplate  *sitegen.PageTemplate // the internal "course" landing template
 	listingTemplate *sitegen.PageTemplate // the internal "listing" detail template
+	// collections carries every collection-engine-managed content set. courses
+	// and listings still load through their typed packages above until Phases
+	// 3 and 5 migrate them.
+	collections *collectionSet
 }
 
 func Run(args []string, logger *slog.Logger) error {
@@ -115,7 +119,7 @@ func Run(args []string, logger *slog.Logger) error {
 	// Load optional content (posts, projects, courses) and inject into site data.
 	// This runs after contract validation so compiler-managed injected data does
 	// not need contract entries.
-	content, err := loadOptionalContent(opts, siteDataResult.Data)
+	content, err := loadOptionalContent(logger, opts, siteDataResult.Data)
 	if err != nil {
 		return err
 	}
@@ -203,6 +207,9 @@ func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assets
 	}
 
 	logBuildStart(logger, opts, assetsDir, templatesDir)
+	for _, notice := range opts.deprecations {
+		logger.Warn("deprecated flag", "detail", notice)
+	}
 
 	if err = validateBuildDirs(assetsDir, templatesDir); err != nil {
 		return
@@ -218,9 +225,10 @@ func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assets
 	return
 }
 
-// loadOptionalContent loads blog posts, projects, and courses from the paths
-// specified in opts, injecting the data into siteData for template rendering.
-func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalContent, error) {
+// loadOptionalContent loads blog posts and courses/listings from the paths
+// specified in opts, runs the collection engine, and injects the data into
+// siteData for template rendering.
+func loadOptionalContent(logger *slog.Logger, opts buildOptions, siteData map[string]any) (*optionalContent, error) {
 	content := &optionalContent{}
 
 	// Inject section flags AFTER contract validation (this function runs post-
@@ -243,14 +251,15 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		injectPostsBlogList(siteData, loaded, opts.itemsPerPage)
 	}
 
-	if opts.projectsFile != "" && sectionEnabled(siteData, "projects") {
-		loaded, err := projects.LoadProjectsFile(opts.projectsFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading projects: %w", err)
-		}
-		content.projects = loaded
-		injectProjectsHomeCarousel(siteData, loaded, opts.itemsPerPage)
+	// The collection engine runs between injectSectionFlags and
+	// pruneDisabledSectionData, exactly like the typed loaders around it: after
+	// the section flags exist so sectionEnabled can gate a collection, and
+	// before pruning so a disabled section's stale site data is still scrubbed.
+	collectionSet, err := loadCollections(logger, opts, siteData)
+	if err != nil {
+		return nil, err
 	}
+	content.collections = collectionSet
 
 	if opts.coursesFile != "" && sectionEnabled(siteData, "courses") {
 		loaded, err := courses.LoadCoursesFile(opts.coursesFile)
@@ -333,11 +342,11 @@ func writeAllPaginatedContent(
 	}
 	extraSitemapURLs = append(extraSitemapURLs, blogURLs...)
 
-	projectURLs, err := maybeWriteProjectListings(logger, opts, pages, content, siteData, assetsDir, mirrorer)
+	collectionURLs, err := writeCollectionPages(logger, opts, pages, content.collections, siteData, assetsDir, mirrorer)
 	if err != nil {
 		return nil, err
 	}
-	extraSitemapURLs = append(extraSitemapURLs, projectURLs...)
+	extraSitemapURLs = append(extraSitemapURLs, collectionURLs...)
 
 	courseURLs, err := maybeWriteCourseListings(logger, opts, pages, content, siteData, assetsDir, mirrorer)
 	if err != nil {
@@ -375,23 +384,6 @@ func maybeWriteBlogListings(logger *slog.Logger, opts buildOptions, content *opt
 	urls, err := writeBlogPaginatedPages(logger, opts, *content.blogTemplate, content.posts, siteData, assetsDir, mirrorer)
 	if err != nil {
 		return nil, fmt.Errorf("writing blog listing pages: %w", err)
-	}
-	return urls, nil
-}
-
-// maybeWriteProjectListings generates paginated /projects/ listing pages when
-// projects were loaded and a projects page template exists.
-func maybeWriteProjectListings(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, content *optionalContent, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) ([]sitemap.URLItem, error) {
-	if len(content.projects) == 0 {
-		return nil, nil
-	}
-	tpl := findTemplate(pages, "projects")
-	if tpl == nil {
-		return nil, nil
-	}
-	urls, err := writeProjectPages(logger, opts, *tpl, content.projects, siteData, assetsDir, mirrorer)
-	if err != nil {
-		return nil, fmt.Errorf("writing projects pages: %w", err)
 	}
 	return urls, nil
 }
@@ -919,9 +911,20 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 		}
 	}
 	if sectionEnabled(siteData, "projects") {
-		payload.Projects = make([]devItemEntry, 0, len(content.projects))
-		for _, p := range content.projects {
-			payload.Projects = append(payload.Projects, devItemEntry{ID: p.Title, Langs: nil})
+		// Built even when the collection produced nothing, so the JSON keeps
+		// emitting [] rather than null — window.__devBuild's shape is read by
+		// ffreis-website's and casaboa's dev panels. Per-item IDs stay
+		// title-based, matching what this payload carried before projects
+		// moved onto the collection engine.
+		records := collectionRecords(content.collections, "projects")
+		payload.Projects = make([]devItemEntry, 0, len(records))
+		for _, r := range records {
+			rec, ok := r.(map[string]any)
+			if !ok {
+				continue
+			}
+			title, _ := rec["title"].(string)
+			payload.Projects = append(payload.Projects, devItemEntry{ID: title, Langs: nil})
 		}
 	}
 	if sectionEnabled(siteData, "listings") {

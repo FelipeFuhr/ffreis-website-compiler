@@ -1,0 +1,41 @@
+# ffreis-courses — course catalog data for ffreis.com
+# Each item is rendered on /courses/ (full listing) and as a home-page carousel preview.
+#
+# Required fields: title, order
+# Optional fields: description, platform, availability_type, href, duration_hours, level, date
+
+- title: "MLOps in Production: From Notebook to Platform"
+  order: 1
+  description: >-
+    Build a production-grade ML platform from scratch. Covers experiment tracking with
+    MLflow, model serving on SageMaker, automated retraining pipelines with Airflow,
+    and monitoring for data drift and model degradation. All infrastructure as code with Terraform.
+  platform: "Udemy"
+  level: "Intermediate"
+  duration_hours: 12
+  date: "2026-03"
+  availability_type: "coming_soon"
+
+- title: "Retrieval-Augmented Generation: Build Production RAG Systems"
+  order: 2
+  description: >-
+    Learn to design and ship reliable RAG pipelines. Covers vector databases, hybrid search,
+    chunking strategies, reranking, and evaluation frameworks. Build a complete Q&A system
+    with AWS Lambda, API Gateway, and a managed vector store — serverless, scalable, and cheap to run.
+  platform: "Udemy"
+  level: "Intermediate"
+  duration_hours: 8
+  date: "2026-05"
+  availability_type: "coming_soon"
+
+- title: "AWS for ML Engineers: Serverless Infrastructure"
+  order: 3
+  description: >-
+    Practical AWS for machine learning workloads. Learn Lambda, API Gateway, DynamoDB,
+    S3, and SageMaker from the infrastructure-as-code perspective. Covers Terraform
+    patterns for ML pipelines, cost optimization for bursty workloads, and IAM least-privilege
+    design. No prior AWS experience required.
+  level: "Beginner"
+  duration_hours: 10
+  date: "2026-07"
+  availability_type: "coming_soon"
