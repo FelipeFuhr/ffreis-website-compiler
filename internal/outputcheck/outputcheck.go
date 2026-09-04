@@ -31,6 +31,15 @@ type Target struct {
 	// Lang is the language tree this page was compiled into, e.g. "pt".
 	Lang string
 	HTML string
+	// Root is the absolute path to the compiled output directory this target
+	// was loaded from. It is empty when a Target is built directly (e.g. most
+	// unit tests) rather than via the real loader. Every check in this package
+	// stays IO-free by relying on HTML alone, except the json_assets_exist
+	// built-in: verifying a referenced asset exists on disk is inherently a
+	// question about the wider output tree, not this one Target's HTML, so it
+	// needs a root to resolve paths against. All Targets loaded for one run
+	// carry the same Root.
+	Root string
 }
 
 // Finding is one failed assertion, carrying enough context to act on without

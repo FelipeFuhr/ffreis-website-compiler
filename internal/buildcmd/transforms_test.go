@@ -1,6 +1,7 @@
 package buildcmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -495,6 +496,61 @@ func TestRun_SiteWebmanifestCopiedToRoot(t *testing.T) {
 	}
 
 	mustStat(t, filepath.Join(outDir, "site.webmanifest"))
+}
+
+// TestRun_SiteWebmanifestIconSrcRewrittenToFingerprintedPath reproduces the
+// P0-3 bug: site.webmanifest/manifest.json used to be copied byte-for-byte
+// verbatim (via copyExistingFiles), so a JSON payload like
+// `{"icons":[{"src":"/images/logo-256.png"}]}` reached dist unchanged even
+// though the actual icon file — like every other locally-referenced asset —
+// is fingerprinted (renamed with a content hash) before it is written to
+// dist. The manifest's icons[].src therefore pointed at a filename that never
+// existed in the compiled output, 404ing in production. The icon is also
+// referenced from a <link rel="icon"> tag here, mirroring the realistic
+// favicon-generator output the bug was found in: that reference IS
+// fingerprinted correctly (a different, already-working code path), so the
+// hashed file really is the one present in dist — the manifest just needs to
+// agree on the name.
+func TestRun_SiteWebmanifestIconSrcRewrittenToFingerprintedPath(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "images"))
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "assets", "images", "logo-256.png"):     "pngdata",
+		filepath.Join(websiteRoot, "src", "assets", "site.webmanifest"):           `{"name":"Example","icons":[{"src":"/images/logo-256.png","sizes":"256x256","type":"image/png"}]}`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css"><link rel="icon" href="/images/logo-256.png"><link rel="manifest" href="/site.webmanifest">{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>ok</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	manifestRaw := mustReadFile(t, filepath.Join(outDir, "site.webmanifest"))
+	var manifest struct {
+		Icons []struct {
+			Src string `json:"src"`
+		} `json:"icons"`
+	}
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatalf("parsing output site.webmanifest: %v", err)
+	}
+	if len(manifest.Icons) != 1 {
+		t.Fatalf("expected 1 icon in output manifest, got %d: %s", len(manifest.Icons), manifestRaw)
+	}
+	iconSrc := manifest.Icons[0].Src
+	if iconSrc == "/images/logo-256.png" {
+		t.Fatalf("expected icons[0].src to be rewritten to a fingerprinted path, got unfingerprinted %q", iconSrc)
+	}
+
+	// The path the manifest now points at must exist in dist — this is the
+	// actual production symptom: browsers 404 fetching a stale icon name.
+	iconPath := filepath.Join(outDir, filepath.FromSlash(strings.TrimPrefix(iconSrc, "/")))
+	if _, err := os.Stat(iconPath); err != nil {
+		t.Fatalf("manifest icons[0].src %q does not exist in dist: %v", iconSrc, err)
+	}
 }
 
 func TestRun_WellKnownDiscoveryAssetsAbsentAreNoop(t *testing.T) {
