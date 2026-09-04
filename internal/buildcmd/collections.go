@@ -413,6 +413,18 @@ func renderAndWriteCollectionDetail(p detailPageParams) (map[string]string, erro
 		p.def.Detail.DataKey: p.record,
 	}
 
+	// One shared detail template means .PageName is the template name for every
+	// record, so a template can no longer reach its own page copy via
+	// pages.<PageName>. page_data_from resolves that copy per record instead.
+	if p.def.Detail.PageDataFrom != "" {
+		pageData, err := collections.ResolvePageData(
+			p.def.Detail.PageDataFrom, p.record, p.siteData, p.opts.basePath)
+		if err != nil {
+			return nil, fmt.Errorf("collection %q detail %s: %w", p.def.Name, p.urlPath, err)
+		}
+		templateData[collections.PageDataKey] = pageData
+	}
+
 	var rendered bytes.Buffer
 	if err := p.tmpl.Tmpl.ExecuteTemplate(&rendered, "layout", templateData); err != nil {
 		return nil, fmt.Errorf("rendering %s detail %s: %w", p.def.Name, p.urlPath, err)

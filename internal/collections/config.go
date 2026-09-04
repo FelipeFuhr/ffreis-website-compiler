@@ -177,9 +177,35 @@ type DetailSpec struct {
 	// on absent-vs-zero-value fields" as a silent-breakage risk (§6.1). Full
 	// Field entries carry the type, so the same projection code — and the same
 	// zeroValue rules — apply here as to records.fields.
-	ExtraFields []Field      `yaml:"extra_fields"`
-	Sitemap     SitemapAttrs `yaml:"sitemap"`
+	ExtraFields []Field `yaml:"extra_fields"`
+	// PageDataFrom is a dotted site-data path template (e.g.
+	// "pages.product-{{.slug}}") resolved once per record and merged into the
+	// detail template's data under PageDataKey, alongside the DataKey record.
+	//
+	// It exists because page COPY and record STRUCTURE live in two different
+	// site-data namespaces: flemming's course pages read both courses.<slug>
+	// (structure) and pages.<slug> (title, meta_description, body HTML), and
+	// forma's products are the mirror image — products.<slug> plus
+	// pages.product-<slug> (decision record §5.1(b), §5.3).
+	//
+	// Deliberately NOT a general "merge arbitrary site data" feature: it is one
+	// dotted path, resolved per record, exposed under one fixed key. A second
+	// path, or a configurable key, is the signal to stop and reconsider rather
+	// than to widen this.
+	//
+	// It is also what lets a site migrate its templates onto a collection
+	// BEFORE folding its per-page copy into the records — forma keeps its nine
+	// pages.product-* entries and folds them later, as a separate diff.
+	PageDataFrom string       `yaml:"page_data_from"`
+	Sitemap      SitemapAttrs `yaml:"sitemap"`
 }
+
+// PageDataKey is the fixed template-data key DetailSpec.PageDataFrom resolves
+// into. Fixed rather than configurable on purpose: DataKey varies per
+// collection because .CurrentCourse / .CurrentListing / .CurrentProduct are
+// each a different domain noun, whereas "the page copy for this record" is one
+// concept with one name across every collection.
+const PageDataKey = "CurrentPageData"
 
 // SitemapAttrs mirrors sitemap.URLItem field-for-field so composing with
 // internal/sitemap is by construction — the engine returns []sitemap.URLItem
@@ -257,6 +283,9 @@ func (c Collection) Validate() error {
 	if err := c.Records.validate(); err != nil {
 		return err
 	}
+	if err := c.validateIDFieldSurvivesProjection(); err != nil {
+		return err
+	}
 	for _, p := range c.Publish {
 		if strings.TrimSpace(p.Key) == "" {
 			return fmt.Errorf("publish entry has an empty key")
@@ -288,6 +317,34 @@ func (c Collection) Validate() error {
 		}
 	}
 	return nil
+}
+
+// validateIDFieldSurvivesProjection rejects a keyed_map source whose id_field
+// the record projection would then drop.
+//
+// fromKeyedMap copies the map key into the RAW record under id_field, but with
+// passthrough: false the projection keeps only the keys records.fields lists —
+// so an undeclared id_field vanishes before any detail path or page_data_from
+// template can read it. Both then render "<no value>" for every record, and a
+// flat detail path (no trailing slash) makes that a single file the whole
+// collection overwrites in turn, leaving one page where N were expected.
+//
+// Caught at config-load time because nothing downstream would fail: the build
+// succeeds, the sitemap is well-formed, and only the missing pages give it away.
+func (c Collection) validateIDFieldSurvivesProjection() error {
+	idField := strings.TrimSpace(c.Source.IDField)
+	if idField == "" || c.Records.Passthrough {
+		return nil
+	}
+	for _, f := range c.Records.Fields {
+		if f.Name == idField {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"source.id_field %q is not in records.fields and records.passthrough is false, "+
+			"so the projection would drop it and every record would share one identity; "+
+			"declare it as a field or set records.passthrough: true", idField)
 }
 
 func (s Source) validate() error {
