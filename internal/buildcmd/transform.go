@@ -95,6 +95,23 @@ func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *e
 		html = updated
 	}
 
+	// Default lazy-loading: any <img> not already carrying a loading attribute
+	// gets loading="lazy" so the browser defers fetching/decoding it until it's
+	// near the viewport. Above-the-fold images opt out by setting
+	// loading="eager" explicitly in the template — the same attribute
+	// processLQIPImages below reads to decide which images get a blur-up
+	// placeholder — so eager images are left untouched here. Runs after SVG
+	// inlining (inside applyPositionBasedTransforms above) so icons already
+	// converted to inline <svg> are correctly skipped, and before LQIP so it
+	// still sees the loading="eager" it depends on. Unconditional (no flag),
+	// like injectCachedScriptPreloads: always beneficial, never load-order
+	// breaking.
+	lazyHTML, err := injectDefaultLazyLoading(html)
+	if err != nil {
+		return "", nil, fmt.Errorf("injecting default lazy loading: %w", err)
+	}
+	html = lazyHTML
+
 	// LQIP: generate blurry thumbnails for above-fold images and swap to full on load.
 	lqipHTML, err := processLQIPImages(html, assetsDir)
 	if err != nil {
@@ -299,6 +316,19 @@ func inlineLocalSVGs(doc, assetsDir string) (string, error) {
 			return tag, nil // not found or too large: leave for fingerprinting
 		}
 		return svgFromImgTag(tag, data), nil
+	})
+}
+
+// injectDefaultLazyLoading adds loading="lazy" to every <img> that doesn't
+// already declare a loading attribute (eager, lazy, or otherwise) — see the
+// call site in transformPage for why this runs unconditionally and where it
+// sits relative to SVG inlining and LQIP.
+func injectDefaultLazyLoading(html string) (string, error) {
+	return replaceTagWith(html, imgTagRE, func(tag string, _ []string) (string, error) {
+		if getTagAttr(tag, "loading") != "" {
+			return tag, nil // explicit loading attribute present — respect it
+		}
+		return addOrReplaceAttr(tag, "loading", "lazy"), nil
 	})
 }
 
