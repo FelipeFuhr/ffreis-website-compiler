@@ -229,9 +229,41 @@ func (r RecordSpec) applyDerive(out map[string]any, opts ProjectOptions) error {
 // base_path available under BasePathKey. Used by the detail writer for both the
 // on-disk target and the sitemap entry, so the two can never disagree.
 func RenderPath(pathTemplate string, record map[string]any, basePath string) (string, error) {
-	tmpl, err := template.New("path").Parse(pathTemplate)
+	return renderRecordTemplate("detail path", pathTemplate, record, basePath)
+}
+
+// ResolvePageData renders a DetailSpec.PageDataFrom dotted-path template
+// against one record and returns the site-data value it names, for the detail
+// writer to expose as PageDataKey.
+//
+// An unresolvable path is an error, not a silent nil. page_data_from supplies
+// the detail page's COPY — title, meta description, body HTML — so a path that
+// resolves to nothing renders a structurally valid but contentless page that
+// every other guard in the build (linkcheck, sitemap, structure validation)
+// would happily pass. That is exactly the class of silent omission decision
+// record §7.1 requires to fail loudly, and the same reasoning as
+// validateCollectionSources rejecting an unknown -collection-source name.
+func ResolvePageData(pathTemplate string, record map[string]any, siteData map[string]any, basePath string) (any, error) {
+	path, err := renderRecordTemplate("page_data_from", pathTemplate, record, basePath)
 	if err != nil {
-		return "", fmt.Errorf("parsing detail path template %q: %w", pathTemplate, err)
+		return nil, err
+	}
+	v, ok := LookupDottedSiteData(siteData, path)
+	if !ok {
+		return nil, fmt.Errorf(
+			"page_data_from %q resolved to %q, which is not present in site data", pathTemplate, path)
+	}
+	return v, nil
+}
+
+// renderRecordTemplate renders one per-record template (a detail path or a
+// page_data_from path) with base_path available under BasePathKey. Shared so
+// both resolve a record identically — a path and its page copy disagreeing
+// about which record they name would be very hard to spot in the output.
+func renderRecordTemplate(what, tmplText string, record map[string]any, basePath string) (string, error) {
+	tmpl, err := template.New(what).Parse(tmplText)
+	if err != nil {
+		return "", fmt.Errorf("parsing %s template %q: %w", what, tmplText, err)
 	}
 	data := make(map[string]any, len(record)+1)
 	for k, v := range record {
@@ -241,7 +273,7 @@ func RenderPath(pathTemplate string, record map[string]any, basePath string) (st
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("rendering detail path template %q: %w", pathTemplate, err)
+		return "", fmt.Errorf("rendering %s template %q: %w", what, tmplText, err)
 	}
 	return buf.String(), nil
 }

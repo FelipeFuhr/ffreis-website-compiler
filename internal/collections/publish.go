@@ -67,3 +67,27 @@ func SetDottedSiteData(siteData map[string]any, path string, value any) {
 	}
 	current[segments[len(segments)-1]] = value
 }
+
+// LookupDottedSiteData reads the value at a dotted site-data path, reporting
+// whether it is present. It is the read-side mirror of SetDottedSiteData and
+// backs DetailSpec.PageDataFrom.
+//
+// It creates nothing: an intermediate that is absent, nil, or not a map means
+// "not present", never a fabricated empty map. That distinction is the whole
+// point — the caller turns a missing path into a loud error rather than
+// rendering a page with silently empty copy.
+func LookupDottedSiteData(siteData map[string]any, path string) (any, bool) {
+	segments := strings.Split(path, ".")
+
+	current := siteData
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := current[seg].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+
+	v, ok := current[segments[len(segments)-1]]
+	return v, ok
+}
