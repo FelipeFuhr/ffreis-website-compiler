@@ -26,7 +26,7 @@ GOVULNCHECK ?= govulncheck
 # covered package, so the rise is real coverage of the ENGINE rather than an
 # artefact of the deletion. 66 keeps the same ~3pt of headroom. Raise again
 # as buildcmd/sitegen (the two >500-line "god files") gain coverage.
-COVERAGE_MIN ?= 66
+COVERAGE_MIN ?= 67
 INTEGRATION_COVERAGE_MIN ?= 75
 
 LEFTHOOK_VERSION ?= 1.7.10

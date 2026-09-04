@@ -14,10 +14,12 @@ import "sort"
 //
 // These definitions reproduce internal/projects, internal/courses and
 // internal/listings field-for-field, including the zero-value defaults the
-// typed structs contributed. `projects` (Phase 2) and `courses` (Phase 3) are
-// wired into the build; `listings` is the Phase 5 target and is defined here so
-// the engine's generality is proven — and unit-tested — before that migration
-// starts.
+// typed structs contributed. All three are now wired into the build — projects
+// (Phase 2), courses (Phase 3), listings (Phase 5) — and all three typed
+// packages are deleted. What keeps these definitions honest is that each one's
+// deleted loader survives as a frozen, test-only oracle
+// (frozen_*_oracle_test.go) that the engine is still compared against record by
+// record.
 
 // itemsPerPageFlag is the CLI flag name the built-ins read their per-page and
 // carousel limits from.
@@ -170,8 +172,15 @@ func builtinCourses() Collection {
 // Q7), published raw to siteData["listings"] which is what casaboa's
 // base.gohtml serialises into window.CASABOA_LISTINGS.
 //
-// Not wired into the build yet — that is Phase 5, deliberately last because
-// the JS blob is the one place in this refactor where a defect ships silently.
+// Wired into the build by Phase 5 — deliberately last, because the JS blob is
+// the one place in this refactor where a defect ships silently. internal/listings
+// is gone, and the frozen copy in frozen_listings_oracle_test.go is what keeps
+// proving this definition still matches it record for record.
+//
+// Two lines below are load-bearing beyond their size, and both have a named
+// test guarding them: the empty `Sort` (Q7 — a sort here silently reorders
+// window.CASABOA_LISTINGS) and `sponsored` as TypeBool (§5.2 — dropping it
+// makes an absent `sponsored:` vanish from the JSON rather than read false).
 func builtinListings() Collection {
 	return Collection{
 		Name:    "listings",

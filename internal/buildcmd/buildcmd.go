@@ -12,7 +12,6 @@ import (
 
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/linkcheck"
-	"ffreis-website-compiler/internal/listings"
 	"ffreis-website-compiler/internal/outputtestcmd"
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/sitegen"
@@ -77,18 +76,21 @@ var (
 	htmlTagsRE        = regexp.MustCompile(`<[^>]+>`)
 )
 
-// optionalContent holds the blog posts and the not-yet-migrated typed content
-// loaded from optional input flags, plus the page templates needed to render
-// them — and the collection engine's per-build state for everything that HAS
-// migrated (today: projects and courses).
+// optionalContent holds the blog posts loaded from optional input flags, plus
+// the page templates needed to render them — and the collection engine's
+// per-build state for every content collection.
+//
+// posts is the only typed loader left: decision record §6 defers it
+// indefinitely, because it adds Markdown parsing, image copying, RSS, per-post
+// language redirect stubs and available_languages validation on top of the
+// record projection, and it backs the highest-traffic content on ffreis.com.
 type optionalContent struct {
-	posts           []posts.Post
-	listings        []listings.Listing
-	postTemplate    *sitegen.PageTemplate
-	blogTemplate    *sitegen.PageTemplate
-	listingTemplate *sitegen.PageTemplate // the internal "listing" detail template
-	// collections carries every collection-engine-managed content set. listings
-	// still loads through its typed package above until Phase 5 migrates it.
+	posts        []posts.Post
+	postTemplate *sitegen.PageTemplate
+	blogTemplate *sitegen.PageTemplate
+	// collections carries every collection-engine-managed content set:
+	// projects, courses and listings, plus anything a site's own
+	// collections.yaml defines.
 	collections *collectionSet
 }
 
@@ -222,9 +224,9 @@ func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assets
 	return
 }
 
-// loadOptionalContent loads blog posts and courses/listings from the paths
-// specified in opts, runs the collection engine, and injects the data into
-// siteData for template rendering.
+// loadOptionalContent loads blog posts from the path specified in opts, runs
+// the collection engine, and injects the data into siteData for template
+// rendering.
 func loadOptionalContent(logger *slog.Logger, opts buildOptions, siteData map[string]any) (*optionalContent, error) {
 	content := &optionalContent{}
 
@@ -258,15 +260,6 @@ func loadOptionalContent(logger *slog.Logger, opts buildOptions, siteData map[st
 	}
 	content.collections = collectionSet
 
-	if opts.listingsFile != "" && sectionEnabled(siteData, "listings") {
-		loaded, err := listings.LoadListingsFile(opts.listingsFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading listings: %w", err)
-		}
-		content.listings = loaded
-		injectListingsData(siteData, loaded)
-	}
-
 	pruneDisabledSectionData(siteData, opts.disabledSections)
 
 	return content, nil
@@ -274,8 +267,7 @@ func loadOptionalContent(logger *slog.Logger, opts buildOptions, siteData map[st
 
 // findPaginationTemplates records the page templates that later writers need
 // but filterInternalPages is about to remove from the slice — the "post"/"blog"
-// pair, the still-typed "listing" detail template, and (through the collection
-// set) every migrated collection's detail template.
+// pair, and (through the collection set) every collection's detail template.
 func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalContent) {
 	for i := range pages {
 		switch pages[i].Name {
@@ -285,9 +277,6 @@ func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalCont
 		case "blog":
 			tmp := pages[i]
 			content.blogTemplate = &tmp
-		case "listing":
-			tmp := pages[i]
-			content.listingTemplate = &tmp
 		}
 	}
 	content.collections.captureDetailTemplates(pages)
@@ -303,6 +292,12 @@ func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalCont
 // then the blog listings, then the paginated collection indexes — so migrating a
 // collection onto the engine reshuffles nothing. See the comment above
 // writeAllCollectionDetailPages.
+//
+// With listings migrated, writeAllCollectionDetailPages absorbed the last
+// hand-written detail writer. It emits in collections.Order (projects, courses,
+// listings); projects has no detail page, so the sequence it produces is
+// "courses details, then listings details" — exactly what the pair of
+// hand-written calls produced before.
 func writeAllPaginatedContent(
 	logger *slog.Logger,
 	opts buildOptions,
@@ -323,12 +318,6 @@ func writeAllPaginatedContent(
 		return nil, err
 	}
 	extraSitemapURLs = append(extraSitemapURLs, collectionDetailURLs...)
-
-	listingDetailURLs, err := maybeWriteListingDetailPages(logger, opts, content, siteData, assetsDir, mirrorer)
-	if err != nil {
-		return nil, err
-	}
-	extraSitemapURLs = append(extraSitemapURLs, listingDetailURLs...)
 
 	blogURLs, err := maybeWriteBlogListings(logger, opts, content, siteData, assetsDir, mirrorer)
 	if err != nil {
@@ -886,7 +875,7 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 		// list: the field's documented meaning is "nil → available in all
 		// content languages", so emitting [] would tell the dev panel the
 		// opposite of what the typed loader did.
-		payload.Courses = devEntriesFromCollection(content.collections, "courses", "supported_languages")
+		payload.Courses = devEntriesFromCollection(content.collections, "courses", "title", "supported_languages")
 	}
 	if sectionEnabled(siteData, "projects") {
 		// Built even when the collection produced nothing, so the JSON keeps
@@ -895,13 +884,15 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 		// title-based, matching what this payload carried before projects
 		// moved onto the collection engine. projects has never declared
 		// per-item languages, hence the empty langsKey.
-		payload.Projects = devEntriesFromCollection(content.collections, "projects", "")
+		payload.Projects = devEntriesFromCollection(content.collections, "projects", "title", "")
 	}
 	if sectionEnabled(siteData, "listings") {
-		payload.Listings = make([]devItemEntry, 0, len(content.listings))
-		for _, l := range content.listings {
-			payload.Listings = append(payload.Listings, devItemEntry{ID: l.ID, Langs: nil})
-		}
+		// listings is the one collection whose dev-panel ID is NOT the title:
+		// the typed loader supplied l.ID, and decision record Q11 records that
+		// per-type ID semantics as part of window.__devBuild's shape. Hence the
+		// explicit idKey rather than a fourth hardcoded "title". listings has
+		// never declared per-item languages, hence the empty langsKey.
+		payload.Listings = devEntriesFromCollection(content.collections, "listings", "id", "")
 	}
 
 	b, err := json.Marshal(payload)
@@ -914,14 +905,17 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 
 // devEntriesFromCollection builds one dev-panel entry per projected record.
 //
-// The ID is the record's title, which is what the typed loaders supplied for
-// both projects and courses. langsKey names the record field holding the
-// per-item language codes, or "" for a collection that declares none.
+// idKey names the record field the dev panel uses as the item's ID: "title" for
+// projects and courses, "id" for listings. Those are the per-type semantics the
+// typed loaders had and decision record Q11 documents; they are a parameter
+// rather than a hardcoded key precisely so migrating a collection cannot
+// silently change them. langsKey names the record field holding the per-item
+// language codes, or "" for a collection that declares none.
 //
 // The slice is always non-nil so the JSON keeps emitting [] rather than null:
 // window.__devBuild's shape is read by ffreis-website's and casaboa's dev
 // panels, and decision record §7.4 defers any change to it to its own PR.
-func devEntriesFromCollection(set *collectionSet, name, langsKey string) []devItemEntry {
+func devEntriesFromCollection(set *collectionSet, name, idKey, langsKey string) []devItemEntry {
 	records := collectionRecords(set, name)
 	entries := make([]devItemEntry, 0, len(records))
 	for _, r := range records {
@@ -929,8 +923,8 @@ func devEntriesFromCollection(set *collectionSet, name, langsKey string) []devIt
 		if !ok {
 			continue
 		}
-		title, _ := rec["title"].(string)
-		entries = append(entries, devItemEntry{ID: title, Langs: recordLangs(rec, langsKey)})
+		id, _ := rec[idKey].(string)
+		entries = append(entries, devItemEntry{ID: id, Langs: recordLangs(rec, langsKey)})
 	}
 	return entries
 }

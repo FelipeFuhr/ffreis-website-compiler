@@ -1,0 +1,61 @@
+# SYNTHETIC fixture — not a copy of any real content file.
+#
+# casaboa-data/site.d/30-listings.yaml sets ALL 19 fields on ALL 25 records
+# (decision record §1.3 verified this explicitly). That is what makes casaboa
+# the safest of the JS-blob migrations — and it is also why running the oracle
+# over only that file would leave every ABSENT-field code path unproven.
+#
+# The absent-field paths are not a hypothetical. Decision record §5.2 names one
+# as the single high-risk detail of this whole phase:
+#
+#   `sponsored` is bool. Under a typed struct an absent `sponsored:` yields
+#   "sponsored":false; under passthrough it would be ABSENT. All 25 records set
+#   it, so today it is moot — but if casaboa-data ever adds a record without it,
+#   the fields: projection with type: bool, default: false keeps behaviour
+#   stable and passthrough would not.
+#
+# A record that quietly loses its `sponsored` key does not break a page, does
+# not break linkcheck, and does not break the sitemap. It changes
+# window.CASABOA_LISTINGS and breaks app.js's filter chips in the browser. This
+# file is what makes that a test failure instead of a future incident.
+#
+# Axes covered here and nowhere else:
+#   - `sponsored` absent      -> must still serialise as false, not vanish
+#   - `reasons` absent        -> must be []any{}, never nil (nil and empty print
+#                                differently through dig/toJSON)
+#   - `breakdown` absent      -> must be map[string]any{}, never nil
+#   - `score` absent          -> must be int 0
+#   - every optional string absent -> must be "", never nil
+#   - a record with `sponsored: true` alongside one with it absent, so the
+#     three-way absent/false/true distinction is exercised in one projection
+#
+# It also keeps file order non-alphabetical so the Q7 order check in the oracle
+# is not vacuous on this fixture either.
+listings:
+  # Everything optional omitted. This is the §5.2 record.
+  - id: zeta-bare-001
+    title: "Bare record, every optional field omitted"
+
+  # Explicitly false, for contrast with the omitted one above: these two must
+  # produce IDENTICAL `sponsored` values.
+  - id: alpha-explicit-false-002
+    title: "Explicitly sponsored: false"
+    sponsored: false
+
+  # True, so the projection is proven to carry the value through rather than
+  # always emitting the default.
+  - id: mid-sponsored-true-003
+    title: "Sponsored listing"
+    sponsored: true
+    score: 55
+    reasons:
+      - "Only one reason."
+    breakdown: { "Preço": 40 }
+
+  # Empty composites written out explicitly, which yaml.v3 decodes differently
+  # from an absent key (empty slice vs nil slice) on the way in — both must land
+  # as the same non-nil empty values on the way out.
+  - id: beta-empty-composites-004
+    title: "Empty reasons and breakdown"
+    reasons: []
+    breakdown: {}
