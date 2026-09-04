@@ -54,6 +54,102 @@ func TestParseBuildOptions_ContentSourceGuard(t *testing.T) {
 	})
 }
 
+func TestParseBuildOptions_TrackerCDNBaseGuard(t *testing.T) {
+	t.Run("tracker enabled without cdn base fails", func(t *testing.T) {
+		_, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-tracker-enabled",
+			"-tracker-sdk-version", "1.0.0",
+			"-tracker-site-id", "flemming",
+			"-tracker-endpoint", "https://events.flemming.com.br",
+		})
+		if err == nil {
+			t.Fatal("expected error for tracker-enabled with no tracker-cdn-base, got nil")
+		}
+		if !strings.Contains(err.Error(), "tracker-cdn-base") {
+			t.Errorf("error should mention tracker-cdn-base, got: %v", err)
+		}
+	})
+
+	t.Run("tracker enabled with explicit cdn base succeeds", func(t *testing.T) {
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-tracker-enabled",
+			"-tracker-sdk-version", "1.0.0",
+			"-tracker-site-id", "flemming",
+			"-tracker-endpoint", "https://events.flemming.com.br",
+			"-tracker-cdn-base", "https://cdn.ffreis.com",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for tracker-enabled with explicit tracker-cdn-base, got: %v", err)
+		}
+		if opts.trackerCDNBase != "https://cdn.ffreis.com" {
+			t.Errorf("trackerCDNBase = %q, want https://cdn.ffreis.com", opts.trackerCDNBase)
+		}
+	})
+
+	t.Run("tracker disabled without cdn base is fine", func(t *testing.T) {
+		_, err := parseBuildOptions([]string{
+			"-website-root", ".",
+		})
+		if err != nil {
+			t.Fatalf("expected no error when tracker is disabled, got: %v", err)
+		}
+	})
+}
+
+func TestParseBuildOptions_DevDataProdGuard(t *testing.T) {
+	t.Run("dev-data with default (prod) content-source fails", func(t *testing.T) {
+		_, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-dev-data",
+		})
+		if err == nil {
+			t.Fatal("expected error for dev-data with prod content-source, got nil")
+		}
+		if !strings.Contains(err.Error(), "dev-data") || !strings.Contains(err.Error(), "content-source") {
+			t.Errorf("error should mention both dev-data and content-source, got: %v", err)
+		}
+	})
+
+	t.Run("dev-data with explicit prod content-source fails", func(t *testing.T) {
+		_, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-dev-data",
+			"-content-source", "prod",
+		})
+		if err == nil {
+			t.Fatal("expected error for dev-data with content-source=prod, got nil")
+		}
+	})
+
+	t.Run("dev-data with mock content-source succeeds", func(t *testing.T) {
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-dev-data",
+			"-content-source", "mock",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for dev-data with content-source=mock, got: %v", err)
+		}
+		if !opts.devData {
+			t.Error("expected devData to be true")
+		}
+	})
+
+	t.Run("no dev-data with prod content-source succeeds", func(t *testing.T) {
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for default prod build without dev-data, got: %v", err)
+		}
+		if opts.devData {
+			t.Error("expected devData to be false by default")
+		}
+	})
+}
+
 func TestDisableSectionsHelpText_ListsEverySectionTableName(t *testing.T) {
 	help := disableSectionsHelpText()
 	for _, name := range sectionNames() {
