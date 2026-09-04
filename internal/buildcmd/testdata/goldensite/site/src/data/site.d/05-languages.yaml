@@ -1,0 +1,9 @@
+# Copied from ffreis-website-data/data/shared/site.d/05-languages.yaml.
+# Drives injectHreflangAlternates (base_url + language_variants + html_lang)
+# and, through ui.nav.lang_links, the per-card language badges.
+language_default: en
+language_variants:
+  - hreflang: en
+    path: /en
+  - hreflang: pt-BR
+    path: /pt

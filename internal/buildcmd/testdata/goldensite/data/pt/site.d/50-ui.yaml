@@ -1,0 +1,20 @@
+# lang_links copied from ffreis-website-data/data/pt/site.d/50-ui.yaml.
+# `prefix` is what project-card-full matches available_languages against (Q1);
+# `href` is what injectLangSwitcherHrefs rewrites per page.
+ui:
+  nav:
+    nav_aria: "Navegação principal"
+    lang_links:
+      - lang: "en"
+        prefix: "en"
+        label: "English"
+        flag: "🇺🇸"
+        href: "/en/"
+        active: false
+      - lang: "pt-BR"
+        prefix: "pt"
+        label: "Português"
+        flag: "🇧🇷"
+        active: true
+  footer:
+    copyright_prefix: "© 2026"

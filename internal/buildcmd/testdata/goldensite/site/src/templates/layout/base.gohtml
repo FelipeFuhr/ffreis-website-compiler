@@ -1,0 +1,11 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="{{or (dig .SiteData "html_lang") "en"}}">
+<head>{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+{{template "page" .}}
+{{template "footer" .}}
+</body>
+</html>
+{{end}}

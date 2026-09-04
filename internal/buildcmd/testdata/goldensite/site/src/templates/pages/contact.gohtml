@@ -1,0 +1,11 @@
+{{/* Link target for the project cards' href (/pt/contact/ on real content,
+     /pt|/en/contact/ on mock content). Present so linkcheck.ValidateAndReport
+     resolves those anchors instead of failing the build. */}}
+{{define "page_title"}}{{$p := dig .SiteData "pages" "contact"}}{{if $p}}{{dig $p "title"}}{{else}}Contact{{end}}{{end}}
+
+{{define "page"}}
+{{$pageData := required (dig .SiteData "pages" "contact") "missing pages.contact"}}
+<main class="contact-main" id="main-content">
+  <h1>{{required (dig $pageData "heading") "missing contact heading"}}</h1>
+</main>
+{{end}}

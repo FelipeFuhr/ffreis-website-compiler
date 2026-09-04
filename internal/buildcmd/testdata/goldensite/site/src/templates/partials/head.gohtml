@@ -1,0 +1,11 @@
+{{define "head"}}
+  <meta charset="UTF-8">
+  <title>{{template "page_title" .}}</title>
+  {{- $_page := dig .SiteData "pages" .PageName}}
+  {{- if $_page}}
+  <meta name="description" content="{{required (dig $_page "meta_description") "missing meta_description"}}">
+  <link rel="canonical" href="{{required (dig $_page "canonical_url") "missing canonical_url"}}">
+  {{- end}}
+  <link rel="stylesheet" href="/css/main.css">
+  {{block "page_styles" .}}{{end}}
+{{end}}

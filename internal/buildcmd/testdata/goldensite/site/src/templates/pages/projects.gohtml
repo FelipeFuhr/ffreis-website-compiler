@@ -1,0 +1,41 @@
+{{/* Mirrors ffreis-website/src/templates/pages/projects.gohtml. */}}
+{{define "page_title"}}{{$p := dig .SiteData "pages" "projects"}}{{if $p}}{{dig $p "title"}}{{else}}Projects{{end}}{{end}}
+
+{{define "page_styles"}}
+  <link rel="stylesheet" href="/css/projects.css">
+{{end}}
+
+{{define "page"}}
+{{$pageData   := required (dig .SiteData "pages" "projects") "missing pages.projects"}}
+{{$items      := dig $pageData "items"}}
+{{$pagination := dig $pageData "pagination"}}
+{{$langLinks  := dig (dig .SiteData "ui") "nav" "lang_links"}}
+
+<main class="projects-main" id="main-content">
+  <section class="projects-header-section">
+    <div class="container">
+      <h1 class="section-heading">{{required (dig $pageData "heading") "missing projects heading"}}</h1>
+      <p class="projects-copy">{{required (dig $pageData "copy") "missing projects copy"}}</p>
+    </div>
+  </section>
+
+  <section class="projects-list-section">
+    <div class="container">
+      {{if $items}}
+      <div class="projects-grid" data-filter-list>
+        {{range $items}}
+        {{template "project-card-full" (dict "Project" . "LangLinks" $langLinks)}}
+        {{end}}
+      </div>
+      {{else}}
+      <p class="projects-empty">{{dig $pageData "empty_state"}}</p>
+      {{end}}
+
+      {{if $pagination}}
+      {{template "pagination" (dict "Pagination" $pagination)}}
+      {{end}}
+    </div>
+  </section>
+</main>
+<script src="/js/pagination.js" defer></script>
+{{end}}
