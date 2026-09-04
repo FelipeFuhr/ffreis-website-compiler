@@ -54,6 +54,15 @@ func TestParseBuildOptions_ContentSourceGuard(t *testing.T) {
 	})
 }
 
+func TestDisableSectionsHelpText_ListsEverySectionTableName(t *testing.T) {
+	help := disableSectionsHelpText()
+	for _, name := range sectionNames() {
+		if !strings.Contains(help, name) {
+			t.Errorf("disable-sections help text missing section %q: %s", name, help)
+		}
+	}
+}
+
 func TestParseBuildOptions_OutputTests(t *testing.T) {
 	t.Parallel()
 	opts, err := parseBuildOptions([]string{

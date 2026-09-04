@@ -191,22 +191,6 @@ func sectionEnabled(siteData map[string]any, name string) bool {
 	return enabled
 }
 
-// pageSection maps a page-template name to the content section that gates it,
-// or "" when the page is not section-gated. Used to drop a whole section's
-// pages (listing + detail) when that section is disabled.
-func pageSection(pageName string) string {
-	switch pageName {
-	case "blog", "post":
-		return "blog"
-	case "projects":
-		return "projects"
-	case "courses":
-		return "courses"
-	default:
-		return ""
-	}
-}
-
 // filterInternalPages removes pages marked internal: true in the site data
 // (pages.<name>.internal) and pages belonging to a disabled content section
 // (sections.<name>: false). Internal pages are still rendered (for asset usage
