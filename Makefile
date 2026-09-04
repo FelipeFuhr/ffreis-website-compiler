@@ -5,16 +5,20 @@ GOFMT ?= gofmt
 GOLANGCI_LINT ?= golangci-lint
 GITLEAKS ?= gitleaks
 GOVULNCHECK ?= govulncheck
-# NOTE: this was `?= 90` but that number was never real — `coverage-gate` was
-# dead code (check_required_tools.sh, fetched only via `make hook-scripts`,
-# was missing locally; and no CI workflow ever called go-coverage.yml to
-# check it either), so a whole-module (./...) floor of 90% was never once
-# validated. Measured directly: 58.6% (internal/buildcmd and internal/sitegen
-# — both already flagged in the workspace AGENTS.md as >500-line "god files"
-# — sit at ~59-64%; several internal/*cmd packages have zero tests). Set to
-# a real, currently-passing ratchet baseline instead of an unenforced
-# aspirational number; raise it as buildcmd/sitegen get more test coverage.
-COVERAGE_MIN ?= 55
+# Whole-module (./...) coverage floor, enforced by scripts/hooks/check_coverage_gate.sh.
+#
+# History: this was `?= 90`, a number never once validated because
+# `coverage-gate` was dead code. It was then measured and set to a real
+# baseline of 55 (actual: 58.6%).
+#
+# Ratcheted 55 -> 65 by the P1.2 collection-engine work. Measured after it:
+# 68.4% overall, with internal/collections at 86.1% and internal/buildcmd
+# lifted from ~59% to 71.1% by the golden-file harness and the collection
+# tests. 65 keeps ~3pt of headroom so the gate does not go brittle on
+# unrelated PRs, while making sure the new engine cannot be extended with
+# untested code under a floor that predates it. Raise again as
+# buildcmd/sitegen (the two >500-line "god files") gain coverage.
+COVERAGE_MIN ?= 65
 INTEGRATION_COVERAGE_MIN ?= 75
 
 LEFTHOOK_VERSION ?= 1.7.10

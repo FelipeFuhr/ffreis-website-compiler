@@ -157,7 +157,7 @@ func copyTree(t *testing.T, src, dst string) {
 		if mkErr := os.MkdirAll(filepath.Dir(target), 0o755); mkErr != nil {
 			return mkErr
 		}
-		if writeErr := os.WriteFile(target, raw, 0o644); writeErr != nil { //nolint:gosec
+		if writeErr := os.WriteFile(target, raw, 0o644); writeErr != nil {
 			return writeErr
 		}
 		return os.Chtimes(target, goldenMtime, goldenMtime)
@@ -176,7 +176,7 @@ func copyGoldenFile(t *testing.T, src, dst string) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		t.Fatalf("creating dir for %s: %v", dst, err)
 	}
-	if err := os.WriteFile(dst, raw, 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(dst, raw, 0o644); err != nil {
 		t.Fatalf("writing %s: %v", dst, err)
 	}
 	if err := os.Chtimes(dst, goldenMtime, goldenMtime); err != nil {
@@ -277,7 +277,7 @@ func writeGolden(t *testing.T, goldenDir string, got map[string]string) {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			t.Fatalf("creating dir for %s: %v", target, err)
 		}
-		if err := os.WriteFile(target, []byte(content), 0o644); err != nil { //nolint:gosec
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
 			t.Fatalf("writing %s: %v", target, err)
 		}
 	}

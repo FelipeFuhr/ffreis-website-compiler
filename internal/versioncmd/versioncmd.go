@@ -122,6 +122,12 @@ var commands = []string{
 //     -raster-inline-threshold
 //   - blog-posts: -posts-dir (Markdown blog post generation + RSS feed)
 //   - clean-urls: -clean-urls
+//   - content-collections: -collection-source <name>=<path>,
+//     -collections-config, and <website-root>/collections.yaml — the generic
+//     content-collection engine (internal/collections). Its presence tells
+//     consumer CI it may use -collection-source instead of the deprecated
+//     per-type -projects-file/-courses-file/-listings-file flags, which remain
+//     accepted aliases.
 //   - content-source-dev: -content-source=dev (dev.ffreis.com-style builds
 //     against real content paths; implies -allow-blanket-robots-disallow)
 //   - content-source-mock: -content-source=mock (exempts /mock/ content
@@ -149,6 +155,7 @@ var capabilities = []string{
 	"asset-inlining",
 	"blog-posts",
 	"clean-urls",
+	"content-collections",
 	"content-source-dev",
 	"content-source-mock",
 	"courses-pagination",

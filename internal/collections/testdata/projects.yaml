@@ -1,0 +1,49 @@
+# ffreis-projects — project data for ffreis.com
+# Each item is rendered on /projects/ (full listing) and as a home-page carousel preview.
+#
+# Required fields: title, description, order
+# Optional fields: stack (list), href, date (YYYY-MM)
+
+- title: "Production ML Platform"
+  description: >-
+    Designed and deployed an end-to-end ML platform covering model training,
+    serving, and monitoring on AWS and Kubernetes. Experiment tracking with
+    MLflow; inference via SageMaker endpoints. Case study coming soon.
+  order: 1
+  stack:
+    - AWS
+    - Kubernetes
+    - MLflow
+    - SageMaker
+    - Python
+    - Terraform
+  href: /pt/contact/
+
+- title: "LLM/RAG Application"
+  description: >-
+    Built a production RAG pipeline with document ingestion, vector search,
+    and LLM-generated responses. Deployed as a scalable API on AWS Lambda.
+    Case study coming soon.
+  order: 2
+  stack:
+    - LLMs
+    - RAG
+    - AWS
+    - Lambda
+    - Python
+    - FastAPI
+  href: /pt/contact/
+
+- title: "Feature Engineering Pipeline"
+  description: >-
+    Implemented feature engineering and automated retraining workflows with
+    Spark and Airflow, with model performance monitoring via CloudWatch.
+    Case study coming soon.
+  order: 3
+  stack:
+    - Spark
+    - Python
+    - Airflow
+    - AWS
+    - Monitoring
+  href: /pt/contact/
