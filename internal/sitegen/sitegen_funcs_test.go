@@ -3,8 +3,35 @@ package sitegen
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 )
+
+// TestTemplateFunctionNames_MatchesRegisteredFuncMap pins the exported
+// accessor the CLI's version --json capability manifest depends on: it must
+// report every function actually registered in templateFuncMap (not a
+// hand-duplicated, driftable list), sorted.
+func TestTemplateFunctionNamesMatchesRegisteredFuncMap(t *testing.T) {
+	got := TemplateFunctionNames()
+
+	want := make([]string, 0, len(templateFuncMap))
+	for name := range templateFuncMap {
+		want = append(want, name)
+	}
+	sort.Strings(want)
+
+	if len(got) != len(want) {
+		t.Fatalf("TemplateFunctionNames() = %v (len %d), want %v (len %d)", got, len(got), want, len(want))
+	}
+	for i, name := range want {
+		if got[i] != name {
+			t.Errorf("TemplateFunctionNames()[%d] = %q, want %q", i, got[i], name)
+		}
+	}
+	if !sort.StringsAreSorted(got) {
+		t.Errorf("TemplateFunctionNames() = %v, not sorted", got)
+	}
+}
 
 // A bare YAML scalar like `date: 2026-09-03` resolves to the !!timestamp tag
 // and decodes as time.Time, not a string. Left unnormalized, html/template

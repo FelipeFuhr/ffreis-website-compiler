@@ -7,6 +7,23 @@ import (
 	"ffreis-website-compiler/internal/sitemap"
 )
 
+// TestSectionNames_ExposesFullRegistry pins SectionNames as the intended
+// public wrapper around sectionTable's names — covers the exported entry
+// point the CLI's version --json manifest depends on, not just the internal
+// sectionNames helper other tests already exercise indirectly.
+func TestSectionNamesExposesFullRegistry(t *testing.T) {
+	got := SectionNames()
+	want := map[string]bool{"blog": true, "projects": true, "courses": true, "listings": true}
+	if len(got) != len(want) {
+		t.Fatalf("SectionNames() = %v, want %d entries matching %v", got, len(want), want)
+	}
+	for _, name := range got {
+		if !want[name] {
+			t.Errorf("SectionNames() contains unexpected section %q", name)
+		}
+	}
+}
+
 func TestSectionEnabled_DefaultsToEnabledWhenAbsent(t *testing.T) {
 	if !sectionEnabled(map[string]any{}, "blog") {
 		t.Fatal("section with no sections map should default to enabled")
