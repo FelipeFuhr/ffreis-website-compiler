@@ -154,11 +154,27 @@ func firstCronogramaSessionDate(sessions []any) (time.Time, bool) {
 	if !ok {
 		return time.Time{}, false
 	}
-	parsed, err := time.Parse(dateLayout, strings.TrimSpace(dateStr))
-	if err != nil {
-		return time.Time{}, false
+	return parseSessionDate(dateStr)
+}
+
+// parseSessionDate accepts both shapes a cronograma session date can arrive in.
+//
+// `date: 2026-05-19` in YAML resolves to the !!timestamp tag and decodes as a
+// time.Time, which normalizeYAMLValue (sitegen_funcs.go) then renders as
+// RFC3339 — so by the time site data reaches here the value is
+// "2026-05-19T00:00:00Z", not "2026-05-19". Parsing only the bare layout made
+// every variant fail the date lookup, and validateVariantSanity treats that as
+// "nothing to check" and returns nil: the start-date and duration-hours checks
+// silently stopped running for EVERY course rather than failing loudly.
+// Quoted dates in YAML still arrive as the bare layout, so both are accepted.
+func parseSessionDate(dateStr string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(dateStr)
+	for _, layout := range []string{dateLayout, time.RFC3339} {
+		if parsed, err := time.Parse(layout, trimmed); err == nil {
+			return parsed, true
+		}
 	}
-	return parsed, true
+	return time.Time{}, false
 }
 
 func sumCronogramaSessionHours(sessions []any) (int, bool) {
