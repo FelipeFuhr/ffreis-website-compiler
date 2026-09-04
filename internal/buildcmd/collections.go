@@ -372,10 +372,11 @@ func writeCollectionDetailPages(
 		}
 
 		urls = append(urls, sitemap.URLItem{
-			Path:       urlPath,
-			Changefreq: def.Detail.Sitemap.Changefreq,
-			Priority:   def.Detail.Sitemap.Priority,
-			Lastmod:    def.Detail.Sitemap.Lastmod,
+			Path:        urlPath,
+			Changefreq:  def.Detail.Sitemap.Changefreq,
+			Priority:    def.Detail.Sitemap.Priority,
+			Lastmod:     def.Detail.Sitemap.Lastmod,
+			LastmodFrom: def.Detail.Sitemap.LastmodFrom,
 		})
 	}
 
@@ -476,6 +477,9 @@ func applySitemapAttrs(urls []sitemap.URLItem, attrs collections.SitemapAttrs) [
 		}
 		if attrs.Lastmod != "" {
 			urls[i].Lastmod = attrs.Lastmod
+		}
+		if attrs.LastmodFrom != "" {
+			urls[i].LastmodFrom = attrs.LastmodFrom
 		}
 	}
 	return urls
