@@ -34,6 +34,7 @@ validate-assets       Validate rendered pages only reference reachable local CSS
 validate-sanity       Run baseline sanity checks (contract + invariants + optional assets)
 test-output           Run a website-owned manifest against compiled output
 check-lang-parity     Check YAML key parity across multilingual data directories
+version               Print the build version; -json prints the full capability manifest
 help                  Show usage
 ```
 
@@ -169,6 +170,25 @@ Standalone (no templates dir required); merges `site.d/*.yaml` per language, fla
 ```bash
 website-compiler check-lang-parity -data-root ../my-website/data -langs en,pt
 ```
+
+### version
+
+```bash
+website-compiler version         # prints just the build version, e.g. 1.4.0 or 0.0.0-dev
+website-compiler version -json   # prints the full capability manifest
+```
+
+`-json` prints a machine-readable manifest — `version`, `commands` (subcommands this
+build supports), `capabilities` (opt-in build flags/behaviors, e.g.
+`content-source-dev`, `listings-detail-pages`, `sitemap-default-on` — see
+`internal/versioncmd` for the full list and what each corresponds to in
+`internal/buildcmd/options.go`), `sections` (the current `-disable-sections`
+registry), and `template_functions` (helper functions available to page
+templates, e.g. `required`, `dig`). Consumer CI can `go run -buildvcs=true
+./cmd/website-compiler version -json` against a checked-out compiler and parse
+this instead of grepping compiler source for strings that happen to indicate a
+feature today. `-version`/`--version` are accepted as aliases for the `version`
+subcommand itself (but not for `-json`, which stays a subcommand flag).
 
 ### Standalone entrypoints (`cmd/`)
 
