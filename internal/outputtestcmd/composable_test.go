@@ -132,6 +132,53 @@ corpus:
 	}
 }
 
+// writeRawFile adds a non-HTML file (e.g. a JSON manifest or an image) to an
+// already-compiled output tree, since writeSite only produces index.html
+// pages per route.
+func writeRawFile(t *testing.T, root, rel, content string) {
+	t.Helper()
+	p := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func TestJSONAssetsExistCatchesAMissingManifestIcon(t *testing.T) {
+	out := writeSite(t, map[string]string{"/": `<html lang="en"><main id="main">hi</main></html>`})
+	writeRawFile(t, out, "site.webmanifest", `{"icons":[{"src":"/images/logo-256.png","sizes":"256x256"}]}`)
+	// The icon file itself is never written to out — this is the exact P0-3
+	// symptom: a manifest referencing a fingerprinted filename that was never
+	// actually copied to the compiled output.
+	err := run(t, `
+version: 1
+corpus:
+  - type: json_assets_exist
+    path: site.webmanifest
+    field: "icons[].src"
+`, out)
+	if err == nil || !strings.Contains(err.Error(), "compiled output check(s) failed") {
+		t.Fatalf("a manifest referencing a missing icon must fail, got %v", err)
+	}
+}
+
+func TestJSONAssetsExistPassesWhenTheManifestIconResolves(t *testing.T) {
+	out := writeSite(t, map[string]string{"/": `<html lang="en"><main id="main">hi</main></html>`})
+	writeRawFile(t, out, "site.webmanifest", `{"icons":[{"src":"/images/logo-256.f971395b.png","sizes":"256x256"}]}`)
+	writeRawFile(t, out, "images/logo-256.f971395b.png", "pngdata")
+	if err := run(t, `
+version: 1
+corpus:
+  - type: json_assets_exist
+    path: site.webmanifest
+    field: "icons[].src"
+`, out); err != nil {
+		t.Fatalf("a manifest whose icons all resolve must pass: %v", err)
+	}
+}
+
 func TestPresetCanBeComposedWithLocalRules(t *testing.T) {
 	out := writeSite(t, map[string]string{"/": `<html><body>no landmark</body></html>`})
 	err := run(t, `
