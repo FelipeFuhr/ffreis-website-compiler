@@ -177,9 +177,35 @@ type DetailSpec struct {
 	// on absent-vs-zero-value fields" as a silent-breakage risk (§6.1). Full
 	// Field entries carry the type, so the same projection code — and the same
 	// zeroValue rules — apply here as to records.fields.
-	ExtraFields []Field      `yaml:"extra_fields"`
-	Sitemap     SitemapAttrs `yaml:"sitemap"`
+	ExtraFields []Field `yaml:"extra_fields"`
+	// PageDataFrom is a dotted site-data path template (e.g.
+	// "pages.product-{{.slug}}") resolved once per record and merged into the
+	// detail template's data under PageDataKey, alongside the DataKey record.
+	//
+	// It exists because page COPY and record STRUCTURE live in two different
+	// site-data namespaces: flemming's course pages read both courses.<slug>
+	// (structure) and pages.<slug> (title, meta_description, body HTML), and
+	// forma's products are the mirror image — products.<slug> plus
+	// pages.product-<slug> (decision record §5.1(b), §5.3).
+	//
+	// Deliberately NOT a general "merge arbitrary site data" feature: it is one
+	// dotted path, resolved per record, exposed under one fixed key. A second
+	// path, or a configurable key, is the signal to stop and reconsider rather
+	// than to widen this.
+	//
+	// It is also what lets a site migrate its templates onto a collection
+	// BEFORE folding its per-page copy into the records — forma keeps its nine
+	// pages.product-* entries and folds them later, as a separate diff.
+	PageDataFrom string       `yaml:"page_data_from"`
+	Sitemap      SitemapAttrs `yaml:"sitemap"`
 }
+
+// PageDataKey is the fixed template-data key DetailSpec.PageDataFrom resolves
+// into. Fixed rather than configurable on purpose: DataKey varies per
+// collection because .CurrentCourse / .CurrentListing / .CurrentProduct are
+// each a different domain noun, whereas "the page copy for this record" is one
+// concept with one name across every collection.
+const PageDataKey = "CurrentPageData"
 
 // SitemapAttrs mirrors sitemap.URLItem field-for-field so composing with
 // internal/sitemap is by construction — the engine returns []sitemap.URLItem
