@@ -26,6 +26,11 @@ import (
 //     none of — per-record DETAIL pages, Slugify-derived slugs, formatMoney
 //     display fields, and detail-only extra_fields — which is why the decision
 //     record sequences it second.
+//   - `listings` (Phase 5): internal/listings + injectListingsData +
+//     writeListingDetailPages. Adds the three axes the first two had none of —
+//     an index-less collection, PRESERVED FILE ORDER instead of a sort (Q7),
+//     and the window.CASABOA_LISTINGS JS blob (§1.3), which is the one artefact
+//     in this refactor where a defect ships silently.
 //
 // The decision record is explicit that several of these baselines pin current
 // BUGS (Q1, Q2, Q3, and the courses form of Q1). They are asserted by name in
@@ -54,6 +59,10 @@ type goldenCase struct {
 	projectsRel string
 	// coursesRel is the -courses-file path, same convention as projectsRel.
 	coursesRel string
+	// listingsRel is the -listings-file path, same convention as projectsRel.
+	// Empty pins the {{else}} branch of the window.CASABOA_LISTINGS line — the
+	// literal `[]` a build with no listings emits.
+	listingsRel string
 	// contentSource is the -content-source value. The mock cells MUST pass
 	// "mock": their content path contains a /mock/ segment and the anti-leak
 	// guard in parseBuildOptions (decision record Q9) rejects it otherwise.
@@ -72,18 +81,24 @@ type goldenCase struct {
 // page/2) is pinned separately by the pt-real-default cell, whose golden tree
 // asserts the absence of page/2 simply by not containing it.
 //
-// The two single-collection cells exist because ffreis.com is the only site
-// running both, and a migration must not make one collection's presence a
-// precondition for the other's output. They also pin the empty-collection
-// branch of whichever template is left without content.
+// The three single-collection cells exist because ffreis.com is the only site
+// running projects+courses, and a migration must not make one collection's
+// presence a precondition for the other's output. They also pin the
+// empty-collection branch of whichever template is left without content.
+//
+// listings has no mock corpus (ffreis-content-mocks carries projects.yaml and
+// courses.yaml only) and no index page, so it rides on the two real-content
+// cells plus its own single-collection cell. The four cells that omit it pin
+// the `[]` branch of the window.CASABOA_LISTINGS line.
 var goldenCases = []goldenCase{
-	{name: "pt-real", lang: "pt", projectsRel: "content/projects.yaml", coursesRel: "content/courses.yaml", contentSource: "prod", itemsPerPage: 2},
-	{name: "en-real", lang: "en", projectsRel: "content/projects.yaml", coursesRel: "content/courses.yaml", contentSource: "prod", itemsPerPage: 2},
+	{name: "pt-real", lang: "pt", projectsRel: "content/projects.yaml", coursesRel: "content/courses.yaml", listingsRel: "content/listings.yaml", contentSource: "prod", itemsPerPage: 2},
+	{name: "en-real", lang: "en", projectsRel: "content/projects.yaml", coursesRel: "content/courses.yaml", listingsRel: "content/listings.yaml", contentSource: "prod", itemsPerPage: 2},
 	{name: "pt-mock", lang: "pt", projectsRel: "content/mock/projects.yaml", coursesRel: "content/mock/courses.yaml", contentSource: "mock", itemsPerPage: 12},
 	{name: "en-mock", lang: "en", projectsRel: "content/mock/projects.yaml", coursesRel: "content/mock/courses.yaml", contentSource: "mock", itemsPerPage: 12},
 	{name: "pt-real-default", lang: "pt", projectsRel: "content/projects.yaml", coursesRel: "content/courses.yaml", contentSource: "prod", itemsPerPage: 12},
 	{name: "pt-projects-only", lang: "pt", projectsRel: "content/projects.yaml", contentSource: "prod", itemsPerPage: 2},
 	{name: "pt-courses-only", lang: "pt", coursesRel: "content/courses.yaml", contentSource: "prod", itemsPerPage: 2},
+	{name: "pt-listings-only", lang: "pt", listingsRel: "content/listings.yaml", contentSource: "prod", itemsPerPage: 2},
 }
 
 func TestGoldenSite(t *testing.T) {
@@ -117,6 +132,7 @@ func buildGoldenCase(t *testing.T, tc goldenCase) string {
 	}
 	args = append(args, goldenContentFlag(t, "-projects-file", tc.projectsRel)...)
 	args = append(args, goldenContentFlag(t, "-courses-file", tc.coursesRel)...)
+	args = append(args, goldenContentFlag(t, "-listings-file", tc.listingsRel)...)
 
 	if err := Run(args, testutil.DiscardLogger()); err != nil {
 		t.Fatalf("golden build %s failed: %v", tc.name, err)
@@ -225,11 +241,17 @@ func copyGoldenFile(t *testing.T, src, dst string) {
 //   - projects/**              every generated index / paged page
 //   - courses/**               index / paged pages AND every /courses/<slug>/
 //     detail page
+//   - listings/**              every /listings/<id>/ detail page. There is no
+//     index page for this collection (Index.Enabled false), which the file set
+//     asserts simply by containing no listings/index.html
 //   - sitemap.xml              Q3's duplicate /projects + /projects/ entries,
 //     the same duplication for /courses, and every detail-page entry with its
-//     changefreq/priority attributes
-//   - index.html               the home carousel (the `publish:` half) AND the
-//     hreflang control for Q2
+//     changefreq/priority attributes — AND the record ORDER for listings, which
+//     nothing else in the file set can pin (Q7)
+//   - index.html               the home carousel (the `publish:` half), the
+//     hreflang control for Q2, AND the rendered window.CASABOA_LISTINGS line,
+//     which is the §1.3 byte contract and the second of the two order-sensitive
+//     artefacts
 //
 // Collecting whole subtrees rather than named files means a page that appears
 // or disappears fails the diff on its own — including the /course/index.html
@@ -267,16 +289,16 @@ func snapshotGoldenOutput(t *testing.T, outDir string) map[string]string {
 }
 
 // goldenSnapshotPath reports whether a dist-relative path belongs in the
-// baseline. "course/" (singular) is included deliberately: it is where the
-// un-rendered detail-template validation pass would land if pages.course.internal
-// or the {{if .CurrentCourse}} guard ever regressed, and a snapshot that
-// silently ignored it could not catch that.
+// baseline. The singular "course/" and "listing/" are included deliberately:
+// they are where the un-rendered detail-template validation pass would land if
+// pages.<name>.internal or the {{if .CurrentX}} guard ever regressed, and a
+// snapshot that silently ignored them could not catch that.
 func goldenSnapshotPath(rel string) bool {
 	switch rel {
 	case "sitemap.xml", "index.html":
 		return true
 	}
-	for _, prefix := range []string{"projects/", "courses/", "course/"} {
+	for _, prefix := range []string{"projects/", "courses/", "course/", "listings/", "listing/"} {
 		if strings.HasPrefix(rel, prefix) {
 			return true
 		}

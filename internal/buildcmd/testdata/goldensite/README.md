@@ -6,11 +6,29 @@ baseline of what the compiler emits for the content collections being migrated
 onto `internal/collections`, captured from the **unmodified** engine and
 re-asserted against every later code path.
 
-It covers `projects` (Phase 2) and `courses` (Phase 3). `courses` is the harder
-of the two, and is why the fixture grew: it adds per-record **detail** pages, a
-`Slugify`-derived slug, two `formatMoney` display fields, and detail-only
-`extra_fields` — four places the decision record flags as easy to get subtly
-wrong.
+It covers `projects` (Phase 2), `courses` (Phase 3) and `listings` (Phase 5).
+`courses` is the harder of the first two, and is why the fixture grew: it adds
+per-record **detail** pages, a `Slugify`-derived slug, two `formatMoney` display
+fields, and detail-only `extra_fields` — four places the decision record flags
+as easy to get subtly wrong.
+
+`listings` grew it again, along three axes neither of the others has:
+
+- **No index page.** `builtinListings` sets `Index.Enabled: false` (casaboa's
+  hub is a normal client-rendered `index.gohtml`), so it is the first migrated
+  collection that produces detail pages and nothing else.
+- **Preserved file order** instead of a sort (decision record Q7) — the order
+  encodes upstream ranking via the `score` field.
+- **The `window.CASABOA_LISTINGS` JS blob** (§1.3), the one artefact in this
+  whole refactor where a defect ships silently.
+
+The last two interact, and it is worth being explicit about why: detail pages
+are written to `/listings/<id>/index.html`, so the golden *file set* is keyed by
+id and is completely **order-insensitive**. Only two artefacts encode the record
+order — `sitemap.xml` (emitted in record order, never re-sorted) and the JSON
+array in the JS blob. Both are in the snapshot, and
+`TestListingsQ7_FileOrderPreserved` asserts them against an independently
+written-out id list rather than against the YAML the engine just read.
 
 ## Why a vendored fixture rather than the real `ffreis-website` checkout
 
@@ -45,6 +63,21 @@ decides the bytes of `/projects/` and `/courses/` is copied verbatim from
 | `content/courses.yaml` | `ffreis-courses/courses.yaml` (3 records) |
 | `content/mock/projects.yaml` | `ffreis-content-mocks/projects.yaml` (100 records) |
 | `content/mock/courses.yaml` | `ffreis-content-mocks/courses.yaml` (100 records) |
+| `content/listings.yaml` | `casaboa-data/site.d/30-listings.yaml` (25 records) |
+| `pages/listing.gohtml` | `casaboa-website/src/templates/pages/listing.gohtml` |
+| `pages/index.gohtml` → the `window.CASABOA_LISTINGS` line | `casaboa-website/src/templates/layout/base.gohtml` |
+
+`listings` has **no mock corpus** — `ffreis-content-mocks` carries
+`projects.yaml` and `courses.yaml` only — so it rides on the two real-content
+cells plus its own single-collection cell, and the four cells that omit it pin
+the `[]` (`{{else}}`) branch of the JS blob.
+
+The `window.CASABOA_LISTINGS` line lives on the fixture's **home page** rather
+than in its layout. casaboa emits it from `layout/base.gohtml`, so every page
+carries it there; putting it on the one page the snapshot already captures in
+every cell gives the same byte coverage of the contract (the expression, the
+`toJSON` call, both branches, and the array order) without stamping the same
+line onto several hundred golden files.
 
 The page chrome (real `nav`/`footer`/`head` partials, images, the other 20
 page templates) is reduced, because none of it participates in the record
@@ -84,10 +117,10 @@ exercises the `-content-source` `/mock/` anti-leak guard (decision record Q9)
 with a real path, the same shape the deployer produces
 (`checkout/projects/mock/projects.yaml`).
 
-The two single-collection cells (`pt-projects-only`, `pt-courses-only`) pin that
-one collection's output does not depend on the other being present, and pin the
-empty-collection branch (decision record Q5) of whichever template is left
-without content.
+The three single-collection cells (`pt-projects-only`, `pt-courses-only`,
+`pt-listings-only`) pin that one collection's output does not depend on the
+others being present, and pin the empty-collection branch (decision record Q5)
+of whichever template is left without content.
 
 ## Regenerating
 
@@ -98,9 +131,10 @@ go test ./internal/buildcmd -run TestGoldenSite -update-golden
 Only ever regenerate when the change to the emitted bytes is **intended and
 reviewed**. Several of these goldens pin behaviour the decision record
 classifies as *bugs* (Q1 for both collections, Q2, Q3); they are asserted
-explicitly and by name in `golden_projects_quirks_test.go` and
-`golden_courses_quirks_test.go` so that "fixing" one without meaning to fails
-loudly rather than silently rewriting a baseline.
+explicitly and by name in `golden_projects_quirks_test.go`,
+`golden_courses_quirks_test.go` and `golden_listings_quirks_test.go` so that
+"fixing" one without meaning to fails loudly rather than silently rewriting a
+baseline.
 
 ## Status
 
@@ -111,5 +145,8 @@ loudly rather than silently rewriting a baseline.
   `injectCoursesHomeCarousel` + `writeCoursePages` + `writeCourseLandingPages`)
   and re-verified, unchanged, against the migrated code path (Phase 3:
   `internal/courses` deleted).
+- **listings** — captured from the pre-migration engine (`internal/listings` +
+  `injectListingsData` + `writeListingDetailPages`) and re-verified, unchanged,
+  against the migrated code path (Phase 5: `internal/listings` deleted).
 
 Every byte in `golden/` is therefore output that BOTH implementations produced.

@@ -32,6 +32,12 @@ pages:
     title: "Course — Golden"
     meta_description: "A course page of the golden site."
     canonical_url: "https://golden.example/en/courses/"
+  # See the pt copy of this file for why pages.listing carries internal: true.
+  listing:
+    internal: true
+    title: "Listing — Golden"
+    meta_description: "A listing page of the golden site."
+    canonical_url: "https://golden.example/en/listings/"
   contact:
     title: "Contact — Golden"
     meta_description: "Contact page of the golden site."

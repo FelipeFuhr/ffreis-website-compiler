@@ -10,7 +10,18 @@
      3. It is the hreflang CONTROL: this page goes through writePages, so it DOES
         receive <link rel="alternate" hreflang=...>. /projects/ and /courses/ do
         not (Q2). Without a control the "no hreflang on /projects/" assertion
-        would pass vacuously on a site where hreflang never runs at all. */}}
+        would pass vacuously on a site where hreflang never runs at all.
+     4. It carries the window.CASABOA_LISTINGS line VERBATIM from
+        casaboa-website/src/templates/layout/base.gohtml. That line is the
+        `listings` byte contract (decision record §1.3), and it is the only
+        thing in this whole refactor that can ship a defect silently: a wrong
+        key order, a lost `href`, a `sponsored` that vanished instead of being
+        false, or a re-sorted record array all still render a valid page, still
+        pass linkcheck, and still pass the sitemap check. Pinning the rendered
+        line here makes it a permanent CI gate instead of a one-time manual
+        diff. It is also what pins record ORDER: the detail pages are keyed by
+        id on disk, so the golden file set alone is order-insensitive — the JSON
+        array here and sitemap.xml are the two artefacts that are not (Q7). */}}
 {{define "page_title"}}{{$p := dig .SiteData "pages" "index"}}{{if $p}}{{dig $p "title"}}{{else}}Home{{end}}{{end}}
 
 {{define "page"}}
@@ -43,4 +54,7 @@
   </section>
   {{end}}
 </main>
+<script>
+  window.CASABOA_LISTINGS = {{with dig .SiteData "listings"}}{{toJSON .}}{{else}}[]{{end}};
+</script>
 {{end}}

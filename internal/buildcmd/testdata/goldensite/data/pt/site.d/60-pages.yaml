@@ -37,6 +37,15 @@ pages:
     title: "Curso — Golden"
     meta_description: "Página de um curso do site golden."
     canonical_url: "https://golden.example/pt/courses/"
+  # The per-listing detail template, and the same internal: true story as
+  # pages.course above (decision record Q8). Copied in shape from casaboa's
+  # src/data/site.d/30-listing-template.yaml, which is where the live site
+  # marks listing.gohtml internal.
+  listing:
+    internal: true
+    title: "Imóvel — Golden"
+    meta_description: "Página de um imóvel do site golden."
+    canonical_url: "https://golden.example/pt/listings/"
   contact:
     title: "Contato — Golden"
     meta_description: "Página de contato do site golden."
