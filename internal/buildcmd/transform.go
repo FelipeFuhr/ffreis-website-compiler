@@ -22,11 +22,15 @@ func injectNavigationEnhancements(html string) string {
 	return strings.Replace(html, "</head>", inject+headEndTag, 1)
 }
 
-const defaultTrackerCDNBase = "https://cdn.ffreis.com"
-
 // injectTracker injects the versioned ffreis-tracker-sdk <script src=...> tag
 // plus a Tracker.init(...) snippet before </head>. It is a no-op when the
 // tracker is disabled or required config is missing.
+//
+// opts.trackerCDNBase has no default: parseBuildOptions fails the build at
+// flag-parsing time when -tracker-enabled is set without an explicit
+// -tracker-cdn-base, so by the time this runs (via the normal CLI path) it is
+// always non-empty. Callers that construct buildOptions directly (e.g. tests)
+// must supply it themselves.
 //
 // The init snippet runs on DOMContentLoaded so the script is loaded with defer
 // without races against the rest of the page. Both siteId and endpoint are
@@ -38,11 +42,7 @@ func injectTracker(html string, opts buildOptions) string {
 	if opts.trackerSDKVersion == "" || opts.trackerSiteID == "" || opts.trackerEndpoint == "" {
 		return html
 	}
-	cdnBase := opts.trackerCDNBase
-	if cdnBase == "" {
-		cdnBase = defaultTrackerCDNBase
-	}
-	cdnBase = strings.TrimRight(cdnBase, "/")
+	cdnBase := strings.TrimRight(opts.trackerCDNBase, "/")
 	siteID := jsonQuote(opts.trackerSiteID)
 	endpoint := jsonQuote(opts.trackerEndpoint)
 	inject := fmt.Sprintf(

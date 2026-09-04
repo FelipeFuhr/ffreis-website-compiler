@@ -60,13 +60,16 @@ type buildOptions struct {
 	// reachable when the site is deployed under a path prefix.
 	basePath string
 	// Tracker SDK injection. When trackerEnabled is true the compiler injects a
-	// <script> tag pointing at cdn.ffreis.com plus a Tracker.init(...) snippet
+	// <script> tag pointing at trackerCDNBase plus a Tracker.init(...) snippet
 	// before </head> on every rendered page. Sourced from per-site inventory.
 	trackerEnabled    bool
 	trackerSDKVersion string
 	trackerSiteID     string
 	trackerEndpoint   string
-	trackerCDNBase    string // override (mostly for tests); empty uses cdn.ffreis.com
+	// trackerCDNBase has no default. parseBuildOptions requires it to be set
+	// whenever trackerEnabled is true; a build fails at flag-parsing time
+	// otherwise instead of silently falling back to a hardcoded CDN.
+	trackerCDNBase string
 	// devData enables injection of window.__devBuild before </head> on every
 	// rendered page. devDataJSON holds the pre-serialised JSON payload built from
 	// siteData + content after loading; it is populated by buildDevDataPayload and
@@ -127,11 +130,11 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.allowBlanketRobotsDisallow, "allow-blanket-robots-disallow", false, "allow a committed robots.txt that disallows all crawlers under User-agent: * even on a non-mock (real content) build; without this flag, such a robots.txt fails the build so a dev-only block cannot silently ship to prod")
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
 
-	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint")
+	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint, -tracker-cdn-base")
 	fs.StringVar(&opts.trackerSDKVersion, "tracker-sdk-version", "", "semver of the SDK to load from the CDN (e.g. 1.0.0); pinned per site in inventory.yaml")
 	fs.StringVar(&opts.trackerSiteID, "tracker-site-id", "", "site identifier passed to Tracker.init (e.g. flemming, ffreis, petlook)")
 	fs.StringVar(&opts.trackerEndpoint, "tracker-endpoint", "", "ingestion endpoint passed to Tracker.init (e.g. https://events.flemming.com.br)")
-	fs.StringVar(&opts.trackerCDNBase, "tracker-cdn-base", "", "override the CDN base URL for the SDK script (defaults to https://cdn.ffreis.com)")
+	fs.StringVar(&opts.trackerCDNBase, "tracker-cdn-base", "", "CDN base URL for the SDK script (e.g. https://cdn.ffreis.com); required when -tracker-enabled is set, no default is assumed")
 	fs.BoolVar(&opts.devData, "dev-data", false, "inject window.__devBuild JSON before </head> on every page; for dev.ffreis.com only — never pass on prod builds")
 
 	if err := fs.Parse(args); err != nil {
@@ -151,6 +154,27 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 				)
 			}
 		}
+	}
+
+	// Anti-leak guard: -dev-data injects window.__devBuild into every rendered
+	// page and is documented as dev.ffreis.com-only. Equality (not != "mock")
+	// is deliberate: a future non-prod, non-mock --content-source value must
+	// not be swept into this prod-only check by accident.
+	if opts.devData && opts.contentSource == "prod" {
+		return buildOptions{}, fmt.Errorf(
+			"--dev-data cannot be used with --content-source=prod: " +
+				"--dev-data injects window.__devBuild and is for dev.ffreis.com only, " +
+				"never for a prod build; pass --content-source=mock or drop --dev-data",
+		)
+	}
+
+	// -tracker-cdn-base has no default: require it explicitly whenever the
+	// tracker is enabled instead of silently pointing at a hardcoded CDN.
+	if opts.trackerEnabled && opts.trackerCDNBase == "" {
+		return buildOptions{}, fmt.Errorf(
+			"--tracker-cdn-base is required when --tracker-enabled is set: " +
+				"no default CDN base is assumed; pass --tracker-cdn-base explicitly",
+		)
 	}
 
 	if assetsDirFlag == "" && siteDirFlag != "" {

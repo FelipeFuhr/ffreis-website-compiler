@@ -652,6 +652,7 @@ func TestInjectTracker_InjectsScriptAndInitBeforeHeadClose(t *testing.T) {
 		trackerSDKVersion: "1.2.3",
 		trackerSiteID:     "flemming",
 		trackerEndpoint:   "https://events.flemming.com.br",
+		trackerCDNBase:    "https://cdn.ffreis.com",
 	})
 	if !strings.Contains(got, `src="https://cdn.ffreis.com/tracker-sdk/v1.2.3/tracker.min.js"`) {
 		t.Errorf("expected SDK script src with pinned version, got: %s", got)
@@ -670,6 +671,22 @@ func TestInjectTracker_InjectsScriptAndInitBeforeHeadClose(t *testing.T) {
 	scriptStart := strings.Index(got, "tracker-sdk")
 	if scriptStart < 0 || headEnd < 0 || scriptStart > headEnd {
 		t.Errorf("expected script before </head>; scriptStart=%d headEnd=%d", scriptStart, headEnd)
+	}
+}
+
+func TestInjectTracker_NoSilentDefaultCDNBase(t *testing.T) {
+	html := `<html><head></head><body></body></html>`
+	// trackerCDNBase intentionally left empty. parseBuildOptions is what
+	// enforces requiredness (build-time error) when tracker is enabled;
+	// injectTracker itself must no longer fall back to a hardcoded CDN.
+	got := injectTracker(html, buildOptions{
+		trackerEnabled:    true,
+		trackerSDKVersion: "1.2.3",
+		trackerSiteID:     "flemming",
+		trackerEndpoint:   "https://events.flemming.com.br",
+	})
+	if strings.Contains(got, "cdn.ffreis.com") {
+		t.Errorf("expected no silent fallback to a hardcoded CDN base, got: %s", got)
 	}
 }
 
@@ -695,6 +712,7 @@ func TestInjectTracker_QuotesEmbeddedInValuesAreEscaped(t *testing.T) {
 		trackerSDKVersion: "1.0.0",
 		trackerSiteID:     `flem"ming`,
 		trackerEndpoint:   "https://events.example.com",
+		trackerCDNBase:    "https://cdn.ffreis.com",
 	})
 	if !strings.Contains(got, `siteId:"flem\"ming"`) {
 		t.Errorf("expected escaped quote in siteId, got: %s", got)
