@@ -192,9 +192,10 @@ func TestDetailSpecPageDataFromIsOptional(t *testing.T) {
 		}
 	}
 	if err := (Collection{
-		Name:   "products",
-		Source: Source{Kind: SourceSiteData, Shape: ShapeKeyedMap, Key: "products", IDField: "slug"},
-		Index:  &IndexSpec{Enabled: false},
+		Name:    "products",
+		Source:  Source{Kind: SourceSiteData, Shape: ShapeKeyedMap, Key: "products", IDField: "slug"},
+		Records: RecordSpec{Passthrough: true, Require: []string{"slug"}},
+		Index:   &IndexSpec{Enabled: false},
 		Detail: &DetailSpec{
 			Enabled:  true,
 			Template: "product",
@@ -206,12 +207,74 @@ func TestDetailSpecPageDataFromIsOptional(t *testing.T) {
 	}
 }
 
+// A keyed_map id_field the projection would drop leaves every record sharing
+// one identity. With a flat detail path that is not a visible failure — the
+// collection writes ONE file N times — so it has to be caught at config load.
+func TestIDFieldMustSurviveTheProjection(t *testing.T) {
+	base := Collection{
+		Source: Source{Kind: SourceSiteData, Shape: ShapeKeyedMap, Key: "products", IDField: "slug"},
+		Detail: &DetailSpec{
+			Enabled: true, Template: "product",
+			Path: "/product-{{.slug}}.html", DataKey: "CurrentProduct",
+		},
+	}
+
+	t.Run("dropped by the projection", func(t *testing.T) {
+		c := base
+		c.Records = RecordSpec{Fields: []Field{{Name: "name", Type: TypeString}}}
+		err := c.Validate()
+		if err == nil {
+			t.Fatal("expected an error: slug is not in records.fields and passthrough is off")
+		}
+		if !strings.Contains(err.Error(), "id_field") {
+			t.Errorf("error should name id_field, got: %v", err)
+		}
+	})
+
+	t.Run("declared as a field", func(t *testing.T) {
+		c := base
+		c.Records = RecordSpec{Fields: []Field{{Name: "slug", Type: TypeString, Required: true}}}
+		if err := c.Validate(); err != nil {
+			t.Errorf("declaring the id_field must satisfy the check: %v", err)
+		}
+	})
+
+	t.Run("kept by passthrough", func(t *testing.T) {
+		c := base
+		c.Records = RecordSpec{Passthrough: true}
+		if err := c.Validate(); err != nil {
+			t.Errorf("passthrough keeps the id_field: %v", err)
+		}
+	})
+
+	t.Run("no id_field at all", func(t *testing.T) {
+		c := base
+		c.Source.IDField = ""
+		c.Source.Shape = ShapeList
+		c.Source.Key = "products"
+		if err := c.Validate(); err != nil {
+			t.Errorf("a source with no id_field is unaffected: %v", err)
+		}
+	})
+
+	// The built-ins must keep validating — this guard is new, and none of them
+	// uses a keyed_map source today.
+	for name, c := range Builtins() {
+		if err := c.Validate(); err != nil {
+			t.Errorf("built-in %q no longer validates: %v", name, err)
+		}
+	}
+}
+
 func TestPageDataFromParsesFromYAML(t *testing.T) {
 	path := writeTemp(t, "collections.yaml", `
 version: 1
 collections:
   products:
     source: {kind: site_data, shape: keyed_map, key: products, id_field: slug}
+    records:
+      passthrough: true
+      require: [slug]
     index: {enabled: false}
     detail:
       enabled: true
