@@ -283,6 +283,9 @@ func (c Collection) Validate() error {
 	if err := c.Records.validate(); err != nil {
 		return err
 	}
+	if err := c.validateIDFieldSurvivesProjection(); err != nil {
+		return err
+	}
 	for _, p := range c.Publish {
 		if strings.TrimSpace(p.Key) == "" {
 			return fmt.Errorf("publish entry has an empty key")
@@ -314,6 +317,34 @@ func (c Collection) Validate() error {
 		}
 	}
 	return nil
+}
+
+// validateIDFieldSurvivesProjection rejects a keyed_map source whose id_field
+// the record projection would then drop.
+//
+// fromKeyedMap copies the map key into the RAW record under id_field, but with
+// passthrough: false the projection keeps only the keys records.fields lists —
+// so an undeclared id_field vanishes before any detail path or page_data_from
+// template can read it. Both then render "<no value>" for every record, and a
+// flat detail path (no trailing slash) makes that a single file the whole
+// collection overwrites in turn, leaving one page where N were expected.
+//
+// Caught at config-load time because nothing downstream would fail: the build
+// succeeds, the sitemap is well-formed, and only the missing pages give it away.
+func (c Collection) validateIDFieldSurvivesProjection() error {
+	idField := strings.TrimSpace(c.Source.IDField)
+	if idField == "" || c.Records.Passthrough {
+		return nil
+	}
+	for _, f := range c.Records.Fields {
+		if f.Name == idField {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"source.id_field %q is not in records.fields and records.passthrough is false, "+
+			"so the projection would drop it and every record would share one identity; "+
+			"declare it as a field or set records.passthrough: true", idField)
 }
 
 func (s Source) validate() error {

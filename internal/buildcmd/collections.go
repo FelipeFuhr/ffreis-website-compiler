@@ -47,6 +47,46 @@ type collectionSet struct {
 	// contributed records this build. A collection whose section is disabled,
 	// or whose source yielded nothing, is absent.
 	projected map[string]collections.Projection
+	// detailTemplates holds each enabled detail spec's page template, captured
+	// before filterInternalPages removes it. See captureDetailTemplates.
+	detailTemplates map[string]*sitegen.PageTemplate
+}
+
+// captureDetailTemplates stashes every page template an enabled detail spec
+// names, and must run BEFORE filterInternalPages.
+//
+// Every detail template is marked pages.<name>.internal so its no-record render
+// (decision record Q8) stays off disk — which means by the time the detail
+// writer runs, filterInternalPages has already dropped it from the page slice.
+// The typed course/listing writers work around this via findPaginationTemplates'
+// hardcoded four names; a collection's detail template is named by config, so
+// this walks the resolved definitions instead of a fixed list.
+//
+// Index templates deliberately keep resolving against the FILTERED slice: an
+// index page is an ordinary, non-internal page, and it must still disappear
+// when its section is disabled.
+func (s *collectionSet) captureDetailTemplates(pages []sitegen.PageTemplate) {
+	if s == nil {
+		return
+	}
+	s.detailTemplates = make(map[string]*sitegen.PageTemplate)
+	for _, def := range s.defs {
+		if def.Detail == nil || !def.Detail.Enabled {
+			continue
+		}
+		if tpl := findTemplate(pages, def.Detail.Template); tpl != nil {
+			s.detailTemplates[def.Detail.Template] = tpl
+		}
+	}
+}
+
+// detailTemplate returns the captured detail template for a collection, or nil
+// when the site ships none.
+func (s *collectionSet) detailTemplate(def collections.Collection) *sitegen.PageTemplate {
+	if s == nil || def.Detail == nil {
+		return nil
+	}
+	return s.detailTemplates[def.Detail.Template]
 }
 
 // collectionRecords returns the projected records for one collection, or nil
@@ -199,7 +239,8 @@ func writeCollectionPages(
 		}
 		urls = append(urls, indexURLs...)
 
-		detailURLs, err := writeCollectionDetailPages(logger, opts, pages, def, projection, siteData, assetsDir, mirrorer)
+		detailURLs, err := writeCollectionDetailPages(
+			logger, opts, set.detailTemplate(def), def, projection, siteData, assetsDir, mirrorer)
 		if err != nil {
 			return nil, err
 		}
@@ -258,13 +299,17 @@ func writeCollectionIndexPages(
 // writeCollectionDetailPages renders one page per record using the detail
 // template, generalising writeCourseLandingPages and writeListingDetailPages.
 //
+// tpl comes from collectionSet.detailTemplates rather than the page slice: by
+// this point filterInternalPages has removed every internal template, and a
+// detail template is always internal (decision record Q8).
+//
 // Not reachable for `projects` (detail.enabled is false) — it is the Phase 3
 // (courses) and Phase 5 (listings) writer, landed here so the engine is whole
 // and unit-testable before either migration starts.
 func writeCollectionDetailPages(
 	logger *slog.Logger,
 	opts buildOptions,
-	pages []sitegen.PageTemplate,
+	tpl *sitegen.PageTemplate,
 	def collections.Collection,
 	projection collections.Projection,
 	siteData map[string]any,
@@ -274,7 +319,6 @@ func writeCollectionDetailPages(
 	if def.Detail == nil || !def.Detail.Enabled || len(projection.Details) == 0 {
 		return nil, nil
 	}
-	tpl := findTemplate(pages, def.Detail.Template)
 	if tpl == nil {
 		return nil, nil
 	}

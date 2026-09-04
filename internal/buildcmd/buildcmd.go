@@ -131,6 +131,7 @@ func Run(args []string, logger *slog.Logger) error {
 	// Save references to templates needed for paginated page generation,
 	// before filterInternalPages removes them.
 	findPaginationTemplates(pages, content)
+	content.collections.captureDetailTemplates(pages)
 
 	// Render all pages (including internal ones) so their CSS/JS assets are
 	// seen as "used" by the asset validator. Internal pages are filtered out
