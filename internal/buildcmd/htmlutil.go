@@ -24,9 +24,46 @@ func cachedAttrSearchRE(attr string) *regexp.Regexp {
 	// regexp.QuoteMeta escapes regex metacharacters but doesn't fix invalid UTF-8;
 	// regexp.MustCompile rejects any pattern that isn't valid UTF-8 outright (unlike
 	// matching, which tolerates it in the subject text), so sanitize first.
-	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(strings.ToValidUTF8(attr, "")) + `\s*=\s*["'][^"']*["']`)
+	safeAttr := strings.ToValidUTF8(attr, "")
+	// The value alternation requires the SAME quote character to open and
+	// close (each branch just excludes its own delimiter from the body, so
+	// the other quote type can appear freely inside). A naive ["'][^"']*["']
+	// instead treats either quote character as a valid closer, so a value
+	// that legitimately embeds the other quote type (e.g. onload's
+	// this.media='all', double-quoted overall) gets truncated at the first
+	// embedded quote on replay — the tag then grows a stray fragment every
+	// time the transform reruns over its own output.
+	re := regexp.MustCompile(`(?i)` + attrBoundary(safeAttr) + regexp.QuoteMeta(safeAttr) + `\s*=\s*(?:"[^"]*"|'[^']*')`)
 	attrSearchCache.Store(attr, re)
 	return re
+}
+
+// attrBoundary returns a `\b` word-boundary anchor when attr begins with a
+// word character (ASCII letter, digit, or underscore) — the common case,
+// since every real HTML attribute name (src, media, aria-hidden, ...) starts
+// with a letter. Go's regexp \b asserts a transition between a word and a
+// non-word rune; when attr itself starts with a non-word rune, \b can only
+// match immediately before it if the preceding character is a word
+// character. addOrReplaceAttr's own insert path always precedes a new
+// attribute with a literal space (a non-word character), so for such an
+// attr the \b assertion can never be satisfied by anything the function
+// itself writes. That mismatch between what gets inserted and what the
+// search regex can find is what breaks idempotency: a second call never
+// matches the attribute it just inserted, so it appends a duplicate instead
+// of replacing it. This only matters for malformed attr names (e.g. "!")
+// that no real caller ever passes; omitting \b for them leaves matching
+// behavior for every well-formed, letter-initial attribute name unchanged.
+func attrBoundary(attr string) string {
+	if attr != "" && isWordByte(attr[0]) {
+		return `\b`
+	}
+	return ""
+}
+
+// isWordByte reports whether b is an ASCII word character, matching the
+// character class Go's regexp \b anchor uses ([0-9A-Za-z_]).
+func isWordByte(b byte) bool {
+	return b == '_' || ('0' <= b && b <= '9') || ('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z')
 }
 
 // cachedAttrValueRE returns (caching) a regex that captures the value of `attr="..."`.
@@ -76,10 +113,33 @@ func replaceTagWith(doc string, re *regexp.Regexp, replacer func(tag string, ref
 
 // addOrReplaceAttr sets an HTML attribute value in a tag, replacing it if present.
 func addOrReplaceAttr(tag, attr, value string) string {
-	re := cachedAttrSearchRE(attr)
-	quoted := attr + `="` + value + `"`
+	// Sanitize once and reuse the SAME value for both the search regex and
+	// the inserted/replacement text. Building the regex from a sanitized
+	// attr while inserting the raw (possibly invalid-UTF-8) attr made the
+	// two permanently disagree: a second call could never find the exact
+	// bytes the first call had just written, so it kept prepending a fresh
+	// copy of the raw attribute text in front of the stale one instead of
+	// replacing it.
+	safeAttr := strings.ToValidUTF8(attr, "")
+	re := cachedAttrSearchRE(safeAttr)
+	// htmlEscape guarantees value never contains a literal '"'. Without it, a
+	// value containing a raw double quote produces an ambiguous run of quote
+	// characters (open, embedded, close) that the ["'][^"']*["'] search
+	// regex can't reparse the same way twice — each replay resolves the
+	// ambiguity differently, so the tag grows a stray quote per call. No
+	// real caller's value contains &, ", <, or > today, so this is a no-op
+	// for every well-formed call site.
+	quoted := safeAttr + `="` + htmlEscape(value) + `"`
 	if re.MatchString(tag) {
-		return re.ReplaceAllString(tag, quoted)
+		// ReplaceAllString (not ReplaceAllLiteralString) would interpret a
+		// literal "$" in quoted as a submatch-reference template (Go's
+		// regexp.Expand syntax: $1, $name, ${name}, ...). Since our search
+		// regex has no capture groups, any "$" followed by digits/letters/
+		// underscores in attr or value — e.g. attr="$000" — resolves to an
+		// unmatched, empty reference and silently vanishes from the output
+		// instead of being written literally, same as the insert branch
+		// below already does via plain string concatenation.
+		return re.ReplaceAllLiteralString(tag, quoted)
 	}
 	// Insert before the closing > of the tag.
 	if idx := strings.LastIndex(tag, ">"); idx != -1 {
