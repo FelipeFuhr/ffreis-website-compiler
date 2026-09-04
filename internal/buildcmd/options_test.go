@@ -52,6 +52,106 @@ func TestParseBuildOptions_ContentSourceGuard(t *testing.T) {
 			t.Fatalf("expected no error for real paths with prod source, got: %v", err)
 		}
 	})
+
+	t.Run("dev source rejects mock courses path", func(t *testing.T) {
+		// dev is for real content paths against dev.ffreis.com; it gets no
+		// /mock/ exemption — only content-source=mock does.
+		_, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-content-source", "dev",
+			"-courses-file", "/some/repo/mock/courses.yaml",
+		})
+		if err == nil {
+			t.Fatal("expected error for mock path with dev source, got nil")
+		}
+		if !strings.Contains(err.Error(), "/mock/") {
+			t.Errorf("error should mention /mock/, got: %v", err)
+		}
+	})
+
+	t.Run("dev source allows non-mock paths", func(t *testing.T) {
+		_, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-content-source", "dev",
+			"-courses-file", "/some/repo/courses.yaml",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for real paths with dev source, got: %v", err)
+		}
+	})
+
+	t.Run("invalid content-source value is rejected", func(t *testing.T) {
+		_, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-content-source", "staging",
+		})
+		if err == nil {
+			t.Fatal("expected error for invalid --content-source value, got nil")
+		}
+		if !strings.Contains(err.Error(), "content-source") {
+			t.Errorf("error should mention content-source, got: %v", err)
+		}
+	})
+}
+
+func TestParseBuildOptions_DevContentSourceImpliesAllowBlanketRobotsDisallow(t *testing.T) {
+	t.Run("content-source=dev implies allow-blanket-robots-disallow", func(t *testing.T) {
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-content-source", "dev",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for content-source=dev, got: %v", err)
+		}
+		if opts.contentSource != "dev" {
+			t.Errorf("contentSource = %q, want %q", opts.contentSource, "dev")
+		}
+		if !opts.allowBlanketRobotsDisallow {
+			t.Error("expected allowBlanketRobotsDisallow to be implied true for content-source=dev")
+		}
+	})
+
+	t.Run("content-source=prod (default) does not imply allow-blanket-robots-disallow", func(t *testing.T) {
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for default build, got: %v", err)
+		}
+		if opts.allowBlanketRobotsDisallow {
+			t.Error("expected allowBlanketRobotsDisallow to stay false for content-source=prod")
+		}
+	})
+
+	t.Run("content-source=mock does not imply allow-blanket-robots-disallow", func(t *testing.T) {
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-content-source", "mock",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for content-source=mock, got: %v", err)
+		}
+		if opts.allowBlanketRobotsDisallow {
+			t.Error("expected allowBlanketRobotsDisallow to stay false for content-source=mock")
+		}
+	})
+
+	t.Run("explicit allow-blanket-robots-disallow=false still overridden true by content-source=dev", func(t *testing.T) {
+		// -allow-blanket-robots-disallow=false is also the flag's zero value, so
+		// this is really the same case as the implicit-default case above, but
+		// spelled out explicitly to document that dev's implication always wins.
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-content-source", "dev",
+			"-allow-blanket-robots-disallow=false",
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if !opts.allowBlanketRobotsDisallow {
+			t.Error("expected content-source=dev to imply allowBlanketRobotsDisallow=true regardless of an explicit =false")
+		}
+	})
 }
 
 func TestParseBuildOptions_TrackerCDNBaseGuard(t *testing.T) {
@@ -134,6 +234,26 @@ func TestParseBuildOptions_DevDataProdGuard(t *testing.T) {
 		}
 		if !opts.devData {
 			t.Error("expected devData to be true")
+		}
+	})
+
+	t.Run("dev-data with dev content-source succeeds", func(t *testing.T) {
+		// PR #103's prod-only gate uses strict equality (== "prod") specifically
+		// so a future non-prod, non-mock content-source composes correctly with
+		// it. content-source=dev is that value: confirm it actually does.
+		opts, err := parseBuildOptions([]string{
+			"-website-root", ".",
+			"-dev-data",
+			"-content-source", "dev",
+		})
+		if err != nil {
+			t.Fatalf("expected no error for dev-data with content-source=dev, got: %v", err)
+		}
+		if !opts.devData {
+			t.Error("expected devData to be true")
+		}
+		if opts.contentSource != "dev" {
+			t.Errorf("contentSource = %q, want %q", opts.contentSource, "dev")
 		}
 	})
 

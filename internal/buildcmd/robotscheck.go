@@ -22,9 +22,12 @@ const fileRobotsTxt = "robots.txt"
 // audience yet, and if that file is never revisited before the site's first
 // real deployment, the entire site silently never gets crawled — with no
 // build failure or warning to catch it. Dev-only builds (-content-source
-// mock) are exempt since blocking crawlers there is expected and safe. A
-// genuine, deliberate full block on a real build (rare) can opt out with
-// -allow-blanket-robots-disallow.
+// mock) are exempt since blocking crawlers there is expected and safe.
+// -content-source dev builds are also exempt in practice: parseBuildOptions
+// sets -allow-blanket-robots-disallow automatically for them, since a
+// dev.ffreis.com build commonly ships the same blanket block. A genuine,
+// deliberate full block on a real -content-source=prod build (rare) can opt
+// out with -allow-blanket-robots-disallow passed explicitly.
 func checkRobotsTxtSafety(assetsDir string, opts buildOptions) error {
 	if opts.contentSource == "mock" || opts.allowBlanketRobotsDisallow {
 		return nil
