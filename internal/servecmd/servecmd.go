@@ -335,8 +335,6 @@ func registerStatic(mux *http.ServeMux, siteRoot string) {
 	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(filepath.Join(siteRoot, "images")))))
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir(filepath.Join(siteRoot, "js")))))
 	mux.Handle("/ld/", http.StripPrefix("/ld/", http.FileServer(http.Dir(filepath.Join(siteRoot, "ld")))))
-	mux.Handle("/send.js", http.FileServer(http.Dir(siteRoot)))
-	mux.Handle("/contactScript.js", http.FileServer(http.Dir(siteRoot)))
 	mux.Handle("/robots.txt", http.FileServer(http.Dir(siteRoot)))
 	mux.Handle("/sitemap.xml", http.FileServer(http.Dir(siteRoot)))
 }
