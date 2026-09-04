@@ -3,6 +3,7 @@ package buildcmd
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"path"
 	"regexp"
@@ -211,4 +212,71 @@ func fingerprintLocalAssets(html, assetsDir, basePath string) (string, map[strin
 	}
 
 	return html, fp.toCopy, nil
+}
+
+// fingerprintManifestIcons parses a JSON web-app-manifest document
+// (manifest.json / site.webmanifest) and rewrites every icons[].src entry to
+// its content-hashed path, reusing the exact same content-hash-then-copy
+// mechanism fingerprintLocalAssets uses for HTML-referenced assets. Discovered
+// hashedRelPath → originalRelPath copy instructions are merged into toCopy so
+// a single writeHashedAssets pass covers both HTML- and manifest-referenced
+// assets.
+//
+// The manifest is left byte-for-byte unchanged when: it fails to parse as a
+// JSON object, it has no "icons" key, "icons" is present but not a non-empty
+// array, or no icon's src actually resolves to a hashed path (e.g. every
+// referenced file is missing). Not every site declares icons — and a site
+// that does should not have its build broken by a malformed manifest, which
+// is a content problem for the browser to ignore, not a build one.
+func fingerprintManifestIcons(data []byte, assetsDir, basePath string, toCopy map[string]string) ([]byte, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return data, nil
+	}
+
+	icons, ok := doc["icons"].([]any)
+	if !ok || len(icons) == 0 {
+		return data, nil
+	}
+
+	fp := &assetFingerprinter{
+		assetsDir:      assetsDir,
+		normalizedBase: strings.TrimRight(basePath, "/"),
+		hashCache:      make(map[string]string),
+		toCopy:         make(map[string]string),
+	}
+
+	changed := false
+	for _, iconRaw := range icons {
+		icon, ok := iconRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		src, ok := icon["src"].(string)
+		if !ok || src == "" {
+			continue
+		}
+		newSrc, err := fp.resolve(src)
+		if err != nil {
+			return nil, err
+		}
+		if newSrc != src {
+			icon["src"] = newSrc
+			changed = true
+		}
+	}
+
+	if !changed {
+		return data, nil
+	}
+
+	for hashed, orig := range fp.toCopy {
+		toCopy[hashed] = orig
+	}
+
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("re-encoding manifest JSON: %w", err)
+	}
+	return out, nil
 }

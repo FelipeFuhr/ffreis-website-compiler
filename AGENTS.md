@@ -279,8 +279,20 @@ automatically cached long-term. Fingerprinting covers: `<img src>`, `<img data-s
 Only fingerprinted copies are written to the output directory. Originals (css/, fonts/,
 images/, js/) are **not** copied to dist — only `ld/` (JSON-LD), `.well-known/` (e.g.
 `security.txt`), and root discovery files (`favicon.ico`, `robots.txt`, `llms.txt`,
-`humans.txt`, `manifest.json`, `site.webmanifest`) are copied wholesale, if present in
-`src/assets/`. This prevents dead unreferenced files from accumulating in S3.
+`humans.txt`) are copied wholesale, if present in `src/assets/`. This prevents dead
+unreferenced files from accumulating in S3.
+
+`manifest.json` and `site.webmanifest` are handled differently from the other
+discovery files: they are **not** copied wholesale, because their `icons[].src`
+entries name other local assets that must stay in sync with those assets'
+fingerprinted filenames (`writeManifestFiles` in `assets.go`, called from
+`writePages` once `basePath` is known). Each file (if present) is parsed as
+JSON, every `icons[].src` is fingerprinted via the same mechanism as HTML
+references (`fingerprintManifestIcons` in `fingerprint.go`), the referenced
+icon files are copied to their hashed paths alongside the page-referenced
+assets, and the rewritten JSON — unchanged if there is no `icons` key — is
+written to dist. A manifest with no icons, an empty icons array, or invalid
+JSON is left as-is rather than failing the build.
 
 ### 8. External asset mirroring (flag: `-mirror-external-assets`)
 

@@ -107,7 +107,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&siteDirFlag, "site-dir", "", "legacy alias for -assets-dir")
 	fs.StringVar(&templatesDirFlag, "templates-dir", "", "path to templates root folder (defaults to <website-root>/src/templates, then <website-root>/templates)")
 	fs.StringVar(&opts.sitemapConfig, "sitemap-config", "", "optional path to sitemap YAML config; defaults to <website-root>/sitemap.yaml if present")
-	fs.StringVar(&opts.sitemapBaseURL, "sitemap-base-url", "", "optional base URL for automatic sitemap.xml generation when no sitemap config file is found")
+	fs.StringVar(&opts.sitemapBaseURL, "sitemap-base-url", "", "base URL for automatic sitemap.xml generation when no sitemap config file is found; overrides site data's base_url. Sitemap generation is default-on: a real (non-mock) build fails if neither this, a sitemap config, nor site data's base_url resolves one")
 	fs.StringVar(&opts.siteDataSource, "site-data", "", "optional site data source override; supports file/URL sources or a directory containing YAML layers")
 	fs.StringVar(&opts.outDir, "out", "dist", "output directory for generated static site")
 	fs.BoolVar(&opts.copyAssets, "copy-assets", true, "copy static assets from assets dir into output")

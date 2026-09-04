@@ -283,6 +283,7 @@ func TestRun_ExecutesWebsiteOwnedOutputTests(t *testing.T) {
 		flagWebsiteRoot, websiteRoot,
 		flagOut, outDir,
 		"-run-output-tests",
+		"-sitemap-base-url", "https://example.com",
 	}, testutil.DiscardLogger()); err != nil {
 		t.Fatalf("Run() with output tests: %v", err)
 	}
@@ -686,9 +687,22 @@ func newTestWebsiteRoot(t *testing.T) string {
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   stdLayoutTmpl,
 		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): stdHeadTmpl,
+		// Sitemap generation is default-on and fails a real build outright when
+		// no base URL can be resolved (see maybeGenerateSitemap). Most tests here
+		// exercise unrelated behavior and don't care about sitemap output, so
+		// give every test site a working default via the highest-priority
+		// resolution path (a sitemap.yaml config); a test that needs a truly
+		// unconfigured site removes this file (or overwrites it, as tests that
+		// already write their own sitemap.yaml do) to exercise the other paths.
+		filepath.Join(websiteRoot, "sitemap.yaml"): defaultTestSitemapYAML,
 	})
 	return websiteRoot
 }
+
+// defaultTestSitemapYAML is the sitemap.yaml newTestWebsiteRoot writes for
+// every test site so a real (non-mock) build has a derivable base URL by
+// default. See newTestWebsiteRoot for why.
+const defaultTestSitemapYAML = "base_url: https://example.com\nurls:\n  - path: /\n"
 
 func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
