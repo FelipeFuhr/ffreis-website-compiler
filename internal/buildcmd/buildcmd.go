@@ -604,23 +604,6 @@ func resolveSitemapConfigPath(websiteRoot, flagPath string) (string, error) {
 	return "", nil
 }
 
-// sectionForPath maps a URL path to the content section that gates it, or ""
-// when the path is not section-gated. Segment-based so it matches whether or not
-// the path carries a language base prefix: "/blog/", "/pt/blog/", "/blog/x/" → blog.
-func sectionForPath(path string) string {
-	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
-		switch seg {
-		case "blog":
-			return "blog"
-		case "projects":
-			return "projects"
-		case "courses":
-			return "courses"
-		}
-	}
-	return ""
-}
-
 // validateAssetUsage checks that every local CSS/JS asset is referenced by a
 // rendered page. Disabling a section legitimately orphans its assets (e.g.
 // carousel.js once every carousel is hidden), so when sections are disabled an
@@ -656,10 +639,11 @@ func injectSectionFlags(siteData map[string]any, disabled []string) {
 
 // pruneDisabledSectionData removes references to disabled sections from the site
 // data that templates render unconditionally: the nav/footer list, the human
-// sitemap page's link + post lists, and the home page's blog/courses blocks
-// (which gate on data presence). Runs after section flags are injected — i.e.
-// after contract validation — so the tracer still sees the full data. Together
-// with filterInternalPages (drops the pages) and filterDisabledSectionURLs
+// sitemap page's link + post lists, and each disabled section's table-declared
+// prune hook (e.g. the home page's blog/courses blocks, which gate on data
+// presence). Runs after section flags are injected — i.e. after contract
+// validation — so the tracer still sees the full data. Together with
+// filterInternalPages (drops the pages) and filterDisabledSectionURLs
 // (sitemap.xml) this ensures a disabled section leaves no reachable link, so the
 // internal link checker stays green.
 func pruneDisabledSectionData(siteData map[string]any, disabled []string) {
@@ -672,23 +656,14 @@ func pruneDisabledSectionData(siteData map[string]any, disabled []string) {
 	}
 	// nav + footer both range over siteData["nav"].
 	siteData["nav"] = filterLinksBySection(siteData["nav"], off)
-	pages, ok := siteData["pages"].(map[string]any)
-	if !ok {
-		return
-	}
-	if sm, ok := pages["sitemap"].(map[string]any); ok {
-		sm["links"] = filterLinksBySection(sm["links"], off)
-	}
-	if off["blog"] {
-		// Home blog block + sitemap post list read pages.blog.posts.
-		if blog, ok := pages["blog"].(map[string]any); ok {
-			blog["posts"] = []any{}
+	if pages, ok := siteData["pages"].(map[string]any); ok {
+		if sm, ok := pages["sitemap"].(map[string]any); ok {
+			sm["links"] = filterLinksBySection(sm["links"], off)
 		}
 	}
-	if off["courses"] {
-		// Home courses block gates on pages.index.courses_section.
-		if idx, ok := pages["index"].(map[string]any); ok {
-			delete(idx, "courses_section")
+	for _, s := range sectionTable {
+		if off[s.name] && s.prune != nil {
+			s.prune(siteData)
 		}
 	}
 }
@@ -821,6 +796,7 @@ type devBuildPayload struct {
 	Posts         []devItemEntry `json:"posts"`
 	Courses       []devItemEntry `json:"courses"`
 	Projects      []devItemEntry `json:"projects"`
+	Listings      []devItemEntry `json:"listings"`
 }
 
 // devItemEntry carries the title/slug and declared language codes for one
@@ -851,19 +827,36 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 	payload := devBuildPayload{
 		ContentSource: opts.contentSource,
 		ContentLangs:  contentLangs,
-		Posts:         make([]devItemEntry, 0, len(content.posts)),
-		Courses:       make([]devItemEntry, 0, len(content.courses)),
-		Projects:      make([]devItemEntry, 0, len(content.projects)),
 	}
 
-	for _, p := range content.posts {
-		payload.Posts = append(payload.Posts, devItemEntry{ID: p.Meta.Slug, Langs: p.Meta.AvailableLanguages})
+	// Each field below mirrors a table-declared section (sections.go) and is
+	// only populated while sectionEnabled agrees that section is on, so the
+	// dev payload never advertises content a disabled section has hidden
+	// everywhere else in the build (pages, sitemap, nav) — even if content.*
+	// were ever populated ahead of a section being toggled off.
+	if sectionEnabled(siteData, "blog") {
+		payload.Posts = make([]devItemEntry, 0, len(content.posts))
+		for _, p := range content.posts {
+			payload.Posts = append(payload.Posts, devItemEntry{ID: p.Meta.Slug, Langs: p.Meta.AvailableLanguages})
+		}
 	}
-	for _, c := range content.courses {
-		payload.Courses = append(payload.Courses, devItemEntry{ID: c.Title, Langs: c.SupportedLanguages})
+	if sectionEnabled(siteData, "courses") {
+		payload.Courses = make([]devItemEntry, 0, len(content.courses))
+		for _, c := range content.courses {
+			payload.Courses = append(payload.Courses, devItemEntry{ID: c.Title, Langs: c.SupportedLanguages})
+		}
 	}
-	for _, p := range content.projects {
-		payload.Projects = append(payload.Projects, devItemEntry{ID: p.Title, Langs: nil})
+	if sectionEnabled(siteData, "projects") {
+		payload.Projects = make([]devItemEntry, 0, len(content.projects))
+		for _, p := range content.projects {
+			payload.Projects = append(payload.Projects, devItemEntry{ID: p.Title, Langs: nil})
+		}
+	}
+	if sectionEnabled(siteData, "listings") {
+		payload.Listings = make([]devItemEntry, 0, len(content.listings))
+		for _, l := range content.listings {
+			payload.Listings = append(payload.Listings, devItemEntry{ID: l.ID, Langs: nil})
+		}
 	}
 
 	b, err := json.Marshal(payload)
