@@ -132,8 +132,16 @@ func recordsFromValue(src Source, v any) ([]map[string]any, error) {
 // into the record under src.IDField. Keys are visited in sorted order so the
 // result is deterministic; a collection that cares about order declares a sort.
 func fromKeyedMap(src Source, keyed map[string]any) ([]map[string]any, error) {
+	excluded := make(map[string]bool, len(src.ExcludeKeys))
+	for _, k := range src.ExcludeKeys {
+		excluded[k] = true
+	}
+
 	keys := make([]string, 0, len(keyed))
 	for k := range keyed {
+		if excluded[k] {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

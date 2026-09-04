@@ -408,8 +408,20 @@ type detailPageParams struct {
 // asset-usage validation, and pages.<name>.internal keeps that render off disk.
 // Detail templates must therefore still guard on {{if .CurrentX}}.
 func renderAndWriteCollectionDetail(p detailPageParams) (map[string]string, error) {
+	// Page identity: the shared template's own name unless the collection
+	// declares a per-record one, which also opts these pages into the per-page
+	// transforms below (see DetailSpec.PageNameFrom).
+	pageName := p.def.Detail.Template
+	if p.def.Detail.PageNameFrom != "" {
+		resolved, err := collections.RenderPageName(p.def.Detail.PageNameFrom, p.record, p.opts.basePath)
+		if err != nil {
+			return nil, fmt.Errorf("collection %q detail %s: %w", p.def.Name, p.urlPath, err)
+		}
+		pageName = resolved
+	}
+
 	templateData := map[string]any{
-		"PageName":           p.def.Detail.Template,
+		"PageName":           pageName,
 		"SiteData":           p.siteData,
 		p.def.Detail.DataKey: p.record,
 	}
@@ -434,6 +446,16 @@ func renderAndWriteCollectionDetail(p detailPageParams) (map[string]string, erro
 	htmlOut, toCopy, err := transformPage(rendered.String(), p.opts, p.assets, p.mirrorer)
 	if err != nil {
 		return nil, fmt.Errorf("transforming %s detail %s: %w", p.def.Name, p.urlPath, err)
+	}
+
+	// The two per-page transforms writePages applies and this writer historically
+	// did not (decision record Q2). Gated on a declared per-record page identity
+	// so no existing collection's output changes; for a site whose detail pages
+	// were ordinary pages until the migration, skipping them would silently drop
+	// the hreflang alternates and language-switcher hrefs those pages ship today.
+	if p.def.Detail.PageNameFrom != "" {
+		htmlOut = injectHreflangAlternates(htmlOut, p.siteData, pageName, p.opts.cleanURLs)
+		htmlOut = injectLangSwitcherHrefs(htmlOut, p.siteData, pageName, p.opts.cleanURLs)
 	}
 
 	target := resolveDetailTarget(p.opts.outDir, p.urlPath)
