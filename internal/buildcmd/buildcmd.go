@@ -171,7 +171,7 @@ func Run(args []string, logger *slog.Logger) error {
 	}
 	logger.Info("internal link check passed", "out_dir", opts.outDir)
 
-	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs, siteDataResult.Data); err != nil {
+	if err := maybeGenerateSitemap(logger, opts, assetsDir, templatesDir, pages, extraSitemapURLs, siteDataResult.Data); err != nil {
 		return err
 	}
 	if opts.runOutputTests {
@@ -448,6 +448,18 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		fmt.Fprintln(os.Stdout, target)
 	}
 
+	// Manifest icons are fingerprinted here (rather than in maybeCopyAssets,
+	// which runs before siteData/basePath are known) so the rewrite can prepend
+	// basePath to root-absolute icon refs exactly like fingerprintLocalAssets
+	// does for HTML, and so the resulting toCopy entries are covered by the same
+	// writeHashedAssets pass below. Gated the same way maybeCopyAssets is: no
+	// static assets at all means no manifest processing either.
+	if opts.copyAssets && !opts.inlineAssets {
+		if err := writeManifestFiles(assetsDir, opts.outDir, opts.basePath, allToCopy); err != nil {
+			return fmt.Errorf("writing manifest files: %w", err)
+		}
+	}
+
 	return writeHashedAssets(opts.outDir, assetsDir, allToCopy)
 }
 
@@ -565,31 +577,88 @@ func findTemplate(pages []sitegen.PageTemplate, name string) *sitegen.PageTempla
 	return nil
 }
 
-func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate, extraURLs []sitemap.URLItem, siteData map[string]any) error {
+// maybeGenerateSitemap generates sitemap.xml, preferring (in priority order)
+// a sitemap.yaml config, then an explicit -sitemap-base-url, then a base URL
+// derived from site data (see resolveSitemapBaseURL) so a site that already
+// declares base_url needs no redundant sitemap-specific flag. This last
+// fallback makes sitemap generation default-on: previously, a build with
+// neither a config nor -sitemap-base-url silently shipped with no sitemap.xml
+// at all and no warning.
+//
+// If no base URL can be determined by any of these, a real (non-mock) build
+// now fails outright rather than silently shipping without a sitemap — see
+// the error below. A mock/dev build (opts.contentSource == "mock", the same
+// signal checkRobotsTxtSafety uses) is exempt, matching that a legitimate
+// no-sitemap local/dev build should not be blocked.
+//
+// Whenever a sitemap is actually generated (any of the three paths),
+// robots.txt is updated to declare it — see writeRobotsTxtOutput.
+func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, assetsDir, templatesDir string, pages []sitegen.PageTemplate, extraURLs []sitemap.URLItem, siteData map[string]any) error {
 	sitemapConfigPath, err := resolveSitemapConfigPath(opts.websiteRoot, opts.sitemapConfig)
 	if err != nil {
 		return err
 	}
 
 	if sitemapConfigPath != "" {
-		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir, extraURLs, siteData); err != nil {
+		baseURL, err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir, extraURLs, siteData)
+		if err != nil {
 			return err
 		}
 		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(opts.outDir, sitemapXML))
 		fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, sitemapXML))
-		return nil
+		return finalizeRobotsTxt(opts, assetsDir, baseURL)
 	}
 
-	baseURL := strings.TrimSpace(opts.sitemapBaseURL)
+	baseURL := resolveSitemapBaseURL(opts, siteData)
 	if baseURL == "" {
-		return nil
+		if opts.contentSource != "mock" {
+			return fmt.Errorf(
+				"no sitemap.xml could be generated for this build (-content-source=%s): "+
+					"no sitemap.yaml config found (or via -sitemap-config), no -sitemap-base-url "+
+					"flag, and no base_url in site data; shipping a real build with no sitemap at "+
+					"all is not allowed. Add a sitemap.yaml, pass -sitemap-base-url, set base_url "+
+					"in site data, or pass -content-source=mock if this is a legitimate "+
+					"no-sitemap dev build",
+				opts.contentSource,
+			)
+		}
+		return finalizeRobotsTxt(opts, assetsDir, "")
 	}
+
 	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir, opts.cleanURLs, extraURLs); err != nil {
 		return err
 	}
 	logger.Info("generated sitemap from pages", "base_url", baseURL, "target", filepath.Join(opts.outDir, sitemapXML))
 	fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, sitemapXML))
-	return nil
+	return finalizeRobotsTxt(opts, assetsDir, baseURL)
+}
+
+// resolveSitemapBaseURL resolves the base URL for default-on sitemap
+// generation once no sitemap.yaml config was found: an explicit
+// -sitemap-base-url always wins (the pre-existing opt-in behavior), falling
+// back to siteData["base_url"] — the same site-data field already read
+// elsewhere in this package for RSS feed links (posts.go) and hreflang
+// canonical URLs (hreflang.go) — so sites that already declare it for those
+// features get a sitemap for free. Returns "" when neither is set.
+func resolveSitemapBaseURL(opts buildOptions, siteData map[string]any) string {
+	if baseURL := strings.TrimSpace(opts.sitemapBaseURL); baseURL != "" {
+		return baseURL
+	}
+	baseURL, _ := siteData["base_url"].(string)
+	return strings.TrimSpace(baseURL)
+}
+
+// finalizeRobotsTxt writes robots.txt to the output directory, gated the same
+// way maybeCopyAssets gates copyStaticAssets (no static assets at all means
+// no robots.txt either, matching pre-existing behavior). baseURL is the base
+// URL a sitemap was actually generated with this build, or "" when sitemap
+// generation was legitimately skipped (a mock/dev build with no derivable
+// base URL) — see writeRobotsTxtOutput for what each case does.
+func finalizeRobotsTxt(opts buildOptions, assetsDir, baseURL string) error {
+	if !opts.copyAssets || opts.inlineAssets {
+		return nil
+	}
+	return writeRobotsTxtOutput(assetsDir, opts.outDir, baseURL)
 }
 
 func resolveSitemapConfigPath(websiteRoot, flagPath string) (string, error) {
@@ -705,24 +774,27 @@ func filterDisabledSectionURLs(urls []sitemap.URLItem, siteData map[string]any) 
 	return result
 }
 
-func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs []sitemap.URLItem, siteData map[string]any) error {
+// generateSitemapFromConfig returns the config's resolved base_url on success
+// (already trimmed of a trailing slash by sitemap.LoadConfig) so the caller
+// can pass it to finalizeRobotsTxt.
+func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs []sitemap.URLItem, siteData map[string]any) (string, error) {
 	cfg, err := sitemap.LoadConfig(configPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	cfg.URLs = filterDisabledSectionURLs(cfg.URLs, siteData)
 	cfg.URLs = append(cfg.URLs, extraURLs...)
 
 	xmlBytes, err := sitemap.GenerateXML(cfg, websiteRoot)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	targetPath := filepath.Join(outDir, sitemapXML)
 	if err := os.WriteFile(targetPath, xmlBytes, 0o644); err != nil { //nolint:gosec
-		return fmt.Errorf(errFmtWriting, sitemapXML, err)
+		return "", fmt.Errorf(errFmtWriting, sitemapXML, err)
 	}
-	return nil
+	return cfg.BaseURL, nil
 }
 
 func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.PageTemplate, outDir string, cleanURLs bool, extraURLs []sitemap.URLItem) error {

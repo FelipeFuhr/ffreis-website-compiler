@@ -138,6 +138,7 @@ func loadTargets(outRoot, lang string) ([]outputcheck.Target, error) {
 			Route: route,
 			Lang:  lang,
 			HTML:  string(content),
+			Root:  outRoot,
 		})
 		return nil
 	})
