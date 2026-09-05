@@ -1,7 +1,12 @@
-// Package bundlecmd emits the petlook mobile content bundle: a per-language JSON projection of the
-// merged, validated petlook-data, consumed by the native iOS + Android apps (petlook-mobile). It
-// reuses sitegen.LoadSiteData for the shared+lang layer merge so the bundle and the website build
-// share one data-loading path. See petlook-mobile/contract/ for the schema the output conforms to.
+// Package bundlecmd emits a per-language JSON content bundle for a native mobile client: a
+// whitelisted projection of merged, validated content data. It reuses sitegen.LoadSiteData for the
+// shared+lang layer merge so the bundle and the website build share one data-loading path. The
+// projection itself — which content-data keys are whitelisted (and required), the CDN base for
+// brand-logo rewriting, and per-language html_lang overrides — is entirely caller-supplied via
+// -bundle-config (see config.go); this package has no built-in knowledge of any one product's
+// schema. petlook-mobile is the current (and so far only) consumer — see
+// testdata/petlook.bundle-config.yaml for its config and petlook-mobile/contract/ for the schema
+// its output conforms to.
 package bundlecmd
 
 import (
@@ -21,37 +26,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Whitelisted keys projected into the bundle. Keys absent from data are dropped unless listed as
-// required (then emit fails — the drift signal). Mirrors petlook-mobile/contract/content-bundle.schema.json.
-var (
-	navKeys       = []string{"skip_link", "logo_aria", "nav_aria", "recommendations", "contact", "donate", "donate_url", "lang_links"}
-	navRequired   = []string{"recommendations", "contact", "donate", "donate_url", "lang_links"}
-	generatorKeys = []string{
-		"headline", "subtext", "url_label", "url_placeholder", "url_hint", "photo_label",
-		"photo_drop_label", "photo_hint", "photo_remove_label", "url_add", "url_remove_label",
-		"cta", "generating_label", "loading_stages", "result_download", "result_retry", "result_alt",
-		"convert_16bit_cta", "convert_16bit_loading", "convert_16bit_label", "convert_16bit_alt",
-		"convert_16bit_download", "convert_16bit_retry", "convert_16bit_error",
-		"result_products_heading", "disclosure_inline", "disclosure_more", "disclosure_title",
-		"disclosure_close", "disclosure_body_intro", "disclosure_items",
-	}
-	generatorRequired  = []string{"headline", "subtext", "url_label", "url_placeholder", "photo_label", "cta", "generating_label", "result_download", "result_retry", "convert_16bit_cta", "result_products_heading", "disclosure_inline"}
-	errorKeys          = []string{"url_required", "photo_required", "generic"}
-	langLinkKeys       = []string{"lang", "label", "flag", "href", "active"}
-	recommendationKeys = []string{"id", "store", "name", "url", "image_url", "price"}
-	brandKeys          = []string{"brand_id", "brand_name", "brand_url", "logo_url", "description", "placement_type", "disclosure_label", "priority"}
-)
-
 // Options holds parsed CLI flags.
 type Options struct {
-	DataRoot      string
-	WebsiteRoot   string
-	Langs         []string
-	Out           string
-	SchemaVersion int
-	CDNBase       string
-	SourceSHA     string
-	GeneratedAt   string
+	DataRoot         string
+	WebsiteRoot      string
+	Langs            []string
+	Out              string
+	SchemaVersion    int
+	CDNBase          string
+	SourceSHA        string
+	GeneratedAt      string
+	BundleConfigPath string
 }
 
 // Run is the entry point for the emit-content-bundle subcommand.
@@ -62,6 +47,16 @@ func Run(args []string, logger *slog.Logger) error {
 	opts, err := parseOptions(args)
 	if err != nil {
 		return err
+	}
+
+	cfg, err := LoadConfig(opts.BundleConfigPath)
+	if err != nil {
+		return err
+	}
+	// An explicit -cdn-base flag overrides the config file's cdn_base; otherwise the config value
+	// (possibly empty) is authoritative.
+	if opts.CDNBase == "" {
+		opts.CDNBase = cfg.CDNBase
 	}
 
 	langs := opts.Langs
@@ -76,7 +71,7 @@ func Run(args []string, logger *slog.Logger) error {
 
 	bundles := make(map[string]map[string]any, len(langs))
 	for _, lang := range langs {
-		b, err := buildBundle(opts, lang)
+		b, err := buildBundle(opts, cfg, lang)
 		if err != nil {
 			return fmt.Errorf("lang %q: %w", lang, err)
 		}
@@ -103,14 +98,18 @@ func parseOptions(args []string) (Options, error) {
 	fs.StringVar(&langs, "langs", "", "comma-separated language codes; auto-detected if empty")
 	fs.StringVar(&opts.Out, "out", "dist/content-bundle", "output directory")
 	fs.IntVar(&opts.SchemaVersion, "schema-version", 1, "bundle schema version")
-	fs.StringVar(&opts.CDNBase, "cdn-base", "https://petlook.app", "CDN base for rewriting brand logo_s3_uri")
+	fs.StringVar(&opts.CDNBase, "cdn-base", "", "CDN base for rewriting brand logo_s3_uri; overrides the -bundle-config file's cdn_base when set")
 	fs.StringVar(&opts.SourceSHA, "source-sha", "0000000", "content data source commit SHA recorded in the bundle")
 	fs.StringVar(&opts.GeneratedAt, "generated-at", "1970-01-01T00:00:00Z", "RFC3339 timestamp recorded in the bundle (pass a fixed value for reproducibility)")
+	fs.StringVar(&opts.BundleConfigPath, "bundle-config", "", "path to the bundle projection config YAML (required): whitelisted ui_sections/lang_link_keys/recommendation_keys/brand_keys, cdn_base, and lang_aliases. See testdata/petlook.bundle-config.yaml for the reference config")
 	if err := fs.Parse(args); err != nil {
 		return Options{}, err
 	}
 	if opts.DataRoot == "" {
 		return Options{}, fmt.Errorf("-data-root is required")
+	}
+	if opts.BundleConfigPath == "" {
+		return Options{}, fmt.Errorf("-bundle-config is required")
 	}
 	opts.Langs = splitCSV(langs)
 	return opts, nil
@@ -132,8 +131,8 @@ func detectLangs(dataRoot string) ([]string, error) {
 	return langs, nil
 }
 
-// buildBundle merges shared+lang layers and projects the whitelisted bundle for one language.
-func buildBundle(opts Options, lang string) (map[string]any, error) {
+// buildBundle merges shared+lang layers and projects the config-whitelisted bundle for one language.
+func buildBundle(opts Options, cfg Config, lang string) (map[string]any, error) {
 	sharedDir := filepath.Join(opts.DataRoot, "shared", "site.d")
 	langDir := filepath.Join(opts.DataRoot, lang, "site.d")
 	// sitegen merges layers in order; the lang layer overrides shared.
@@ -149,35 +148,27 @@ func buildBundle(opts Options, lang string) (map[string]any, error) {
 		return nil, fmt.Errorf("missing 'ui' block")
 	}
 
-	nav, err := projectMap(asMap(ui["nav"]), navKeys, navRequired, "ui.nav")
-	if err != nil {
-		return nil, err
-	}
-	if ll, ok := nav["lang_links"]; ok {
-		nav["lang_links"] = projectLangLinks(ll)
-	}
-	gen, err := projectMap(asMap(ui["generator"]), generatorKeys, generatorRequired, "ui.generator")
-	if err != nil {
-		return nil, err
-	}
-	errs, err := projectMap(asMap(ui["errors"]), errorKeys, errorKeys, "ui.errors")
-	if err != nil {
-		return nil, err
+	uiOut := map[string]any{}
+	for _, sec := range cfg.UISections {
+		projected, err := projectMap(asMap(ui[sec.Name]), sec.Keys, sec.Required, "ui."+sec.Name)
+		if err != nil {
+			return nil, err
+		}
+		if ll, ok := projected["lang_links"]; ok {
+			projected["lang_links"] = projectLangLinks(ll, cfg.LangLinkKeys)
+		}
+		uiOut[sec.Name] = projected
 	}
 
 	bundle := map[string]any{
-		"schema_version": opts.SchemaVersion,
-		"lang":           lang,
-		"html_lang":      htmlLang(opts.DataRoot, lang),
-		"generated_at":   opts.GeneratedAt,
-		"source_sha":     opts.SourceSHA,
-		"ui": map[string]any{
-			"nav":       nav,
-			"generator": gen,
-			"errors":    errs,
-		},
-		"recommendations": projectRecommendations(data["recommendations"]),
-		"brands":          projectBrands(asMap(data["brands"]), opts.CDNBase),
+		"schema_version":  opts.SchemaVersion,
+		"lang":            lang,
+		"html_lang":       htmlLang(opts.DataRoot, lang, cfg.LangAliases),
+		"generated_at":    opts.GeneratedAt,
+		"source_sha":      opts.SourceSHA,
+		"ui":              uiOut,
+		"recommendations": projectRecommendations(data["recommendations"], cfg.RecommendationKeys),
+		"brands":          projectBrands(asMap(data["brands"]), opts.CDNBase, cfg.BrandKeys),
 	}
 	bundle["content_hash"] = contentHash(bundle)
 	return bundle, nil
@@ -193,19 +184,19 @@ func projectMap(src map[string]any, keys, required []string, path string) (map[s
 	}
 	for _, k := range required {
 		if _, ok := out[k]; !ok {
-			return nil, fmt.Errorf("required key %s.%s is missing from petlook-data", path, k)
+			return nil, fmt.Errorf("required key %s.%s is missing from content data", path, k)
 		}
 	}
 	return out, nil
 }
 
-func projectLangLinks(v any) []any {
+func projectLangLinks(v any, keys []string) []any {
 	items, _ := v.([]any)
 	out := make([]any, 0, len(items))
 	for _, it := range items {
 		m := asMap(it)
 		row := map[string]any{}
-		for _, k := range langLinkKeys {
+		for _, k := range keys {
 			if val, ok := m[k]; ok {
 				row[k] = val
 			}
@@ -215,13 +206,13 @@ func projectLangLinks(v any) []any {
 	return out
 }
 
-func projectRecommendations(v any) []any {
+func projectRecommendations(v any, keys []string) []any {
 	items, _ := v.([]any)
 	out := make([]any, 0, len(items))
 	for _, it := range items {
 		m := asMap(it)
 		row := map[string]any{}
-		for _, k := range recommendationKeys {
+		for _, k := range keys {
 			row[k] = stringOrEmpty(m[k])
 		}
 		out = append(out, row)
@@ -230,9 +221,9 @@ func projectRecommendations(v any) []any {
 }
 
 // scan-fix(sonar:S3776): extracted from projectBrands to reduce cognitive complexity from 16 to ≤15.
-func buildBrandRow(m map[string]any, cdnBase string) map[string]any {
+func buildBrandRow(m map[string]any, cdnBase string, keys []string) map[string]any {
 	row := map[string]any{}
-	for _, k := range brandKeys {
+	for _, k := range keys {
 		if k == "logo_url" {
 			continue
 		}
@@ -247,7 +238,7 @@ func buildBrandRow(m map[string]any, cdnBase string) map[string]any {
 }
 
 // projectBrands keeps only active brands, sorts by priority asc, and rewrites logo_s3_uri → absolute CDN URL.
-func projectBrands(src map[string]any, cdnBase string) map[string]any {
+func projectBrands(src map[string]any, cdnBase string, keys []string) map[string]any {
 	out := map[string]any{
 		"section_title": stringOrEmpty(src["section_title"]),
 		"partner_cta":   stringOrEmpty(src["partner_cta"]),
@@ -263,7 +254,7 @@ func projectBrands(src map[string]any, cdnBase string) map[string]any {
 		if active, ok := m["active"].(bool); ok && !active {
 			continue
 		}
-		rows = append(rows, kv{prio: intOrZero(m["priority"]), row: buildBrandRow(m, cdnBase)})
+		rows = append(rows, kv{prio: intOrZero(m["priority"]), row: buildBrandRow(m, cdnBase, keys)})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].prio < rows[j].prio })
 	items := make([]any, 0, len(rows))
@@ -348,8 +339,9 @@ func contentHash(bundle map[string]any) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// htmlLang reads <lang>/site.yaml for html_lang; falls back to a sensible default.
-func htmlLang(dataRoot, lang string) string {
+// htmlLang reads <lang>/site.yaml for html_lang; falls back to the config's lang_aliases entry for
+// lang, or lang itself if neither is set.
+func htmlLang(dataRoot, lang string, aliases map[string]string) string {
 	var doc struct {
 		HTMLLang string `yaml:"html_lang"`
 	}
@@ -359,14 +351,10 @@ func htmlLang(dataRoot, lang string) string {
 	if doc.HTMLLang != "" {
 		return doc.HTMLLang
 	}
-	switch lang {
-	case "jp":
-		return "ja"
-	case "pt":
-		return "pt-BR"
-	default:
-		return lang
+	if v, ok := aliases[lang]; ok {
+		return v
 	}
+	return lang
 }
 
 // ── small helpers ────────────────────────────────────────────────────────────

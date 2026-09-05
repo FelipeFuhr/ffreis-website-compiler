@@ -8,7 +8,11 @@ import (
 )
 
 // stableArgs mirror the flags used to generate testdata/golden — keep in sync if regenerating.
+// bundleConfig is derived as a sibling of dataRoot (testdata/petlook.bundle-config.yaml) so the
+// same helper works both for the package-relative paths tests use and the repo-root-relative
+// paths printed in the regenerate hint below.
 func stableArgs(dataRoot, out string) []string {
+	bundleConfig := filepath.Join(filepath.Dir(dataRoot), "petlook.bundle-config.yaml")
 	return []string{
 		"-data-root", dataRoot,
 		"-langs", "en,pt",
@@ -16,6 +20,7 @@ func stableArgs(dataRoot, out string) []string {
 		"-schema-version", "1",
 		"-source-sha", "testsha",
 		"-generated-at", "2026-01-01T00:00:00Z",
+		"-bundle-config", bundleConfig,
 	}
 }
 
@@ -62,7 +67,7 @@ func TestEmit_MissingRequiredKey_Fails(t *testing.T) {
 		// ui.errors.generic intentionally omitted
 		"en/site.d/50-ui.yaml": minimalUI("en", true, "") + "  errors:\n    url_required: u\n    photo_required: p\n",
 	})
-	err := Run([]string{"-data-root", root, "-langs", "en", "-out", t.TempDir()}, nil)
+	err := Run([]string{"-data-root", root, "-langs", "en", "-out", t.TempDir(), "-bundle-config", "testdata/petlook.bundle-config.yaml"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "ui.errors.generic") {
 		t.Fatalf("expected missing-required error for ui.errors.generic, got: %v", err)
 	}
@@ -78,7 +83,7 @@ func TestEmit_ParityDrift_Fails(t *testing.T) {
 		"en/site.d/50-ui.yaml": minimalUI("en", true, "    disclosure_more: more\n") + fullErrors(),
 		"pt/site.d/50-ui.yaml": minimalUI("pt", false, "") + fullErrors(),
 	})
-	err := Run([]string{"-data-root", root, "-langs", "en,pt", "-out", t.TempDir()}, nil)
+	err := Run([]string{"-data-root", root, "-langs", "en,pt", "-out", t.TempDir(), "-bundle-config", "testdata/petlook.bundle-config.yaml"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "parity") {
 		t.Fatalf("expected parity error, got: %v", err)
 	}
@@ -94,7 +99,8 @@ func TestProjectBrands_FiltersInactiveSortsAndRewritesLogo(t *testing.T) {
 			map[string]any{"brand_id": "off", "priority": 0, "active": false, "logo_s3_uri": "brands/off.png"},
 		},
 	}
-	out := projectBrands(src, "https://cdn.test")
+	keys := []string{"brand_id", "brand_name", "brand_url", "logo_url", "description", "placement_type", "disclosure_label", "priority"}
+	out := projectBrands(src, "https://cdn.test", keys)
 	items := out["items"].([]any)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 active items, got %d", len(items))
