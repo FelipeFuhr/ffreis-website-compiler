@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"ffreis-website-compiler/internal/listings"
+	"ffreis-website-compiler/internal/collections"
 	"ffreis-website-compiler/internal/testutil"
 )
 
@@ -713,30 +713,77 @@ func mustReadFile(t *testing.T, path string) []byte {
 	return raw
 }
 
+// devDataContent builds an optionalContent whose collection engine state holds
+// one projected record per named collection, so buildDevDataPayload can be
+// exercised without running a whole build.
+//
+// Each record carries BOTH an id and a title, deliberately different, because
+// the per-collection ID semantics are the thing under test: decision record Q11
+// records that window.__devBuild identifies a listing by its `id` and a
+// course/project by its `title`, and a single hardcoded key would satisfy one
+// and silently corrupt the other.
+func devDataContent(names ...string) *optionalContent {
+	set := &collectionSet{
+		defs:      make(map[string]collections.Collection, len(names)),
+		projected: make(map[string]collections.Projection, len(names)),
+	}
+	for _, name := range names {
+		set.defs[name] = collections.Collection{Name: name}
+		set.projected[name] = collections.Projection{Records: []any{
+			map[string]any{"id": name + "-id", "title": name + "-title"},
+		}}
+	}
+	return &optionalContent{collections: set}
+}
+
 // buildDevDataPayload should stay consistent with sectionTable: a section's
 // items only appear in the -dev-data payload while sectionEnabled agrees that
 // section is on.
 func TestBuildDevDataPayload_IncludesListingsWhenSectionEnabled(t *testing.T) {
 	opts := buildOptions{devData: true, contentSource: "mock"}
-	content := &optionalContent{
-		listings: []listings.Listing{{ID: "l1", Title: "Listing One"}},
+
+	got := buildDevDataPayload(opts, map[string]any{}, devDataContent("listings"))
+	if !strings.Contains(got, `"listings":[{"id":"listings-id","langs":null}]`) {
+		t.Fatalf("expected listings entry in dev data payload, got %s", got)
 	}
+}
+
+// TestBuildDevDataPayload_PerCollectionIDSemantics pins decision record Q11.
+//
+// listings identifies an item by its `id`; courses and projects by their
+// `title`. That difference survived the typed loaders (l.ID vs c.Title) and must
+// survive the migration onto one shared projection, so it is asserted directly
+// rather than left implicit in devEntriesFromCollection's call sites.
+//
+// The fixture records set id and title to distinguishable values, so a
+// collection reading the wrong key fails here instead of producing a plausible
+// payload.
+func TestBuildDevDataPayload_PerCollectionIDSemantics(t *testing.T) {
+	opts := buildOptions{devData: true, contentSource: "mock"}
+	content := devDataContent("listings", "courses", "projects")
 
 	got := buildDevDataPayload(opts, map[string]any{}, content)
-	if !strings.Contains(got, `"listings":[{"id":"l1","langs":null}]`) {
-		t.Fatalf("expected listings entry in dev data payload, got %s", got)
+
+	for _, want := range []string{
+		`"courses":[{"id":"courses-title","langs":null}]`,
+		`"projects":[{"id":"projects-title","langs":null}]`,
+		`"listings":[{"id":"listings-id","langs":null}]`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("dev data payload is missing %s.\n"+
+				"window.__devBuild identifies a listing by its id and a course/project by "+
+				"its title (decision record Q11); collapsing those onto one key changes "+
+				"the payload the dev panels read.\ngot: %s", want, got)
+		}
 	}
 }
 
 func TestBuildDevDataPayload_OmitsListingsWhenSectionDisabled(t *testing.T) {
 	opts := buildOptions{devData: true, contentSource: "mock"}
 	siteData := map[string]any{"sections": map[string]any{"listings": false}}
-	content := &optionalContent{
-		listings: []listings.Listing{{ID: "l1", Title: "Listing One"}},
-	}
 
-	got := buildDevDataPayload(opts, siteData, content)
-	if strings.Contains(got, "l1") {
+	got := buildDevDataPayload(opts, siteData, devDataContent("listings"))
+	if strings.Contains(got, "listings-id") {
 		t.Fatalf("expected listings to be omitted from dev data payload when section is disabled, got %s", got)
 	}
 	if !strings.Contains(got, `"listings":null`) {

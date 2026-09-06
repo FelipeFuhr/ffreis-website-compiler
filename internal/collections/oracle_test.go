@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
-
-	"ffreis-website-compiler/internal/listings"
 )
 
 // Oracle tests: run the SAME content file through the typed loader the engine
@@ -20,10 +19,12 @@ import (
 // as silent: an absent list becoming nil instead of []any{}, an absent bool
 // vanishing instead of being false, a dropped or added key.
 //
-// projects and courses have already migrated, so their oracles are the frozen,
-// test-only copies of the deleted packages (frozen_projects_oracle_test.go,
-// frozen_courses_oracle_test.go). listings still imports its live package
-// because it migrates in Phase 5.
+// All three collections have now migrated, so every oracle here is a frozen,
+// test-only copy of the deleted package (frozen_projects_oracle_test.go,
+// frozen_courses_oracle_test.go, frozen_listings_oracle_test.go). No oracle
+// imports a live package any more — that is the point of freezing them, since
+// otherwise the equivalence proof would have been deleted alongside the
+// production code it proves things about.
 
 func loadRaw(t *testing.T, c Collection, name string) []map[string]any {
 	t.Helper()
@@ -107,48 +108,143 @@ func TestBuiltinCoursesMatchesCoursesPackage(t *testing.T) {
 }
 
 func TestBuiltinListingsMatchesListingsPackage(t *testing.T) {
-	const file = "listings.yaml"
-	path := filepath.Join("testdata", file)
+	// listings-sparse.yaml is synthetic: all 25 real records set all 19 fields,
+	// so without it the oracle would never compare an ABSENT field — including
+	// the absent `sponsored` decision record §5.2 names as the single
+	// high-risk detail of this phase. See the header of that file.
+	for _, file := range []string{"listings.yaml", "listings-sparse.yaml"} {
+		t.Run(file, func(t *testing.T) {
+			path := filepath.Join("testdata", file)
 
-	loaded, err := listings.LoadListingsFile(path)
-	if err != nil {
-		t.Fatalf("oracle LoadListingsFile: %v", err)
+			// Oracle: a frozen copy of the typed loader Phase 5 deleted
+			// (see frozen_listings_oracle_test.go).
+			loaded, err := frozenLoadListingsFile(path)
+			if err != nil {
+				t.Fatalf("oracle frozenLoadListingsFile: %v", err)
+			}
+			want := frozenListingsToSiteDataList(loaded)
+
+			c := builtinListings()
+			got, err := c.Project(loadRaw(t, c, file), ProjectOptions{})
+			if err != nil {
+				t.Fatalf("engine Project: %v", err)
+			}
+
+			// This is the window.CASABOA_LISTINGS byte contract (decision record
+			// §1.3): the engine publishes the same []any of map[string]any into
+			// the same site-data key, and casaboa's template does the toJSON.
+			// Byte-identity therefore reduces to this deep-equality check.
+			assertRecordsEqual(t, want, got.Records)
+
+			if len(got.Details) != len(loaded) {
+				t.Fatalf("got %d detail records, want %d", len(got.Details), len(loaded))
+			}
+			for i, l := range loaded {
+				wantDetail := frozenToCurrentListing(l)
+				if !reflect.DeepEqual(wantDetail, got.Details[i]) {
+					t.Errorf("detail record %d (%s) differs from ToCurrentListing:\n%s",
+						i, l.ID, describeMapDiff(wantDetail, got.Details[i]))
+				}
+			}
+
+			// File order must be preserved — it encodes upstream ranking (Q7).
+			for i, l := range loaded {
+				rec, ok := got.Records[i].(map[string]any)
+				if !ok {
+					t.Fatalf("record %d is %T, want map[string]any", i, got.Records[i])
+				}
+				if rec["id"] != l.ID {
+					t.Errorf("record %d is id=%v, want %s — listings must preserve file order",
+						i, rec["id"], l.ID)
+				}
+			}
+		})
 	}
-	want := listings.ToSiteDataList(loaded)
+}
 
+// TestBuiltinListingsSponsoredNeverVanishes is decision record §5.2's acid test,
+// stated directly rather than only as a consequence of the deep-equality above.
+//
+// The oracle comparison would catch a regression here, but it would report it as
+// "record 0 differs" among a wall of other keys. This test names the failure, and
+// asserts the three-way distinction the JS blob depends on: a record that omits
+// `sponsored`, one that sets it false, and one that sets it true must produce a
+// PRESENT bool key in all three cases, with only the last one true.
+func TestBuiltinListingsSponsoredNeverVanishes(t *testing.T) {
 	c := builtinListings()
-	got, err := c.Project(loadRaw(t, c, file), ProjectOptions{})
+	got, err := c.Project(loadRaw(t, c, "listings-sparse.yaml"), ProjectOptions{})
 	if err != nil {
 		t.Fatalf("engine Project: %v", err)
 	}
 
-	// This is the window.CASABOA_LISTINGS byte contract (decision record §1.3):
-	// the engine publishes the same []any of map[string]any into the same
-	// site-data key, and casaboa's template does the toJSON. Byte-identity
-	// therefore reduces to this deep-equality check over 25 known records.
-	assertRecordsEqual(t, want, got.Records)
-
-	if len(got.Details) != len(loaded) {
-		t.Fatalf("got %d detail records, want %d", len(got.Details), len(loaded))
-	}
-	for i, l := range loaded {
-		wantDetail := listings.ToCurrentListing(l)
-		if !reflect.DeepEqual(wantDetail, got.Details[i]) {
-			t.Errorf("detail record %d (%s) differs from ToCurrentListing:\n%s",
-				i, l.ID, describeMapDiff(wantDetail, got.Details[i]))
-		}
+	want := map[string]bool{
+		"zeta-bare-001":             false, // `sponsored:` absent entirely
+		"alpha-explicit-false-002":  false,
+		"mid-sponsored-true-003":    true,
+		"beta-empty-composites-004": false,
 	}
 
-	// File order must be preserved — it encodes upstream ranking (Q7).
-	for i, l := range loaded {
-		rec, ok := got.Records[i].(map[string]any)
+	seen := make(map[string]bool)
+	for i, r := range got.Records {
+		rec, ok := r.(map[string]any)
 		if !ok {
-			t.Fatalf("record %d is %T, want map[string]any", i, got.Records[i])
+			t.Fatalf("record %d is %T, want map[string]any", i, r)
 		}
-		if rec["id"] != l.ID {
-			t.Errorf("record %d is id=%v, want %s — listings must preserve file order",
-				i, rec["id"], l.ID)
+		id, _ := rec["id"].(string)
+		raw, present := rec["sponsored"]
+		if !present {
+			t.Errorf("record %d (%s) has NO sponsored key. Decision record §5.2: an "+
+				"absent `sponsored:` must project to false, not disappear — a key that "+
+				"vanishes from window.CASABOA_LISTINGS breaks app.js's filter chips in "+
+				"the browser and nothing else in the build notices.", i, id)
+			continue
 		}
+		val, ok := raw.(bool)
+		if !ok {
+			t.Errorf("record %d (%s) has sponsored=%v (%T), want a bool", i, id, raw, raw)
+			continue
+		}
+		if want[id] != val {
+			t.Errorf("record %s has sponsored=%v, want %v", id, val, want[id])
+		}
+		seen[id] = true
+	}
+
+	// CONTROL: all four records must have been examined, or a projection that
+	// dropped records entirely would pass the loop above vacuously.
+	for id := range want {
+		if !seen[id] {
+			t.Errorf("record %s was never projected, so its sponsored value was not checked", id)
+		}
+	}
+}
+
+// TestBuiltinListingsRequiredFields preserves the coverage
+// internal/listings/listings_test.go had over LoadListingsFile's two required
+// fields. The engine reports them through the generic checkRequired path, so
+// the wording differs from the frozen loader's; what must not differ is that
+// both fields still FAIL rather than yielding a record with an empty id (which
+// would render a detail page at /listings//).
+func TestBuiltinListingsRequiredFields(t *testing.T) {
+	c := builtinListings()
+
+	for _, tc := range []struct {
+		name    string
+		record  map[string]any
+		missing string
+	}{
+		{name: "missing id", record: map[string]any{"title": "No id here"}, missing: "id"},
+		{name: "missing title", record: map[string]any{"id": "no-title"}, missing: "title"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := c.Project([]map[string]any{tc.record}, ProjectOptions{})
+			if err == nil {
+				t.Fatalf("expected an error for a listing with no %s, got nil", tc.missing)
+			}
+			if want := `missing required field "` + tc.missing + `"`; !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		})
 	}
 }
 

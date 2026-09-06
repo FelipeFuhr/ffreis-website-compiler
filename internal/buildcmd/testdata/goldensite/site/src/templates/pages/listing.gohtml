@@ -1,0 +1,74 @@
+{{/* Mirrors casaboa-website/src/templates/pages/listing.gohtml — the
+     per-listing detail page, rendered once per record with .CurrentListing set.
+
+     Three things here are load-bearing for the golden files:
+
+     1. THE TWO-PHASE RENDER GUARD (decision record Q8). This template is also
+        executed once by sitegen.RenderPages with NO .CurrentListing, for
+        asset-usage validation. pages.listing.internal keeps that render off
+        disk, and the {{if .CurrentListing}} guard keeps it from erroring. If the
+        guard is ever dropped, a /listing/index.html appears in dist — which
+        TestListingsQ8_NoUnrenderedDetailTemplatePage asserts against.
+
+     2. THE ZERO-VALUE FIELDS. `sponsored` is the one decision record §5.2
+        singles out: it is typed bool with a false default precisely so an absent
+        `sponsored:` still reaches the template (and the JSON) as false instead of
+        vanishing. Both branches of the {{if dig $l "sponsored"}} below render a
+        distinct badge, so a record flipping between "absent" and "false" would
+        change these bytes rather than silently disappear.
+
+     3. THE COMPOSITE FIELDS. `reasons` is ranged as a list and `breakdown` as a
+        map, so a projection that turned either into nil (or into the wrong Go
+        type) fails here rather than in a way only a browser would notice.
+
+     Reduced relative to the real template: no page_canonical / page_og_meta
+     blocks (this fixture's head partial has neither) and no back-link to a
+     search anchor the fixture has no page for. Nothing under test reads them. */}}
+{{define "page_title"}}{{if .CurrentListing}}{{dig .CurrentListing "title"}} · {{dig .CurrentListing "place"}} — Golden{{else}}Listing — Golden{{end}}{{end}}
+
+{{define "page_styles"}}
+  <link rel="stylesheet" href="/css/listing.css">
+{{end}}
+
+{{define "page"}}
+{{if .CurrentListing}}
+{{$l := .CurrentListing}}
+<main class="listing-main" id="main-content">
+  <section id="listing-detail" class="analysis-section">
+    <div class="section-heading">
+      <p class="eyebrow">{{if dig $l "sponsored"}}Patrocinado{{else}}Analise Casa Boa{{end}}</p>
+      <h1>{{dig $l "title"}}</h1>
+      <p>{{dig $l "place"}} &middot; {{dig $l "meta"}}</p>
+      <p class="listing-href" data-href="{{dig $l "href"}}">{{dig $l "id"}} &middot; {{dig $l "transaction"}}</p>
+    </div>
+
+    <div class="analysis-panel">
+      <div class="score-ring"><span>{{dig $l "score"}}</span><small>/100</small></div>
+      <h2 class="listing-price">{{dig $l "price"}}</h2>
+      <p class="listing-total">{{dig $l "total"}}</p>
+      <div class="badge-row">
+        <span class="badge">{{dig $l "priceLabel"}}</span>
+        <span class="badge cool">{{dig $l "imageLabel"}}</span>
+        <span class="badge">{{dig $l "locationLabel"}}</span>
+        <span class="badge">Fonte: {{dig $l "source"}}</span>
+        {{if dig $l "sponsored"}}<span class="badge sponsored">Patrocinado identificado</span>{{else}}<span class="badge">Organico</span>{{end}}
+        <span class="badge warning">Atencao: {{dig $l "concern"}}</span>
+      </div>
+      <p class="listing-tone">{{dig $l "tone"}} &middot; {{dig $l "photoLabel"}}</p>
+    </div>
+
+    <div class="analysis-body">
+      <p class="listing-reasons"><strong>Pontos fortes:</strong> {{range $i, $reason := dig $l "reasons"}}{{if $i}} {{end}}{{$reason}}{{end}}</p>
+      <p class="source-note">{{dig $l "sourceNote"}}</p>
+      <div class="score-breakdown">
+        {{range $key, $value := dig $l "breakdown"}}
+        <div class="breakdown-row">
+          <div class="breakdown-meta"><span>{{$key}}</span><span>{{$value}}/100</span></div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </section>
+</main>
+{{end}}
+{{end}}

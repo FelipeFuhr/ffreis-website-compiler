@@ -25,17 +25,19 @@ import (
 
 // migratedCollections is the set of collections the engine actually drives.
 //
-// The built-in definitions cover projects, courses and listings, but listings
-// still loads through internal/listings until decision-record Phase 5 migrates
-// it. Running the engine for it now would double-publish its site-data key and
-// double-write its pages, so the engine is gated on this list and each later
-// phase adds one name.
+// Every built-in is now on the engine: projects (Phase 2), courses (Phase 3)
+// and listings (Phase 5). The map is kept rather than folded away because the
+// gate is what let each phase land independently — a collection still holding a
+// typed loader would double-publish its site-data key and double-write its
+// pages if the engine also drove it — and because it is the seam a future
+// built-in (decision record Phase 6, flemming) is added behind.
 //
 // A collection defined by a site's own collections.yaml is always driven: it
 // has no typed loader to conflict with.
 var migratedCollections = map[string]bool{
 	"projects": true,
 	"courses":  true,
+	"listings": true,
 }
 
 // collectionSet is the resolved, per-build view of every collection: the merged
