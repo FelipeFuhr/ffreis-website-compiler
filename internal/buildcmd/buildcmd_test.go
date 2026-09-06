@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"ffreis-website-compiler/internal/listings"
 	"ffreis-website-compiler/internal/testutil"
 )
 
@@ -147,6 +148,128 @@ listings:
 		if !strings.Contains(string(sitemapRaw), wantURL) {
 			t.Fatalf("expected sitemap.xml to contain %s, got %s", wantURL, string(sitemapRaw))
 		}
+	}
+}
+
+// setupListingsSectionTestSite builds a website root with:
+//   - a "listing" internal detail template (per PR #99's -listings-file flow),
+//   - a "listings" hub page that renders the raw siteData["listings"] count
+//     (mirroring casaboa's pre-PR#99 window.CASABOA_LISTINGS grid page),
+//   - an "index" home page with its own carousel block reading the same
+//     siteData["listings"] key, standing in for a home-page preview that is
+//     NOT dropped when the listings section is disabled,
+//   - raw site data that already declares a "listings" entry directly (the
+//     stale, pre-existing data a real site's checked-in site-data YAML would
+//     carry independent of -listings-file), and
+//   - a sitemap.yaml declaring a static "/listings/" URL, so the section's
+//     hub page has a sitemap entry beyond the per-item detail pages.
+//
+// Returns the website root and a temp -listings-file path with two items.
+func setupListingsSectionTestSite(t *testing.T) (websiteRoot, listingsPath string) {
+	t.Helper()
+	websiteRoot = newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteYAML): `pages:
+  listing:
+    internal: true
+listings:
+  - id: stale-carousel-item
+    title: Stale Carousel Item
+`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):            "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", "listing.gohtml"):  `{{define "page"}}<main data-listing-id="{{dig .CurrentListing "id"}}"><h1>{{dig .CurrentListing "title"}}</h1></main>{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "pages", "listings.gohtml"): `{{define "page"}}<main data-listings-count="{{len .SiteData.listings}}">Listings Hub</main>{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "pages", "index.gohtml"):    `{{define "page"}}<main><div class="carousel" data-count="{{len .SiteData.listings}}"></div></main>{{end}}`,
+		filepath.Join(websiteRoot, "sitemap.yaml"): `base_url: https://example.com
+urls:
+  - path: /
+  - path: /listings/
+`,
+	})
+
+	listingsPath = filepath.Join(t.TempDir(), "listings.yaml")
+	testutil.WriteFiles(t, map[string]string{
+		listingsPath: `
+listings:
+  - id: test-listing-1
+    title: "Test Listing One"
+    price: "$100"
+  - id: test-listing-2
+    title: "Test Listing Two"
+    price: "$200"
+`,
+	})
+	return websiteRoot, listingsPath
+}
+
+// TestRun_ListingsSectionEnabled_KeepsHubPageSitemapEntryAndCarouselData is the
+// contrast case for TestRun_DisablingListingsSection_Removes...: with the
+// listings section left enabled (the default), the hub page, its sitemap
+// entries, and the carousel data must all be present.
+func TestRun_ListingsSectionEnabled_KeepsHubPageSitemapEntryAndCarouselData(t *testing.T) {
+	websiteRoot, listingsPath := setupListingsSectionTestSite(t)
+	outDir := t.TempDir()
+
+	if err := Run([]string{
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
+		"-listings-file", listingsPath,
+	}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	mustStat(t, filepath.Join(outDir, "listings.html"))
+
+	index := mustReadFile(t, filepath.Join(outDir, fileIndexHTML))
+	if !strings.Contains(string(index), `data-count="2"`) {
+		t.Fatalf("expected home carousel to show the 2 loaded listings, got %s", string(index))
+	}
+
+	sitemapRaw := mustReadFile(t, filepath.Join(outDir, "sitemap.xml"))
+	for _, wantURL := range []string{"/listings/", "/listings/test-listing-1/", "/listings/test-listing-2/"} {
+		if !strings.Contains(string(sitemapRaw), wantURL) {
+			t.Fatalf("expected sitemap.xml to contain %s, got %s", wantURL, string(sitemapRaw))
+		}
+	}
+}
+
+// TestRun_DisablingListingsSection_RemovesHubPageSitemapEntryAndCarouselData
+// proves that -disable-sections=listings fully hides the listings section:
+// (a) the listings hub page itself is dropped, (b) every /listings/ sitemap
+// entry (static and per-item) is dropped, and (c) no stale carousel data
+// (siteData["listings"] predating -listings-file) leaks into a page that
+// survives the drop, such as the home page.
+func TestRun_DisablingListingsSection_RemovesHubPageSitemapEntryAndCarouselData(t *testing.T) {
+	websiteRoot, listingsPath := setupListingsSectionTestSite(t)
+	outDir := t.TempDir()
+
+	if err := Run([]string{
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
+		"-listings-file", listingsPath,
+		"-disable-sections", "listings",
+	}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	// (a) the listings hub page itself must not be generated.
+	if _, err := os.Stat(filepath.Join(outDir, "listings.html")); !os.IsNotExist(err) {
+		t.Errorf("expected listings hub page to be dropped when the section is disabled, got err=%v", err)
+	}
+
+	// (b) no /listings/ URL — static or per-item detail — should reach sitemap.xml.
+	sitemapRaw := mustReadFile(t, filepath.Join(outDir, "sitemap.xml"))
+	for _, unwantedURL := range []string{"/listings/", "/listings/test-listing-1/", "/listings/test-listing-2/"} {
+		if strings.Contains(string(sitemapRaw), unwantedURL) {
+			t.Errorf("expected sitemap.xml NOT to contain %s when listings is disabled, got %s", unwantedURL, string(sitemapRaw))
+		}
+	}
+
+	// (c) stale carousel data must not leak into the home page.
+	index := mustReadFile(t, filepath.Join(outDir, fileIndexHTML))
+	if !strings.Contains(string(index), `data-count="0"`) {
+		t.Fatalf("expected disabled listings section to leave no stale carousel data on the home page, got %s", string(index))
 	}
 }
 
@@ -574,6 +697,44 @@ func mustReadFile(t *testing.T, path string) []byte {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	return raw
+}
+
+// buildDevDataPayload should stay consistent with sectionTable: a section's
+// items only appear in the -dev-data payload while sectionEnabled agrees that
+// section is on.
+func TestBuildDevDataPayload_IncludesListingsWhenSectionEnabled(t *testing.T) {
+	opts := buildOptions{devData: true, contentSource: "mock"}
+	content := &optionalContent{
+		listings: []listings.Listing{{ID: "l1", Title: "Listing One"}},
+	}
+
+	got := buildDevDataPayload(opts, map[string]any{}, content)
+	if !strings.Contains(got, `"listings":[{"id":"l1","langs":null}]`) {
+		t.Fatalf("expected listings entry in dev data payload, got %s", got)
+	}
+}
+
+func TestBuildDevDataPayload_OmitsListingsWhenSectionDisabled(t *testing.T) {
+	opts := buildOptions{devData: true, contentSource: "mock"}
+	siteData := map[string]any{"sections": map[string]any{"listings": false}}
+	content := &optionalContent{
+		listings: []listings.Listing{{ID: "l1", Title: "Listing One"}},
+	}
+
+	got := buildDevDataPayload(opts, siteData, content)
+	if strings.Contains(got, "l1") {
+		t.Fatalf("expected listings to be omitted from dev data payload when section is disabled, got %s", got)
+	}
+	if !strings.Contains(got, `"listings":null`) {
+		t.Fatalf(`expected "listings":null in dev data payload when section is disabled, got %s`, got)
+	}
+}
+
+func TestBuildDevDataPayload_EmptyWhenDevDataFlagOff(t *testing.T) {
+	got := buildDevDataPayload(buildOptions{devData: false}, map[string]any{}, &optionalContent{})
+	if got != "" {
+		t.Fatalf("expected empty payload when -dev-data is off, got %s", got)
+	}
 }
 
 func mustStat(t *testing.T, path string) {

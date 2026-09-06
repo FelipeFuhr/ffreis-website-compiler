@@ -48,10 +48,11 @@ type buildOptions struct {
 	cleanURLs                  bool
 	runOutputTests             bool
 	outputTestManifest         string
-	// disabledSections lists content sections ("blog", "courses", "projects") to
-	// hide: their pages, nav/footer entries, home-page blocks, and sitemap URLs are
-	// omitted. Injected into siteData as sections.<name>: false AFTER contract
-	// validation, so it needs no contract entry and cannot dangle.
+	// disabledSections lists content sections (see sectionTable in sections.go
+	// for the current set) to hide: their pages, nav/footer entries, home-page
+	// blocks, and sitemap URLs are omitted. Injected into siteData as
+	// sections.<name>: false AFTER contract validation, so it needs no contract
+	// entry and cannot dangle.
 	disabledSections []string
 	// basePath mirrors site_data["base_path"] (e.g. "/en") and is populated by
 	// the build command after siteData is loaded. It is prepended to absolute
@@ -72,6 +73,16 @@ type buildOptions struct {
 	// stored here so transformPage can inject it without re-reading siteData.
 	devData     bool
 	devDataJSON string
+}
+
+// disableSectionsHelpText builds the -disable-sections flag's usage string
+// from sectionNames() so the list of valid section names can never drift from
+// what pageSection/sectionForPath (sections.go) actually recognize.
+func disableSectionsHelpText() string {
+	return fmt.Sprintf(
+		"comma-separated content sections to hide entirely (%s): drops their pages, nav/footer links, home-page blocks and sitemap entries",
+		strings.Join(sectionNames(), ","),
+	)
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -100,7 +111,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	var siblingBasePathsFlag string
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
 	var disableSectionsFlag string
-	fs.StringVar(&disableSectionsFlag, "disable-sections", "", "comma-separated content sections to hide entirely (blog,courses,projects): drops their pages, nav/footer links, home-page blocks and sitemap entries")
+	fs.StringVar(&disableSectionsFlag, "disable-sections", "", disableSectionsHelpText())
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
