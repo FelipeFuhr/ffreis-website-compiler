@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"ffreis-website-compiler/internal/assetusage"
-	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/linkcheck"
 	"ffreis-website-compiler/internal/listings"
 	"ffreis-website-compiler/internal/outputtestcmd"
@@ -81,18 +80,15 @@ var (
 // optionalContent holds the blog posts and the not-yet-migrated typed content
 // loaded from optional input flags, plus the page templates needed to render
 // them — and the collection engine's per-build state for everything that HAS
-// migrated (today: projects).
+// migrated (today: projects and courses).
 type optionalContent struct {
 	posts           []posts.Post
-	courses         []courses.Course
 	listings        []listings.Listing
 	postTemplate    *sitegen.PageTemplate
 	blogTemplate    *sitegen.PageTemplate
-	courseTemplate  *sitegen.PageTemplate // the internal "course" landing template
 	listingTemplate *sitegen.PageTemplate // the internal "listing" detail template
-	// collections carries every collection-engine-managed content set. courses
-	// and listings still load through their typed packages above until Phases
-	// 3 and 5 migrate them.
+	// collections carries every collection-engine-managed content set. listings
+	// still loads through its typed package above until Phase 5 migrates it.
 	collections *collectionSet
 }
 
@@ -131,6 +127,7 @@ func Run(args []string, logger *slog.Logger) error {
 	// Save references to templates needed for paginated page generation,
 	// before filterInternalPages removes them.
 	findPaginationTemplates(pages, content)
+	content.collections.captureDetailTemplates(pages)
 
 	// Render all pages (including internal ones) so their CSS/JS assets are
 	// seen as "used" by the asset validator. Internal pages are filtered out
@@ -261,15 +258,6 @@ func loadOptionalContent(logger *slog.Logger, opts buildOptions, siteData map[st
 	}
 	content.collections = collectionSet
 
-	if opts.coursesFile != "" && sectionEnabled(siteData, "courses") {
-		loaded, err := courses.LoadCoursesFile(opts.coursesFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading courses: %w", err)
-		}
-		content.courses = loaded
-		injectCoursesHomeCarousel(siteData, loaded, opts.itemsPerPage)
-	}
-
 	if opts.listingsFile != "" && sectionEnabled(siteData, "listings") {
 		loaded, err := listings.LoadListingsFile(opts.listingsFile)
 		if err != nil {
@@ -284,9 +272,10 @@ func loadOptionalContent(logger *slog.Logger, opts buildOptions, siteData map[st
 	return content, nil
 }
 
-// findPaginationTemplates records the "post" and "blog" page templates from
-// pages into content so they are available for paginated page generation after
-// filterInternalPages removes them from the slice.
+// findPaginationTemplates records the page templates that later writers need
+// but filterInternalPages is about to remove from the slice — the "post"/"blog"
+// pair, the still-typed "listing" detail template, and (through the collection
+// set) every migrated collection's detail template.
 func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalContent) {
 	for i := range pages {
 		switch pages[i].Name {
@@ -296,19 +285,24 @@ func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalCont
 		case "blog":
 			tmp := pages[i]
 			content.blogTemplate = &tmp
-		case "course":
-			tmp := pages[i]
-			content.courseTemplate = &tmp
 		case "listing":
 			tmp := pages[i]
 			content.listingTemplate = &tmp
 		}
 	}
+	content.collections.captureDetailTemplates(pages)
 }
 
-// writeAllPaginatedContent writes individual post pages, the RSS feed, and
-// paginated listing pages for blog, projects, and courses. Returns the extra
-// sitemap URL items produced by the paginated listings.
+// writeAllPaginatedContent writes individual post pages, the RSS feed, every
+// collection's detail and paginated index pages, and the paginated blog
+// listings. Returns the extra sitemap URL items they produce.
+//
+// The call ORDER here is part of the output contract: extraSitemapURLs is
+// emitted in this sequence and generateSitemapFromPages does not re-sort it. It
+// is preserved from before the collection engine existed — all detail writers,
+// then the blog listings, then the paginated collection indexes — so migrating a
+// collection onto the engine reshuffles nothing. See the comment above
+// writeAllCollectionDetailPages.
 func writeAllPaginatedContent(
 	logger *slog.Logger,
 	opts buildOptions,
@@ -324,11 +318,11 @@ func writeAllPaginatedContent(
 		return nil, err
 	}
 
-	courseLandingURLs, err := maybeWriteCourseLandingPages(logger, opts, content, siteData, assetsDir, mirrorer)
+	collectionDetailURLs, err := writeAllCollectionDetailPages(logger, opts, content.collections, siteData, assetsDir, mirrorer)
 	if err != nil {
 		return nil, err
 	}
-	extraSitemapURLs = append(extraSitemapURLs, courseLandingURLs...)
+	extraSitemapURLs = append(extraSitemapURLs, collectionDetailURLs...)
 
 	listingDetailURLs, err := maybeWriteListingDetailPages(logger, opts, content, siteData, assetsDir, mirrorer)
 	if err != nil {
@@ -342,17 +336,11 @@ func writeAllPaginatedContent(
 	}
 	extraSitemapURLs = append(extraSitemapURLs, blogURLs...)
 
-	collectionURLs, err := writeCollectionPages(logger, opts, pages, content.collections, siteData, assetsDir, mirrorer)
+	collectionIndexURLs, err := writeAllCollectionIndexPages(logger, opts, pages, content.collections, siteData, assetsDir, mirrorer)
 	if err != nil {
 		return nil, err
 	}
-	extraSitemapURLs = append(extraSitemapURLs, collectionURLs...)
-
-	courseURLs, err := maybeWriteCourseListings(logger, opts, pages, content, siteData, assetsDir, mirrorer)
-	if err != nil {
-		return nil, err
-	}
-	extraSitemapURLs = append(extraSitemapURLs, courseURLs...)
+	extraSitemapURLs = append(extraSitemapURLs, collectionIndexURLs...)
 
 	return extraSitemapURLs, nil
 }
@@ -384,23 +372,6 @@ func maybeWriteBlogListings(logger *slog.Logger, opts buildOptions, content *opt
 	urls, err := writeBlogPaginatedPages(logger, opts, *content.blogTemplate, content.posts, siteData, assetsDir, mirrorer)
 	if err != nil {
 		return nil, fmt.Errorf("writing blog listing pages: %w", err)
-	}
-	return urls, nil
-}
-
-// maybeWriteCourseListings generates paginated /courses/ listing pages when
-// courses were loaded and a courses page template exists.
-func maybeWriteCourseListings(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, content *optionalContent, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) ([]sitemap.URLItem, error) {
-	if len(content.courses) == 0 {
-		return nil, nil
-	}
-	tpl := findTemplate(pages, "courses")
-	if tpl == nil {
-		return nil, nil
-	}
-	urls, err := writeCoursePages(logger, opts, *tpl, content.courses, siteData, assetsDir, mirrorer)
-	if err != nil {
-		return nil, fmt.Errorf("writing courses pages: %w", err)
 	}
 	return urls, nil
 }
@@ -909,27 +880,22 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 		}
 	}
 	if sectionEnabled(siteData, "courses") {
-		payload.Courses = make([]devItemEntry, 0, len(content.courses))
-		for _, c := range content.courses {
-			payload.Courses = append(payload.Courses, devItemEntry{ID: c.Title, Langs: c.SupportedLanguages})
-		}
+		// Langs comes from the record's supported_languages, which
+		// courses.SupportedLanguages used to supply directly. recordLangs
+		// deliberately returns nil rather than an empty slice for an absent
+		// list: the field's documented meaning is "nil → available in all
+		// content languages", so emitting [] would tell the dev panel the
+		// opposite of what the typed loader did.
+		payload.Courses = devEntriesFromCollection(content.collections, "courses", "supported_languages")
 	}
 	if sectionEnabled(siteData, "projects") {
 		// Built even when the collection produced nothing, so the JSON keeps
 		// emitting [] rather than null — window.__devBuild's shape is read by
 		// ffreis-website's and casaboa's dev panels. Per-item IDs stay
 		// title-based, matching what this payload carried before projects
-		// moved onto the collection engine.
-		records := collectionRecords(content.collections, "projects")
-		payload.Projects = make([]devItemEntry, 0, len(records))
-		for _, r := range records {
-			rec, ok := r.(map[string]any)
-			if !ok {
-				continue
-			}
-			title, _ := rec["title"].(string)
-			payload.Projects = append(payload.Projects, devItemEntry{ID: title, Langs: nil})
-		}
+		// moved onto the collection engine. projects has never declared
+		// per-item languages, hence the empty langsKey.
+		payload.Projects = devEntriesFromCollection(content.collections, "projects", "")
 	}
 	if sectionEnabled(siteData, "listings") {
 		payload.Listings = make([]devItemEntry, 0, len(content.listings))
@@ -944,4 +910,55 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 		return ""
 	}
 	return string(b)
+}
+
+// devEntriesFromCollection builds one dev-panel entry per projected record.
+//
+// The ID is the record's title, which is what the typed loaders supplied for
+// both projects and courses. langsKey names the record field holding the
+// per-item language codes, or "" for a collection that declares none.
+//
+// The slice is always non-nil so the JSON keeps emitting [] rather than null:
+// window.__devBuild's shape is read by ffreis-website's and casaboa's dev
+// panels, and decision record §7.4 defers any change to it to its own PR.
+func devEntriesFromCollection(set *collectionSet, name, langsKey string) []devItemEntry {
+	records := collectionRecords(set, name)
+	entries := make([]devItemEntry, 0, len(records))
+	for _, r := range records {
+		rec, ok := r.(map[string]any)
+		if !ok {
+			continue
+		}
+		title, _ := rec["title"].(string)
+		entries = append(entries, devItemEntry{ID: title, Langs: recordLangs(rec, langsKey)})
+	}
+	return entries
+}
+
+// recordLangs reads a record's language-code list.
+//
+// It returns nil — not an empty slice — when the key is absent or the list is
+// empty, because devItemEntry documents nil as "available in all content
+// languages". The typed courses.Course produced exactly that: an omitted
+// supported_languages left the []string field nil, which marshalled to null.
+// The projected record instead carries a non-nil empty []any, so this
+// conversion is what keeps the emitted JSON identical.
+func recordLangs(rec map[string]any, key string) []string {
+	if key == "" {
+		return nil
+	}
+	raw, _ := rec[key].([]any)
+	if len(raw) == 0 {
+		return nil
+	}
+	langs := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			langs = append(langs, s)
+		}
+	}
+	if len(langs) == 0 {
+		return nil
+	}
+	return langs
 }

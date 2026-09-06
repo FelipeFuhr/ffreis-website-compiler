@@ -1,5 +1,7 @@
 package collections
 
+import "sort"
+
 // Built-in default collections — decision record §7.3, option (a).
 //
 // Shipping projects/courses/listings definitions compiled into the binary is
@@ -12,14 +14,27 @@ package collections
 //
 // These definitions reproduce internal/projects, internal/courses and
 // internal/listings field-for-field, including the zero-value defaults the
-// typed structs contributed. Only `projects` is wired into the build today
-// (Phase 2); `courses` and `listings` are the Phase 3/Phase 5 targets and are
-// defined here so the engine's generality is proven — and unit-tested — before
-// either migration starts.
+// typed structs contributed. `projects` (Phase 2) and `courses` (Phase 3) are
+// wired into the build; `listings` is the Phase 5 target and is defined here so
+// the engine's generality is proven — and unit-tested — before that migration
+// starts.
 
 // itemsPerPageFlag is the CLI flag name the built-ins read their per-page and
 // carousel limits from.
 const itemsPerPageFlag = "items-per-page"
+
+// builtinOrder is the order the built-in collections are processed in, and
+// therefore the order their pages are written and their sitemap entries are
+// emitted in.
+//
+// It is DECLARATION order, not alphabetical, and it is load-bearing: before the
+// migration each collection had its own hand-written call in
+// writeAllPaginatedContent, and projects' index pages were written before
+// courses'. Alphabetical order would swap them and rewrite sitemap.xml for no
+// reason. Keeping declaration order means migrating a collection changes zero
+// bytes, and gives a site's own collections.yaml a predictable, author-controlled
+// sequence rather than one that depends on what its collections are named.
+var builtinOrder = []string{"projects", "courses", "listings"}
 
 // Builtins returns a fresh copy of the built-in collection definitions, keyed
 // by name. A fresh copy per call keeps a caller's mutation (e.g. resolving a
@@ -81,7 +96,9 @@ func builtinProjects() Collection {
 // builtinCourses reproduces internal/courses, including Slugify-derived slugs,
 // the /courses/<slug>/ href, and the two formatMoney display fields.
 //
-// Not wired into the build yet — that is Phase 3.
+// Wired into the build by Phase 3; internal/courses is gone, and the frozen
+// copy in frozen_courses_oracle_test.go is what keeps proving this definition
+// still matches it record for record.
 func builtinCourses() Collection {
 	return Collection{
 		Name:    "courses",
@@ -116,8 +133,8 @@ func builtinCourses() Collection {
 			Sort: []SortBy{{By: "order"}, {By: "title"}},
 		},
 		Publish: []Publish{
-			// A no-op when pages.index is absent, exactly like
-			// injectCoursesHomeCarousel today (see SetDottedSiteData).
+			// A no-op when pages.index is absent, exactly like the
+			// injectCoursesHomeCarousel this replaced (see SetDottedSiteData).
 			{Key: "pages.index.courses_carousel_items", Value: ValueRecords, LimitFromFlag: itemsPerPageFlag},
 		},
 		Index: &IndexSpec{
@@ -224,4 +241,33 @@ func Resolve(cfg Config) map[string]Collection {
 		merged[name] = c
 	}
 	return merged
+}
+
+// Order returns every resolved collection's name in processing order: the
+// built-ins in builtinOrder first (whether or not a site overrode one), then
+// any collection only the site's collections.yaml defines, alphabetically.
+//
+// Callers must iterate collections through this rather than ranging a map or
+// sorting the names — see builtinOrder for why the order is part of the
+// output contract.
+func Order(defs map[string]Collection) []string {
+	out := make([]string, 0, len(defs))
+	seen := make(map[string]bool, len(defs))
+
+	for _, name := range builtinOrder {
+		if _, ok := defs[name]; ok {
+			out = append(out, name)
+			seen[name] = true
+		}
+	}
+
+	extra := make([]string, 0, len(defs))
+	for name := range defs {
+		if !seen[name] {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(extra)
+
+	return append(out, extra...)
 }

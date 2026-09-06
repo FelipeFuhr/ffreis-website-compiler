@@ -40,8 +40,8 @@ func limitRecords(records []any, n int) []any {
 //     injectProjectsHomeCarousel.
 //   - "pages.index.courses_carousel_items" is a NO-OP when siteData["pages"] is
 //     absent, but CREATES the "index" map when only that is missing — exactly
-//     what injectCoursesHomeCarousel does today. The silent no-op is deliberate
-//     current behaviour (decision record §3.2), not an oversight to fix here.
+//     what injectCoursesHomeCarousel did. The silent no-op is deliberate
+//     preserved behaviour (decision record §3.2), not an oversight to fix here.
 //
 // The rule generalising both: the first segment's container must already
 // exist; deeper intermediates are created on demand.
@@ -66,4 +66,28 @@ func SetDottedSiteData(siteData map[string]any, path string, value any) {
 		current = next
 	}
 	current[segments[len(segments)-1]] = value
+}
+
+// LookupDottedSiteData reads the value at a dotted site-data path, reporting
+// whether it is present. It is the read-side mirror of SetDottedSiteData and
+// backs DetailSpec.PageDataFrom.
+//
+// It creates nothing: an intermediate that is absent, nil, or not a map means
+// "not present", never a fabricated empty map. That distinction is the whole
+// point — the caller turns a missing path into a loud error rather than
+// rendering a page with silently empty copy.
+func LookupDottedSiteData(siteData map[string]any, path string) (any, bool) {
+	segments := strings.Split(path, ".")
+
+	current := siteData
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := current[seg].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+
+	v, ok := current[segments[len(segments)-1]]
+	return v, ok
 }

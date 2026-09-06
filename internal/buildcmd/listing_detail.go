@@ -23,7 +23,8 @@ func injectListingsData(siteData map[string]any, list []listings.Listing) {
 // maybeWriteListingDetailPages renders one detail page per listing at
 // /listings/<id>/ using the internal "listing" template, when that template
 // and loaded listings are both available. Returns the detail-page URLs for
-// the sitemap. Mirrors maybeWriteCourseLandingPages.
+// the sitemap. This is the last typed detail writer; Phase 5 replaces it with
+// the generic writeCollectionDetailPages, which already reproduces it.
 func maybeWriteListingDetailPages(
 	logger *slog.Logger,
 	opts buildOptions,

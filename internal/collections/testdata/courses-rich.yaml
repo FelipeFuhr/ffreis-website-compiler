@@ -1,0 +1,72 @@
+# SYNTHETIC fixture — not a copy of any real content file.
+#
+# ffreis-courses/courses.yaml and ffreis-content-mocks/courses.yaml between them
+# exercise only 9 of courses.Course's 17 fields: neither sets a slug, a price, a
+# sale_mode, a udemy_url, localized_* copy, or any of the three landing-page
+# fields. Running the oracle over only those files would leave the engine's
+# handling of the other 8 unproven — including the two the decision record calls
+# out as easy to get wrong (formatMoney's %02d fraction, and ToCurrentCourse's
+# nested Module -> map conversion).
+#
+# This file is what internal/courses/courses_test.go used to assert on directly,
+# expressed as content so the FROZEN loader and the engine can be compared over
+# it rather than each being spot-checked.
+#
+# Axes covered here and nowhere else:
+#   - an explicit `slug`, which must win over the Slugify default
+#   - price_usd_cents whole (4900 -> "$49") and price_brl_cents fractional
+#     (24999 -> "R$249.99")
+#   - a zero price alongside a non-zero one on the SAME record
+#   - sale_mode / udemy_url / localized_cta_labels / localized_price_notes
+#   - what_you_learn, curriculum (with nested lessons) and long_description,
+#     the three detail-only extra_fields
+#   - two records sharing `order`, forcing the title tiebreak in the comparator
+
+- title: "Zebra Course Sharing An Order"
+  order: 2
+  description: "Sorts after the Alpha record below despite the same order."
+  level: "Advanced"
+
+- title: "Alpha Course Sharing An Order"
+  order: 2
+  description: "Same order as the Zebra record; title breaks the tie."
+  level: "Advanced"
+
+- title: "RAG Systems: Retrieval At Scale"
+  slug: "custom-slug"
+  order: 1
+  description: "Explicit slug must win over Slugify(title)."
+  platform: "Website"
+  level: "Intermediate"
+  availability_type: "website_only"
+  sale_mode: "both"
+  udemy_url: "https://udemy.com/course/rag-systems"
+  price_usd_cents: 4900
+  price_brl_cents: 24999
+  supported_languages:
+    - en
+    - pt
+  localized_cta_labels:
+    primary: "Comprar agora"
+    secondary: "Ver ementa"
+  localized_price_notes: "Preço em reais no checkout brasileiro."
+  long_description: "A long-form landing description that replaces the card copy."
+  what_you_learn:
+    - "Design a hybrid retrieval pipeline"
+    - "Evaluate a RAG system end to end"
+  curriculum:
+    - title: "Module 1 — Foundations"
+      lessons:
+        - "Embeddings and vector stores"
+        - "Chunking strategies"
+    - title: "Module 2 — Evaluation"
+      lessons:
+        - "Offline metrics"
+
+# Priced in one currency only: price_brl_display must be "" while
+# price_usd_display is not, which is the cents <= 0 rule applied per field
+# rather than per record.
+- title: "USD Only Course"
+  order: 3
+  price_usd_cents: 1
+  level: "Beginner"
