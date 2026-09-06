@@ -232,6 +232,12 @@ func RenderPath(pathTemplate string, record map[string]any, basePath string) (st
 	return renderRecordTemplate("detail path", pathTemplate, record, basePath)
 }
 
+// RenderPageName renders a DetailSpec.PageNameFrom template against one record,
+// giving the page identity the detail render and the per-page transforms use.
+func RenderPageName(nameTemplate string, record map[string]any, basePath string) (string, error) {
+	return renderRecordTemplate("page_name_from", nameTemplate, record, basePath)
+}
+
 // ResolvePageData renders a DetailSpec.PageDataFrom dotted-path template
 // against one record and returns the site-data value it names, for the detail
 // writer to expose as PageDataKey.

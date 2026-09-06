@@ -79,6 +79,24 @@ type Source struct {
 	Key     string `yaml:"key"`      // wrapped_list / site_data key
 	IDField string `yaml:"id_field"` // keyed_map: where the map key is copied
 	Path    string `yaml:"path"`     // literal path, rarely used
+	// ExcludeKeys drops the named keys from a keyed_map source before
+	// projection, so a collection can cover a SUBSET of a shared site-data map.
+	//
+	// It exists for staged migrations, which the decision record's own Phase 6
+	// sub-ordering requires: 6c collapses six of flemming's seven course
+	// templates onto one shared template and keeps ssbb.gohtml as its own page
+	// "until 6b is proven in production", with ssbb migrating last in 6e. The
+	// source map (siteData["courses"]) holds all seven, and without this the
+	// collection would render a seventh detail page that overwrites the one
+	// ssbb.gohtml already wrote — so the staging the record prescribes is not
+	// expressible at all.
+	//
+	// Deliberately narrow: an exact-key deny list on keyed_map only, no
+	// predicates and no expression language. The default (no list) is "every
+	// record", so finishing a staged migration is deleting one line rather than
+	// remembering to extend an allow list. A collection still carrying an
+	// exclusion after its migration completes is a leftover, not a feature.
+	ExcludeKeys []string `yaml:"exclude_keys"`
 	// PathFromFlag is the -collection-source name (and the legacy flag name)
 	// that supplies this collection's file path.
 	PathFromFlag string  `yaml:"path_from_flag"`
@@ -196,7 +214,30 @@ type DetailSpec struct {
 	// It is also what lets a site migrate its templates onto a collection
 	// BEFORE folding its per-page copy into the records — forma keeps its nine
 	// pages.product-* entries and folds them later, as a separate diff.
-	PageDataFrom string       `yaml:"page_data_from"`
+	PageDataFrom string `yaml:"page_data_from"`
+	// PageNameFrom is a template over the record (e.g. "{{.slug}}") giving the
+	// detail page's PAGE IDENTITY: the .PageName the template renders with, and
+	// the page key the hreflang and lang-switcher injections resolve against.
+	//
+	// Without it .PageName is the shared template's name for every record, which
+	// is fine for a site whose detail pages are self-contained but silently wrong
+	// for one whose shared partials key off it. flemming's do three times over:
+	// <base href="{base_path}/{{pageSlug .SiteData .PageName}}"> in
+	// styles.gohtml, the "which nav item is aria-current" test in header.gohtml,
+	// and pageSlug lookups generally. Collapsing seven page templates onto one
+	// collection would otherwise emit <base href="/pt/course"> on every course
+	// page and break every relative link on it.
+	//
+	// Declaring it ALSO opts the collection's detail pages into the two
+	// per-page transforms writePages applies and the detail writer otherwise
+	// skips — injectHreflangAlternates and injectLangSwitcherHrefs — resolved
+	// against this same key. That is deliberately opt-in rather than automatic:
+	// collection pages have never carried hreflang alternates (decision record
+	// Q2), so switching every site on would change ffreis.com's /courses/<slug>/
+	// output as a side effect of a flemming migration. A site that declares a
+	// per-record page identity is exactly the site that has parallel pages to
+	// point at.
+	PageNameFrom string       `yaml:"page_name_from"`
 	Sitemap      SitemapAttrs `yaml:"sitemap"`
 }
 
@@ -370,6 +411,12 @@ func (s Source) validate() error {
 	}
 	if s.Kind == SourceSiteData && strings.TrimSpace(s.Key) == "" {
 		return fmt.Errorf("source.kind %s requires source.key", SourceSiteData)
+	}
+	if len(s.ExcludeKeys) > 0 && s.Shape != ShapeKeyedMap {
+		// Silently ignoring it would leave a site believing a record was
+		// excluded while its page kept being written — the exact failure this
+		// knob exists to prevent.
+		return fmt.Errorf("source.exclude_keys is only meaningful for shape %s, got %q", ShapeKeyedMap, s.Shape)
 	}
 	if s.Fallback != nil {
 		if err := s.Fallback.validate(); err != nil {
