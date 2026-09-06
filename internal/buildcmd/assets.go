@@ -80,8 +80,14 @@ func copyStaticAssets(srcRoot, dstRoot string) error {
 	// other local assets, which must stay in sync with those assets' fingerprinted
 	// filenames. writeManifestFiles (called from writePages, once basePath and the
 	// page-fingerprinting pass are available) rewrites and writes them instead.
+	//
+	// robots.txt is likewise NOT copied here: its "Sitemap:" directive must match
+	// whatever base URL the build actually generated sitemap.xml with (or be left
+	// untouched if no sitemap was generated at all), which is only known once
+	// maybeGenerateSitemap (buildcmd.go) resolves it. writeRobotsTxtOutput — called
+	// from maybeGenerateSitemap after that resolution — writes it instead.
 	dirs := []string{"ld", wellKnownDir}
-	files := []string{"favicon.ico", "robots.txt", sitemapXML, "llms.txt", "humans.txt"}
+	files := []string{"favicon.ico", sitemapXML, "llms.txt", "humans.txt"}
 
 	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
 		return err
@@ -131,6 +137,65 @@ func writeManifestFiles(srcRoot, dstRoot, basePath string, toCopy map[string]str
 		}
 	}
 	return nil
+}
+
+// writeRobotsTxtOutput reads robots.txt from srcRoot (if present) and writes
+// it to dstRoot, analogous to writeManifestFiles: robots.txt is excluded from
+// copyStaticAssets's pure-verbatim file list (see copyStaticAssets) because,
+// like manifest.json/site.webmanifest, its content must be processed rather
+// than copied byte-for-byte.
+//
+// When baseURL is non-empty — a sitemap was actually generated this build —
+// a "Sitemap: <baseURL>/sitemap.xml" directive is ensured in the output (see
+// ensureSitemapDirective). When baseURL is empty — sitemap generation was
+// legitimately skipped, e.g. a mock/dev build with no derivable base URL —
+// the source content passes through unchanged, exactly like copyExistingFiles
+// would have produced. A missing source file is silently skipped, exactly
+// like copyExistingFiles too.
+//
+// Called from maybeGenerateSitemap (buildcmd.go) once the build's sitemap
+// base URL, if any, has been resolved.
+func writeRobotsTxtOutput(srcRoot, dstRoot, baseURL string) error {
+	src := filepath.Join(srcRoot, fileRobotsTxt)
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	content := string(data)
+	if trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/"); trimmed != "" {
+		content = ensureSitemapDirective(content, trimmed)
+	}
+
+	dst := filepath.Join(dstRoot, fileRobotsTxt)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(dst, []byte(content), 0o644); err != nil { //nolint:gosec
+		return fmt.Errorf(errFmtWriting, dst, err)
+	}
+	return nil
+}
+
+// ensureSitemapDirective appends a "Sitemap: <baseURL>/sitemap.xml" line to
+// robots.txt content unless that exact line is already present verbatim, so
+// re-running the build never accumulates duplicate directives. baseURL must
+// already be trimmed of any trailing slash.
+func ensureSitemapDirective(content, baseURL string) string {
+	directive := "Sitemap: " + baseURL + "/" + sitemapXML
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == directive {
+			return content
+		}
+	}
+	trimmed := strings.TrimRight(content, "\n")
+	if trimmed == "" {
+		return directive + "\n"
+	}
+	return trimmed + "\n" + directive + "\n"
 }
 
 func copyExistingDirs(srcRoot, dstRoot string, dirs []string) error {
