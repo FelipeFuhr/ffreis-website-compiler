@@ -48,9 +48,13 @@ jobs:
       working-directory: "."
       run-govulncheck: false
 
-  # Whole-module (./...) line-coverage gate. Threshold 55, not the fleet's
-  # usual 75: this is a real, currently-passing floor (measured 58.6%), not
-  # an aspirational one — see the COVERAGE_MIN comment in the Makefile.
+  # Whole-module (./...) line-coverage gate. Threshold 68, not the fleet's
+  # usual 75: this is a real, currently-passing floor (measured 69.3% after
+  # backfilling internal/pagination, internal/validatesanitycmd and
+  # internal/servecmd), not an aspirational one — see the COVERAGE_MIN
+  # comment in the Makefile. Keep this in sync with the Makefile's
+  # COVERAGE_MIN; they are two separate enforcement points for the same
+  # ratchet.
   coverage:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     needs: [quick-checks]
@@ -60,7 +64,7 @@ jobs:
     with:
       go-version: "1.25.8"
       working-directory: "."
-      coverage-threshold: 55
+      coverage-threshold: 68
 
   # Replaces the old vacuous "integration" job (go-test.yml + test-tags:
   # integration): zero files anywhere carry the //go:build integration tag,

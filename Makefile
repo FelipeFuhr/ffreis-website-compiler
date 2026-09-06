@@ -14,7 +14,13 @@ GOVULNCHECK ?= govulncheck
 # — sit at ~59-64%; several internal/*cmd packages have zero tests). Set to
 # a real, currently-passing ratchet baseline instead of an unenforced
 # aspirational number; raise it as buildcmd/sitegen get more test coverage.
-COVERAGE_MIN ?= 55
+# Ratcheted 55 -> 68 after backfilling internal/pagination (0%->100%),
+# internal/validatesanitycmd (0%->84.7%, incl. its checks.d script-execution
+# surface) and internal/servecmd (11.9%->86.8%). Measured whole-module total
+# went 63.0% -> 69.3%; floor set a couple points under that measured total,
+# not above it — keep this pattern: never move COVERAGE_MIN past what
+# `make test`'s own coverage run actually achieves.
+COVERAGE_MIN ?= 68
 INTEGRATION_COVERAGE_MIN ?= 75
 
 LEFTHOOK_VERSION ?= 1.7.10
