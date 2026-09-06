@@ -98,13 +98,13 @@ func parseOptions(args []string) (Options, error) {
 	fs := flag.NewFlagSet("emit-content-bundle", flag.ContinueOnError)
 	var opts Options
 	var langs string
-	fs.StringVar(&opts.DataRoot, "data-root", "", "path to the petlook-data data/ directory (required)")
-	fs.StringVar(&opts.WebsiteRoot, "website-root", "", "optional path to petlook-website (reserved for future contract validation)")
+	fs.StringVar(&opts.DataRoot, "data-root", "", "path to the content data/ directory (required)")
+	fs.StringVar(&opts.WebsiteRoot, "website-root", "", "optional path to the website project root (reserved for future contract validation)")
 	fs.StringVar(&langs, "langs", "", "comma-separated language codes; auto-detected if empty")
 	fs.StringVar(&opts.Out, "out", "dist/content-bundle", "output directory")
 	fs.IntVar(&opts.SchemaVersion, "schema-version", 1, "bundle schema version")
 	fs.StringVar(&opts.CDNBase, "cdn-base", "https://petlook.app", "CDN base for rewriting brand logo_s3_uri")
-	fs.StringVar(&opts.SourceSHA, "source-sha", "0000000", "petlook-data commit SHA recorded in the bundle")
+	fs.StringVar(&opts.SourceSHA, "source-sha", "0000000", "content data source commit SHA recorded in the bundle")
 	fs.StringVar(&opts.GeneratedAt, "generated-at", "1970-01-01T00:00:00Z", "RFC3339 timestamp recorded in the bundle (pass a fixed value for reproducibility)")
 	if err := fs.Parse(args); err != nil {
 		return Options{}, err
