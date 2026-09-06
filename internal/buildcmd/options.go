@@ -22,14 +22,20 @@ type buildOptions struct {
 	projectsFile   string
 	coursesFile    string
 	listingsFile   string
-	// contentSource is "prod" (default) or "mock". When "prod", the build fails
-	// if any content path contains /mock/ — prevents mock data reaching prod by
-	// accident. Set to "mock" explicitly to opt in to dev content.
+	// contentSource is "prod" (default), "mock", or "dev". When "prod", the
+	// build fails if any content path contains /mock/ — prevents mock data
+	// reaching prod by accident. Set to "mock" explicitly to opt in to dev
+	// content. Set to "dev" for a dev.ffreis.com-style build against real
+	// content paths; it implies allowBlanketRobotsDisallow (set in
+	// parseBuildOptions) so a dev-only robots.txt block doesn't need a second
+	// flag, but it does NOT exempt /mock/ content paths — only "mock" does.
 	contentSource string
 	// allowBlanketRobotsDisallow opts out of checkRobotsTxtSafety's guard
 	// against a committed robots.txt that disallows all crawlers on a non-mock
 	// (real content) build. False by default: such a robots.txt fails the
-	// build instead of silently shipping to prod.
+	// build instead of silently shipping to prod. Implied automatically when
+	// contentSource is "dev"; only needs setting explicitly for a deliberate
+	// full block on a "prod" build.
 	allowBlanketRobotsDisallow bool
 	itemsPerPage               int
 	copyAssets                 bool
@@ -126,8 +132,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
 	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")
 	fs.StringVar(&opts.listingsFile, "listings-file", "", "path to a listings YAML file (shaped as a top-level \"listings:\" key); enables /listings/<id>/ detail-page generation when set")
-	fs.StringVar(&opts.contentSource, "content-source", "prod", `content source: "prod" (default) or "mock". When "prod", any content path containing /mock/ is a fatal error so mock data cannot reach production by accident.`)
-	fs.BoolVar(&opts.allowBlanketRobotsDisallow, "allow-blanket-robots-disallow", false, "allow a committed robots.txt that disallows all crawlers under User-agent: * even on a non-mock (real content) build; without this flag, such a robots.txt fails the build so a dev-only block cannot silently ship to prod")
+	fs.StringVar(&opts.contentSource, "content-source", "prod", `content source: "prod" (default), "mock", or "dev". When "prod", any content path containing /mock/ is a fatal error so mock data cannot reach production by accident. "dev" is a dev.ffreis.com-style build against real content paths (not /mock/) and implies -allow-blanket-robots-disallow.`)
+	fs.BoolVar(&opts.allowBlanketRobotsDisallow, "allow-blanket-robots-disallow", false, "allow a committed robots.txt that disallows all crawlers under User-agent: * even on a non-mock (real content) build; without this flag, such a robots.txt fails the build so a dev-only block cannot silently ship to prod. Implied automatically by -content-source=dev; only needed explicitly for a deliberate full block on -content-source=prod")
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
 
 	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint, -tracker-cdn-base")
@@ -141,14 +147,38 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 		return buildOptions{}, err
 	}
 
-	// Anti-leak guard: reject /mock/ paths when content-source is prod (the default).
-	// This makes it impossible to bake mock content into a prod build by accident.
+	switch opts.contentSource {
+	case "prod", "mock", "dev":
+		// valid
+	default:
+		return buildOptions{}, fmt.Errorf(
+			`invalid --content-source=%q: must be "prod", "mock", or "dev"`,
+			opts.contentSource,
+		)
+	}
+
+	// -content-source=dev implies -allow-blanket-robots-disallow: a
+	// dev.ffreis.com build commonly ships a robots.txt that blocks every
+	// crawler (correctly — there's no production audience there yet), and
+	// checkRobotsTxtSafety's guard against that shape only exempts "mock" by
+	// default. Without this, every dev build would need both flags passed
+	// separately just to avoid a false-positive build failure. A genuine,
+	// deliberate full block on a real --content-source=prod build still needs
+	// -allow-blanket-robots-disallow passed explicitly.
+	if opts.contentSource == "dev" {
+		opts.allowBlanketRobotsDisallow = true
+	}
+
+	// Anti-leak guard: reject /mock/ paths for any content-source other than
+	// "mock" itself (i.e. "prod" or "dev"). A dev build is expected to run
+	// against real content paths, so it gets no /mock/ exemption — only an
+	// explicit --content-source=mock build may reference /mock/ paths.
 	if opts.contentSource != "mock" {
 		for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile, opts.listingsFile} {
 			if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
 				return buildOptions{}, fmt.Errorf(
 					"content path %q contains /mock/ but --content-source=%q: "+
-						"mock content cannot be used in a prod build; "+
+						"mock content cannot be used outside --content-source=mock; "+
 						"pass --content-source=mock to enable mock content",
 					p, opts.contentSource,
 				)
@@ -158,8 +188,10 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 
 	// Anti-leak guard: -dev-data injects window.__devBuild into every rendered
 	// page and is documented as dev.ffreis.com-only. Equality (not != "mock")
-	// is deliberate: a future non-prod, non-mock --content-source value must
-	// not be swept into this prod-only check by accident.
+	// is deliberate: --content-source=dev (the dev.ffreis.com shorthand this
+	// was future-proofed for — see git blame) is exactly the non-prod,
+	// non-mock value that must NOT trip this prod-only gate; -dev-data
+	// composes cleanly with --content-source=dev.
 	if opts.devData && opts.contentSource == "prod" {
 		return buildOptions{}, fmt.Errorf(
 			"--dev-data cannot be used with --content-source=prod: " +

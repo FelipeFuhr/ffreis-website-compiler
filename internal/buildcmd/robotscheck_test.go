@@ -112,3 +112,46 @@ func TestCheckRobotsTxtSafety_AllowsScopedDisallowOnProd(t *testing.T) {
 		t.Fatalf("expected no error for a path-scoped disallow, got: %v", err)
 	}
 }
+
+// The following two tests exercise checkRobotsTxtSafety together with
+// parseBuildOptions, rather than a hand-built buildOptions{}, because the
+// "-content-source dev implies -allow-blanket-robots-disallow" behavior lives
+// in parseBuildOptions, not in checkRobotsTxtSafety itself. Building opts by
+// hand (as the tests above do) would silently skip the very implication these
+// tests are meant to prove.
+
+func TestCheckRobotsTxtSafety_DevContentSourceAllowsBlanketDisallowWithoutExplicitFlag(t *testing.T) {
+	dir := t.TempDir()
+	writeRobotsTxt(t, dir, "User-agent: *\nDisallow: /\n")
+
+	opts, err := parseBuildOptions([]string{
+		"-website-root", ".",
+		"-content-source", "dev",
+	})
+	if err != nil {
+		t.Fatalf("parseBuildOptions: %v", err)
+	}
+	// -allow-blanket-robots-disallow was NOT passed above; content-source=dev
+	// must imply it so this build succeeds despite the blanket disallow.
+	if err := checkRobotsTxtSafety(dir, opts); err != nil {
+		t.Fatalf("expected no error for a dev build with a blanket disallow and no explicit -allow-blanket-robots-disallow, got: %v", err)
+	}
+}
+
+func TestCheckRobotsTxtSafety_ProdContentSourceStillFailsOnBlanketDisallowRegressionCheck(t *testing.T) {
+	dir := t.TempDir()
+	writeRobotsTxt(t, dir, "User-agent: *\nDisallow: /\n")
+
+	opts, err := parseBuildOptions([]string{
+		"-website-root", ".",
+	})
+	if err != nil {
+		t.Fatalf("parseBuildOptions: %v", err)
+	}
+	// content-source=dev's new implication must not loosen prod's behavior:
+	// the default (prod) build with the same blanket-disallow robots.txt and
+	// no explicit -allow-blanket-robots-disallow must still fail.
+	if err := checkRobotsTxtSafety(dir, opts); err == nil {
+		t.Fatal("expected an error for a prod build with a blanket disallow and no explicit -allow-blanket-robots-disallow, got nil")
+	}
+}
