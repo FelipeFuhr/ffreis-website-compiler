@@ -1,0 +1,18 @@
+# lang_links copied from ffreis-website-data/data/en/site.d/50-ui.yaml.
+ui:
+  nav:
+    nav_aria: "Main navigation"
+    lang_links:
+      - lang: "en"
+        prefix: "en"
+        label: "English"
+        flag: "🇺🇸"
+        active: true
+      - lang: "pt-BR"
+        prefix: "pt"
+        label: "Português"
+        flag: "🇧🇷"
+        href: "/pt/"
+        active: false
+  footer:
+    copyright_prefix: "© 2026"

@@ -1,0 +1,580 @@
+# Curated mock listings for the casaboa.app MVP shortlist.
+#
+# Injected into SiteData as `listings`; the base layout serializes the whole
+# list to window.CASABOA_LISTINGS and app.js renders the cards client-side.
+# reasons is an array (app.js calls .join(' ')); breakdown is a key→score map.
+listings:
+  - id: pinheiros-72m2-001
+    title: "Apartamento iluminado em Pinheiros"
+    transaction: rent
+    price: "R$ 4.200/mês"
+    total: "Total estimado R$ 5.180/mês"
+    meta: "72 m² · 2 quartos · 2 banheiros · 1 vaga"
+    place: "Pinheiros · São Paulo"
+    source: "QuintoAndar"
+    sourceNote: "Verificar disponibilidade, fotos e valores no anúncio original."
+    tone: sp
+    photoLabel: "sala clara · janela grande · fotos completas"
+    score: 86
+    priceLabel: "Preço justo"
+    locationLabel: "Excelente para rotina urbana"
+    imageLabel: "Fotos confiáveis"
+    concern: "Prédio antigo e sem varanda."
+    sponsored: false
+    reasons:
+      - "Boa relação entre metragem e localização."
+      - "Fotos indicam luz natural e banheiro reformado."
+      - "Condomínio compatível com o padrão do bairro."
+    breakdown: { "Preço": 88, "Localização": 90, "Fotos": 82, "Completude": 84, "Preferências": 87 }
+
+  - id: moinhos-94m2-002
+    title: "Planta ampla no Moinhos de Vento"
+    transaction: buy
+    price: "R$ 690.000"
+    total: "Condomínio + IPTU: R$ 980/mês"
+    meta: "94 m² · 3 quartos · 2 banheiros · 1 vaga"
+    place: "Moinhos de Vento · Porto Alegre"
+    source: "Crédito Real"
+    sourceNote: "Submissão/parceiro mockado: uso de fotos exigiria autorização."
+    tone: porto
+    photoLabel: "planta ampla · faltam detalhes"
+    score: 81
+    priceLabel: "Preço aceitável"
+    locationLabel: "Boa localização geral"
+    imageLabel: "Faltam fotos de detalhes"
+    concern: "Descrição genérica demais para justificar o preço."
+    sponsored: true
+    reasons:
+      - "Metragem interessante para o bairro."
+      - "Planta parece flexível para home office."
+      - "Custo mensal não parece fora do padrão do segmento."
+    breakdown: { "Preço": 78, "Localização": 86, "Fotos": 72, "Completude": 75, "Preferências": 84 }
+
+  - id: agua-verde-63m2-003
+    title: "Compacto bem resolvido no Água Verde"
+    transaction: rent
+    price: "R$ 3.100/mês"
+    total: "Total estimado R$ 3.760/mês"
+    meta: "63 m² · 2 quartos · 1 banheiro · 1 vaga"
+    place: "Água Verde · Curitiba"
+    source: "VivaReal"
+    sourceNote: "Card resumido: a fonte original mantém preço, contato e negociação."
+    tone: curitiba
+    photoLabel: "compacto · bom essencial · ressalvas visuais"
+    score: 78
+    priceLabel: "Bom com ressalvas"
+    locationLabel: "Boa conveniência de bairro"
+    imageLabel: "Fotos suficientes"
+    concern: "Banheiro parece antigo e cozinha pequena."
+    sponsored: false
+    reasons:
+      - "Preço competitivo para a metragem."
+      - "Boa distribuição dos cômodos nas imagens."
+      - "Atende ao essencial sem parecer anúncio-isca."
+    breakdown: { "Preço": 84, "Localização": 79, "Fotos": 74, "Completude": 80, "Preferências": 73 }
+
+  - id: jardins-88m2-004
+    title: "Dois quartos nos Jardins com vaga dupla"
+    transaction: buy
+    price: "R$ 1.050.000"
+    total: "Condomínio + IPTU: R$ 1.420/mês"
+    meta: "88 m² · 2 quartos · 2 banheiros · 2 vagas"
+    place: "Jardins · São Paulo"
+    source: "OLX Imóveis"
+    sourceNote: "Anúncio direto com proprietário: confirmar documentação antes de visitar."
+    tone: sp
+    photoLabel: "fotos neutras · ambiente limpo · sem sobreposição"
+    score: 88
+    priceLabel: "Preço por metro justo"
+    locationLabel: "Rotina urbana de alto padrão"
+    imageLabel: "Fotos limpas e honestas"
+    concern: "Condomínio alto — IPTU precisa ser confirmado."
+    sponsored: false
+    reasons:
+      - "Planta com boa separação de ambientes e duas vagas."
+      - "Fotos sem filtro excessivo indicam boa intenção."
+      - "Localização premium justifica custo total no segmento."
+    breakdown: { "Preço": 82, "Localização": 94, "Fotos": 88, "Completude": 86, "Preferências": 90 }
+
+  - id: floresta-70m2-005
+    title: "Luminoso no bairro Floresta"
+    transaction: rent
+    price: "R$ 3.600/mês"
+    total: "Total estimado R$ 4.340/mês"
+    meta: "70 m² · 2 quartos · 1 banheiro · 1 vaga"
+    place: "Floresta · Porto Alegre"
+    source: "QuintoAndar"
+    sourceNote: "Verificar disponibilidade e laudo de vistoria no portal original."
+    tone: porto
+    photoLabel: "luz natural · sala aberta · cozinha americana"
+    score: 84
+    priceLabel: "Preço competitivo"
+    locationLabel: "Bairro em valorização"
+    imageLabel: "Fotos com boa luz"
+    concern: "Sem vaga de garagem no edifício — rua próxima mas não garantida."
+    sponsored: false
+    reasons:
+      - "Boa entrada de luz nas fotos da sala e quarto principal."
+      - "Planta aberta favorece uso como home office."
+      - "Condomínio abaixo do padrão do bairro para o tamanho."
+    breakdown: { "Preço": 86, "Localização": 82, "Fotos": 85, "Completude": 81, "Preferências": 84 }
+
+  - id: batel-54m2-006
+    title: "Studio moderno no Batel"
+    transaction: rent
+    price: "R$ 2.800/mês"
+    total: "Total estimado R$ 3.350/mês"
+    meta: "54 m² · 1 quarto · 1 banheiro · 1 vaga"
+    place: "Batel · Curitiba"
+    source: "Loft"
+    sourceNote: "Dados validados pelo portal — confirmar disponibilidade diretamente."
+    tone: curitiba
+    photoLabel: "integrado · bem aproveitado · fotos recentes"
+    score: 80
+    priceLabel: "Preço dentro do mercado"
+    locationLabel: "Centro expandido com boa mobilidade"
+    imageLabel: "Fotos recentes e claras"
+    concern: "Metragem pequena para quem precisa de home office dedicado."
+    sponsored: true
+    reasons:
+      - "Aproveitamento eficiente da planta para o tamanho."
+      - "Fotos recentes e coerentes com a metragem anunciada."
+      - "Localização com acesso fácil a serviços e transporte."
+    breakdown: { "Preço": 80, "Localização": 84, "Fotos": 83, "Completude": 78, "Preferências": 76 }
+
+  - id: savassi-105m2-007
+    title: "Cobertura com terraço no Savassi"
+    transaction: buy
+    price: "R$ 820.000"
+    total: "Condomínio + IPTU: R$ 1.100/mês"
+    meta: "105 m² · 3 quartos · 2 banheiros · 2 vagas"
+    place: "Savassi · Belo Horizonte"
+    source: "Zap Imóveis"
+    sourceNote: "Anúncio de corretor: solicitar matrícula e certidões antes de visitar."
+    tone: sp
+    photoLabel: "terraço espaçoso · vista aberta · interiores claros"
+    score: 82
+    priceLabel: "Boa relação custo-benefício"
+    locationLabel: "Bairro consolidado e bem servido"
+    imageLabel: "Fotos completas do imóvel"
+    concern: "Documentação do corretor não verificada — exigir toda a cadeia antes da proposta."
+    sponsored: false
+    reasons:
+      - "Terraço com vista aberta é raro no segmento e nesta faixa."
+      - "Metragem generosa com boa separação de ambientes."
+      - "Preço por m² abaixo da média do bairro para cobertura."
+    breakdown: { "Preço": 86, "Localização": 88, "Fotos": 80, "Completude": 76, "Preferências": 82 }
+
+  - id: vila-madalena-58m2-008
+    title: "Loft com pé-direito duplo na Vila Madalena"
+    transaction: rent
+    price: "R$ 3.400/mês"
+    total: "Total estimado R$ 4.050/mês"
+    meta: "58 m² · 1 quarto · 1 banheiro · sem vaga"
+    place: "Vila Madalena · São Paulo"
+    source: "QuintoAndar"
+    sourceNote: "Verificar disponibilidade e regras do condomínio no anúncio original."
+    tone: sp
+    photoLabel: "pé-direito alto · mezanino · fotos de ângulo aberto"
+    score: 75
+    priceLabel: "Preço acima da média"
+    locationLabel: "Vida noturna intensa"
+    imageLabel: "Fotos boas, sem banheiro"
+    concern: "Bairro com barulho de bares até tarde nos fins de semana."
+    sponsored: false
+    reasons:
+      - "Design diferenciado com mezanino aproveita bem o pé-direito."
+      - "Localização com forte vida cultural e gastronômica."
+      - "Ausência de vaga pode ser problema para quem tem carro."
+    breakdown: { "Preço": 70, "Localização": 78, "Fotos": 79, "Completude": 68, "Preferências": 80 }
+
+  - id: mooca-102m2-009
+    title: "Apartamento familiar na Mooca com varanda gourmet"
+    transaction: buy
+    price: "R$ 720.000"
+    total: "Condomínio + IPTU: R$ 890/mês"
+    meta: "102 m² · 3 quartos · 2 banheiros · 2 vagas"
+    place: "Mooca · São Paulo"
+    source: "Zap Imóveis"
+    sourceNote: "Anúncio de corretor: solicitar matrícula antes de qualquer sinal."
+    tone: sp
+    photoLabel: "varanda gourmet · fotos completas · boa iluminação"
+    score: 79
+    priceLabel: "Preço competitivo"
+    locationLabel: "Bairro tradicional bem servido"
+    imageLabel: "Fotos completas"
+    concern: "Prédio com 20 anos — perguntar sobre reformas estruturais recentes."
+    sponsored: true
+    reasons:
+      - "Duas vagas é raro nesta faixa de preço no bairro."
+      - "Varanda gourmet agrega valor de uso para famílias."
+      - "Boa relação metragem/preço comparado à média da região."
+    breakdown: { "Preço": 83, "Localização": 80, "Fotos": 81, "Completude": 77, "Preferências": 75 }
+
+  - id: cidade-baixa-48m2-010
+    title: "Kitnet reformada na Cidade Baixa"
+    transaction: rent
+    price: "R$ 1.900/mês"
+    total: "Total estimado R$ 2.280/mês"
+    meta: "48 m² · 1 quarto · 1 banheiro · sem vaga"
+    place: "Cidade Baixa · Porto Alegre"
+    source: "OLX Imóveis"
+    sourceNote: "Anúncio direto com proprietário — confirmar recibo e contrato formal."
+    tone: porto
+    photoLabel: "reforma recente · fotos com boa luz · falta vista externa"
+    score: 68
+    priceLabel: "Preço baixo, checar motivo"
+    locationLabel: "Boêmio e universitário"
+    imageLabel: "Fotos parciais"
+    concern: "Rua com bares e movimento intenso à noite, ruído frequente."
+    sponsored: false
+    reasons:
+      - "Preço bem abaixo da média para o bairro."
+      - "Reforma recente aparece nas fotos de cozinha e banheiro."
+      - "Falta foto da fachada e da rua — vale checar o entorno."
+    breakdown: { "Preço": 90, "Localização": 58, "Fotos": 65, "Completude": 60, "Preferências": 67 }
+
+  - id: bela-vista-poa-85m2-011
+    title: "Apartamento com vista panorâmica na Bela Vista"
+    transaction: buy
+    price: "R$ 610.000"
+    total: "Condomínio + IPTU: R$ 950/mês"
+    meta: "85 m² · 3 quartos · 2 banheiros · 1 vaga"
+    place: "Bela Vista · Porto Alegre"
+    source: "Crédito Real"
+    sourceNote: "Submissão de parceiro: confirmar valores atualizados antes de negociar."
+    tone: porto
+    photoLabel: "vista panorâmica · fotos amplas · boa luz da tarde"
+    score: 83
+    priceLabel: "Bom custo-benefício"
+    locationLabel: "Bairro nobre e arborizado"
+    imageLabel: "Fotos amplas e recentes"
+    concern: "Apenas uma vaga para 3 quartos pode ser limitante."
+    sponsored: false
+    reasons:
+      - "Vista privilegiada é diferencial raro nesta faixa de preço."
+      - "Bairro tradicionalmente valorizado e arborizado."
+      - "Metragem generosa para o número de quartos."
+    breakdown: { "Preço": 84, "Localização": 89, "Fotos": 85, "Completude": 78, "Preferências": 80 }
+
+  - id: bigorrilho-67m2-012
+    title: "Dois quartos reformados no Bigorrilho"
+    transaction: rent
+    price: "R$ 2.600/mês"
+    total: "Total estimado R$ 3.150/mês"
+    meta: "67 m² · 2 quartos · 1 banheiro · 1 vaga"
+    place: "Bigorrilho · Curitiba"
+    source: "VivaReal"
+    sourceNote: "Card resumido — confirmar disponibilidade na fonte original."
+    tone: curitiba
+    photoLabel: "cozinha reformada · fotos claras · boa organização"
+    score: 76
+    priceLabel: "Preço dentro do esperado"
+    locationLabel: "Bairro central bem localizado"
+    imageLabel: "Fotos claras e organizadas"
+    concern: "Prédio sem elevador — confirmar andar antes de agendar visita."
+    sponsored: false
+    reasons:
+      - "Cozinha reformada aparece com bom acabamento nas fotos."
+      - "Localização central com fácil acesso a comércio."
+      - "Preço compatível com a média do bairro para a metragem."
+    breakdown: { "Preço": 80, "Localização": 81, "Fotos": 78, "Completude": 74, "Preferências": 71 }
+
+  - id: cabral-110m2-013
+    title: "Casa germânica revitalizada no Cabral"
+    transaction: buy
+    price: "R$ 890.000"
+    total: "Condomínio + IPTU: R$ 620/mês"
+    meta: "110 m² · 3 quartos · 3 banheiros · 2 vagas"
+    place: "Cabral · Curitiba"
+    source: "Loft"
+    sourceNote: "Dados validados pelo portal — confirmar disponibilidade diretamente."
+    tone: curitiba
+    photoLabel: "arquitetura preservada · fotos completas · quintal privativo"
+    score: 85
+    priceLabel: "Preço justo para o padrão"
+    locationLabel: "Bairro histórico valorizado"
+    imageLabel: "Fotos completas e recentes"
+    concern: "Casa antiga — solicitar laudo estrutural antes da proposta."
+    sponsored: true
+    reasons:
+      - "Arquitetura preservada é diferencial no bairro histórico."
+      - "Quintal privativo é raro nesta região da cidade."
+      - "IPTU baixo comparado a apartamentos de metragem similar."
+    breakdown: { "Preço": 82, "Localização": 91, "Fotos": 87, "Completude": 80, "Preferências": 85 }
+
+  - id: lourdes-95m2-014
+    title: "Apartamento clássico no bairro Lourdes"
+    transaction: buy
+    price: "R$ 950.000"
+    total: "Condomínio + IPTU: R$ 1.350/mês"
+    meta: "95 m² · 3 quartos · 2 banheiros · 2 vagas"
+    place: "Lourdes · Belo Horizonte"
+    source: "Zap Imóveis"
+    sourceNote: "Anúncio de corretor: solicitar matrícula e certidões antes de visitar."
+    tone: sp
+    photoLabel: "acabamento clássico · fotos completas · vista aberta"
+    score: 89
+    priceLabel: "Preço alinhado ao padrão premium"
+    locationLabel: "Bairro nobre e consolidado"
+    imageLabel: "Fotos completas e de alta qualidade"
+    concern: "Condomínio alto — confirmar o que está incluso antes de decidir."
+    sponsored: false
+    reasons:
+      - "Bairro entre os mais valorizados da capital mineira."
+      - "Duas vagas e metragem generosa para o padrão do bairro."
+      - "Fotos consistentes com acabamento de alto padrão."
+    breakdown: { "Preço": 85, "Localização": 93, "Fotos": 90, "Completude": 88, "Preferências": 88 }
+
+  - id: buritis-60m2-015
+    title: "Studio funcional no Buritis"
+    transaction: rent
+    price: "R$ 1.800/mês"
+    total: "Total estimado R$ 2.150/mês"
+    meta: "60 m² · 1 quarto · 1 banheiro · 1 vaga"
+    place: "Buritis · Belo Horizonte"
+    source: "QuintoAndar"
+    sourceNote: "Verificar disponibilidade e valores atualizados no portal original."
+    tone: sp
+    photoLabel: "fotos simples · ambiente organizado · falta luz natural"
+    score: 71
+    priceLabel: "Preço abaixo da média"
+    locationLabel: "Bairro residencial em expansão"
+    imageLabel: "Fotos suficientes, pouca luz"
+    concern: "Fotos indicam pouca luz natural no quarto principal."
+    sponsored: false
+    reasons:
+      - "Preço competitivo para bairro residencial em crescimento."
+      - "Vaga inclusa é diferencial nesta faixa de preço."
+      - "Metragem adequada para uso individual ou casal."
+    breakdown: { "Preço": 82, "Localização": 68, "Fotos": 62, "Completude": 70, "Preferências": 73 }
+
+  - id: santo-antonio-75m2-016
+    title: "Cobertura duplex no Santo Antônio"
+    transaction: buy
+    price: "R$ 540.000"
+    total: "Condomínio + IPTU: R$ 480/mês"
+    meta: "75 m² · 2 quartos · 2 banheiros · 1 vaga"
+    place: "Santo Antônio · Belo Horizonte"
+    source: "OLX Imóveis"
+    sourceNote: "Anúncio direto com proprietário — documentação não verificada pela casaboa."
+    tone: sp
+    photoLabel: "duplex · fotos de planta · falta foto de detalhes"
+    score: 66
+    priceLabel: "Preço atrativo, checar motivo"
+    locationLabel: "Bairro boêmio e bem localizado"
+    imageLabel: "Fotos incompletas"
+    concern: "Documentação do proprietário não verificada — exigir matrícula e certidões antes de qualquer sinal."
+    sponsored: true
+    reasons:
+      - "Formato duplex é raro nesta faixa de preço no bairro."
+      - "Localização bem servida por comércio e transporte."
+      - "Falta de fotos de detalhes exige mais cautela na avaliação."
+    breakdown: { "Preço": 84, "Localização": 76, "Fotos": 58, "Completude": 52, "Preferências": 60 }
+
+  - id: copacabana-55m2-017
+    title: "Studio de frente para o mar em Copacabana"
+    transaction: rent
+    price: "R$ 4.800/mês"
+    total: "Total estimado R$ 5.900/mês"
+    meta: "55 m² · 1 quarto · 1 banheiro · sem vaga"
+    place: "Copacabana · Rio de Janeiro"
+    source: "QuintoAndar"
+    sourceNote: "Verificar disponibilidade e condições no portal original."
+    tone: sp
+    photoLabel: "vista para o mar · fotos vibrantes · prédio antigo aparente"
+    score: 73
+    priceLabel: "Preço alto pela metragem"
+    locationLabel: "Turístico e barulhento"
+    imageLabel: "Fotos vibrantes, sem detalhes do prédio"
+    concern: "Região turística com ruído constante de rua e trânsito."
+    sponsored: false
+    reasons:
+      - "Vista para o mar é um diferencial valorizado na região."
+      - "Localização com acesso fácil a praia e transporte."
+      - "Ausência de vaga é limitante para quem depende de carro."
+    breakdown: { "Preço": 62, "Localização": 80, "Fotos": 84, "Completude": 65, "Preferências": 70 }
+
+  - id: botafogo-80m2-018
+    title: "Apartamento reformado em Botafogo com vista do Pão de Açúcar"
+    transaction: buy
+    price: "R$ 980.000"
+    total: "Condomínio + IPTU: R$ 1.180/mês"
+    meta: "80 m² · 2 quartos · 2 banheiros · 1 vaga"
+    place: "Botafogo · Rio de Janeiro"
+    source: "Loft"
+    sourceNote: "Dados validados pelo portal — confirmar disponibilidade diretamente."
+    tone: sp
+    photoLabel: "reforma completa · fotos profissionais · vista privilegiada"
+    score: 87
+    priceLabel: "Preço justo para a vista"
+    locationLabel: "Bairro central e bem conectado"
+    imageLabel: "Fotos profissionais e completas"
+    concern: "Condomínio elevado — confirmar histórico de reajustes."
+    sponsored: false
+    reasons:
+      - "Vista do Pão de Açúcar é diferencial raro no bairro."
+      - "Reforma completa reduz risco de custos ocultos."
+      - "Localização central com fácil acesso a metrô e trabalho."
+    breakdown: { "Preço": 83, "Localização": 92, "Fotos": 89, "Completude": 86, "Preferências": 87 }
+
+  - id: tijuca-65m2-019
+    title: "Apartamento clássico na Tijuca"
+    transaction: rent
+    price: "R$ 2.400/mês"
+    total: "Total estimado R$ 2.950/mês"
+    meta: "65 m² · 2 quartos · 1 banheiro · sem vaga"
+    place: "Tijuca · Rio de Janeiro"
+    source: "VivaReal"
+    sourceNote: "Card resumido: a fonte original mantém preço e contato."
+    tone: sp
+    photoLabel: "planta clássica · fotos escuras · falta luz natural"
+    score: 69
+    priceLabel: "Preço competitivo"
+    locationLabel: "Bairro tradicional e bem servido"
+    imageLabel: "Fotos com pouca luz"
+    concern: "Fotos indicam ambientes escuros — confirmar orientação solar."
+    sponsored: false
+    reasons:
+      - "Preço competitivo para a metragem no bairro."
+      - "Localização com boa oferta de comércio e transporte."
+      - "Falta de vaga pode ser problema para quem tem carro."
+    breakdown: { "Preço": 81, "Localização": 78, "Fotos": 58, "Completude": 66, "Preferências": 63 }
+
+  - id: barra-tijuca-120m2-020
+    title: "Apartamento amplo na Barra da Tijuca com lazer completo"
+    transaction: buy
+    price: "R$ 1.250.000"
+    total: "Condomínio + IPTU: R$ 1.680/mês"
+    meta: "120 m² · 3 quartos · 3 banheiros · 2 vagas"
+    place: "Barra da Tijuca · Rio de Janeiro"
+    source: "Crédito Real"
+    sourceNote: "Submissão de parceiro — confirmar valores atualizados antes de negociar."
+    tone: sp
+    photoLabel: "lazer completo · fotos profissionais · vista aberta"
+    score: 91
+    priceLabel: "Preço compatível com o padrão"
+    locationLabel: "Condomínio fechado com infraestrutura completa"
+    imageLabel: "Fotos profissionais e detalhadas"
+    concern: "Condomínio elevado inclui lazer — confirmar se todos os itens são usados."
+    sponsored: true
+    reasons:
+      - "Infraestrutura de lazer completa é diferencial na região."
+      - "Metragem e número de vagas atendem famílias grandes."
+      - "Fotos detalhadas cobrem todos os ambientes e áreas comuns."
+    breakdown: { "Preço": 84, "Localização": 90, "Fotos": 92, "Completude": 91, "Preferências": 93 }
+
+  - id: ipanema-45m2-021
+    title: "Studio de luxo em Ipanema a duas quadras da praia"
+    transaction: rent
+    price: "R$ 6.500/mês"
+    total: "Total estimado R$ 7.900/mês"
+    meta: "45 m² · 1 quarto · 1 banheiro · 1 vaga"
+    place: "Ipanema · Rio de Janeiro"
+    source: "Loft"
+    sourceNote: "Dados validados pelo portal — confirmar disponibilidade diretamente."
+    tone: sp
+    photoLabel: "acabamento de luxo · fotos profissionais · vista de rua arborizada"
+    score: 93
+    priceLabel: "Preço alto, condizente com a região"
+    locationLabel: "Localização premium a poucos passos da praia"
+    imageLabel: "Fotos profissionais e completas"
+    concern: "Metragem pequena para o valor — avaliar se compensa frente a outras regiões."
+    sponsored: false
+    reasons:
+      - "Localização entre as mais valorizadas do país."
+      - "Vaga inclusa é raro nesta metragem e bairro."
+      - "Acabamento e fotos indicam padrão de alto luxo."
+    breakdown: { "Preço": 68, "Localização": 96, "Fotos": 94, "Completude": 90, "Preferências": 92 }
+
+  - id: trindade-70m2-022
+    title: "Apartamento próximo à UFSC na Trindade"
+    transaction: rent
+    price: "R$ 2.500/mês"
+    total: "Total estimado R$ 3.050/mês"
+    meta: "70 m² · 2 quartos · 1 banheiro · 1 vaga"
+    place: "Trindade · Florianópolis"
+    source: "QuintoAndar"
+    sourceNote: "Verificar disponibilidade e valores atualizados no anúncio original."
+    tone: sp
+    photoLabel: "fotos claras · ambiente arejado · bom estado de conservação"
+    score: 77
+    priceLabel: "Preço dentro da média universitária"
+    locationLabel: "Bairro universitário bem servido"
+    imageLabel: "Fotos claras e suficientes"
+    concern: "Movimento intenso de estudantes pode gerar ruído em horários de pico."
+    sponsored: false
+    reasons:
+      - "Proximidade da UFSC valoriza para locação recorrente."
+      - "Boa relação entre preço e metragem para o bairro."
+      - "Vaga inclusa facilita para quem depende de carro."
+    breakdown: { "Preço": 83, "Localização": 79, "Fotos": 78, "Completude": 74, "Preferências": 72 }
+
+  - id: centro-floripa-58m2-023
+    title: "Apartamento antigo no Centro de Florianópolis"
+    transaction: buy
+    price: "R$ 320.000"
+    total: "Condomínio + IPTU: R$ 450/mês"
+    meta: "58 m² · 2 quartos · 1 banheiro · sem vaga"
+    place: "Centro · Florianópolis"
+    source: "OLX Imóveis"
+    sourceNote: "Anúncio direto com proprietário — documentação não verificada pela casaboa."
+    tone: sp
+    photoLabel: "prédio antigo · fotos escuras · falta reforma aparente"
+    score: 62
+    priceLabel: "Preço baixo, checar estado de conservação"
+    locationLabel: "Central mas com sinais de deterioração"
+    imageLabel: "Fotos escuras e incompletas"
+    concern: "Prédio antigo sem sinais de manutenção recente — solicitar laudo estrutural."
+    sponsored: true
+    reasons:
+      - "Preço bem abaixo da média para a região central."
+      - "Localização central com fácil acesso a serviços."
+      - "Ausência de vaga e fotos escuras pedem mais cautela."
+    breakdown: { "Preço": 88, "Localização": 74, "Fotos": 48, "Completude": 50, "Preferências": 55 }
+
+  - id: lagoa-conceicao-90m2-024
+    title: "Casa em condomínio na Lagoa da Conceição"
+    transaction: buy
+    price: "R$ 850.000"
+    total: "Condomínio + IPTU: R$ 720/mês"
+    meta: "90 m² · 3 quartos · 2 banheiros · 2 vagas"
+    place: "Lagoa da Conceição · Florianópolis"
+    source: "Zap Imóveis"
+    sourceNote: "Anúncio de corretor: solicitar matrícula e certidões antes de visitar."
+    tone: sp
+    photoLabel: "vista para a lagoa · fotos completas · área externa privativa"
+    score: 84
+    priceLabel: "Preço compatível com a valorização da região"
+    locationLabel: "Área nobre e turística"
+    imageLabel: "Fotos completas e de boa qualidade"
+    concern: "Alta procura turística pode gerar valorização de custo de vida no entorno."
+    sponsored: false
+    reasons:
+      - "Vista para a lagoa é diferencial valorizado na ilha."
+      - "Área externa privativa rara em condomínios da região."
+      - "Duas vagas atendem bem famílias com mais de um veículo."
+    breakdown: { "Preço": 80, "Localização": 89, "Fotos": 86, "Completude": 82, "Preferências": 84 }
+
+  - id: coqueiros-62m2-025
+    title: "Apartamento com vista da baía nos Coqueiros"
+    transaction: rent
+    price: "R$ 2.900/mês"
+    total: "Total estimado R$ 3.450/mês"
+    meta: "62 m² · 2 quartos · 1 banheiro · 1 vaga"
+    place: "Coqueiros · Florianópolis"
+    source: "VivaReal"
+    sourceNote: "Card resumido — confirmar disponibilidade na fonte original."
+    tone: sp
+    photoLabel: "vista da baía · fotos claras · pôr do sol visível"
+    score: 72
+    priceLabel: "Preço um pouco acima da média"
+    locationLabel: "Bairro em valorização com boa vista"
+    imageLabel: "Fotos claras, faltam ângulos internos"
+    concern: "Faltam fotos de banheiro e cozinha — solicitar antes de agendar visita."
+    sponsored: false
+    reasons:
+      - "Vista da baía com pôr do sol é diferencial do bairro."
+      - "Vaga inclusa facilita mobilidade na região."
+      - "Preço um pouco acima da média exige negociação."
+    breakdown: { "Preço": 66, "Localização": 81, "Fotos": 70, "Completude": 62, "Preferências": 71 }

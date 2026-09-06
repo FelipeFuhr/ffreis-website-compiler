@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 
 	"ffreis-website-compiler/internal/cmdutil"
@@ -82,6 +83,48 @@ type buildOptions struct {
 	// stored here so transformPage can inject it without re-reading siteData.
 	devData     bool
 	devDataJSON string
+	// collectionsConfig overrides the default <website-root>/collections.yaml
+	// discovery, mirroring -sitemap-config.
+	collectionsConfig string
+	// collectionSources maps a collection name to the file path supplying its
+	// records (-collection-source <name>=<path>, repeatable). The legacy
+	// per-type flags below populate this too, so there is exactly one lookup
+	// path downstream.
+	collectionSources map[string]string
+	// deprecations carries flag-deprecation notices raised during parsing.
+	// parseBuildOptions has no logger (and staying pure keeps it easy to test),
+	// so prepareBuild emits these through slog once one is available.
+	deprecations []string
+}
+
+// collectionSourceFlag implements flag.Value for the repeatable
+// -collection-source <name>=<path>.
+type collectionSourceFlag map[string]string
+
+func (f collectionSourceFlag) String() string {
+	if len(f) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(f))
+	for name, path := range f {
+		parts = append(parts, name+"="+path)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
+}
+
+func (f collectionSourceFlag) Set(v string) error {
+	name, path, ok := strings.Cut(v, "=")
+	name = strings.TrimSpace(name)
+	path = strings.TrimSpace(path)
+	if !ok || name == "" || path == "" {
+		return fmt.Errorf("expected <name>=<path>, got %q", v)
+	}
+	if existing, dup := f[name]; dup {
+		return fmt.Errorf("collection %q already has a source (%s); pass -collection-source %s= once", name, existing, name)
+	}
+	f[name] = path
+	return nil
 }
 
 // disableSectionsHelpText builds the -disable-sections flag's usage string
@@ -101,6 +144,12 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	var assetsDirFlag string
 	var siteDirFlag string
 	var templatesDirFlag string
+
+	opts.collectionSources = make(map[string]string)
+	fs.Var(collectionSourceFlag(opts.collectionSources), "collection-source",
+		"content source for one collection as <name>=<path>; repeatable. Replaces the per-type -projects-file/-courses-file/-listings-file flags, which are deprecated aliases for it")
+	fs.StringVar(&opts.collectionsConfig, "collections-config", "",
+		"optional path to a collections YAML config; defaults to <website-root>/collections.yaml if present. Collections not defined there fall back to the compiler's built-in projects/courses/listings definitions")
 
 	fs.StringVar(&opts.websiteRoot, "website-root", ".", "website project root; expects <website-root>/src/{assets,templates} (legacy fallback: <website-root>/{site,templates})")
 	fs.StringVar(&assetsDirFlag, "assets-dir", "", "path to source assets folder (defaults to <website-root>/src/assets, then <website-root>/site)")
@@ -129,9 +178,9 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.runOutputTests, "run-output-tests", false, "run the website-owned compiled-output manifest after a successful build")
 	fs.StringVar(&opts.outputTestManifest, "output-test-manifest", "", "website-owned output test manifest; defaults to tests/output.yaml under website-root when -run-output-tests is set")
 	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
-	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml; enables /projects/ paginated page generation when set")
-	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml; enables /courses/ paginated page generation when set")
-	fs.StringVar(&opts.listingsFile, "listings-file", "", "path to a listings YAML file (shaped as a top-level \"listings:\" key); enables /listings/<id>/ detail-page generation when set")
+	fs.StringVar(&opts.projectsFile, "projects-file", "", "DEPRECATED, use -collection-source projects=<path>: path to projects.yaml; enables /projects/ paginated page generation when set")
+	fs.StringVar(&opts.coursesFile, "courses-file", "", "DEPRECATED, use -collection-source courses=<path>: path to courses.yaml; enables /courses/ paginated page generation when set")
+	fs.StringVar(&opts.listingsFile, "listings-file", "", "DEPRECATED, use -collection-source listings=<path>: path to a listings YAML file (shaped as a top-level \"listings:\" key); enables /listings/<id>/ detail-page generation when set")
 	fs.StringVar(&opts.contentSource, "content-source", "prod", `content source: "prod" (default), "mock", or "dev". When "prod", any content path containing /mock/ is a fatal error so mock data cannot reach production by accident. "dev" is a dev.ffreis.com-style build against real content paths (not /mock/) and implies -allow-blanket-robots-disallow.`)
 	fs.BoolVar(&opts.allowBlanketRobotsDisallow, "allow-blanket-robots-disallow", false, "allow a committed robots.txt that disallows all crawlers under User-agent: * even on a non-mock (real content) build; without this flag, such a robots.txt fails the build so a dev-only block cannot silently ship to prod. Implied automatically by -content-source=dev; only needed explicitly for a deliberate full block on -content-source=prod")
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
@@ -169,20 +218,15 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 		opts.allowBlanketRobotsDisallow = true
 	}
 
+	adoptLegacyContentFlags(&opts)
+
 	// Anti-leak guard: reject /mock/ paths for any content-source other than
 	// "mock" itself (i.e. "prod" or "dev"). A dev build is expected to run
 	// against real content paths, so it gets no /mock/ exemption — only an
 	// explicit --content-source=mock build may reference /mock/ paths.
 	if opts.contentSource != "mock" {
-		for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile, opts.listingsFile} {
-			if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
-				return buildOptions{}, fmt.Errorf(
-					"content path %q contains /mock/ but --content-source=%q: "+
-						"mock content cannot be used outside --content-source=mock; "+
-						"pass --content-source=mock to enable mock content",
-					p, opts.contentSource,
-				)
-			}
+		if err := checkNoMockContentPaths(opts); err != nil {
+			return buildOptions{}, err
 		}
 	}
 
@@ -231,6 +275,81 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	}
 
 	return opts, nil
+}
+
+// legacyContentFlags maps each deprecated per-type content flag to the
+// collection name it now feeds. Keep this table and the flag registrations
+// above in step: it is the only thing keeping -projects-file working.
+var legacyContentFlags = []struct {
+	flag       string
+	collection string
+	value      func(*buildOptions) *string
+}{
+	{"projects-file", "projects", func(o *buildOptions) *string { return &o.projectsFile }},
+	{"courses-file", "courses", func(o *buildOptions) *string { return &o.coursesFile }},
+	{"listings-file", "listings", func(o *buildOptions) *string { return &o.listingsFile }},
+}
+
+// adoptLegacyContentFlags folds the deprecated per-type flags into
+// collectionSources so downstream code has exactly one lookup path. An
+// explicit -collection-source for the same collection wins, and the clash is
+// reported rather than silently resolved.
+func adoptLegacyContentFlags(opts *buildOptions) {
+	for _, legacy := range legacyContentFlags {
+		path := *legacy.value(opts)
+		if path == "" {
+			continue
+		}
+		if existing, ok := opts.collectionSources[legacy.collection]; ok {
+			opts.deprecations = append(opts.deprecations, fmt.Sprintf(
+				"-%s is deprecated and was ignored because -collection-source %s=%s was also passed; drop -%s",
+				legacy.flag, legacy.collection, existing, legacy.flag,
+			))
+			continue
+		}
+		opts.collectionSources[legacy.collection] = path
+		opts.deprecations = append(opts.deprecations, fmt.Sprintf(
+			"-%s is deprecated; use -collection-source %s=%s instead",
+			legacy.flag, legacy.collection, path,
+		))
+	}
+}
+
+// checkNoMockContentPaths is the /mock/ anti-leak guard's path enumeration.
+//
+// Decision record Q9 / §6.1: this list used to be hand-maintained, so any new
+// content-path mechanism silently stopped being covered. -collection-source is
+// enumerated here in the same change that introduces it, and postsDir is still
+// listed because blog posts are deliberately out of the collection migration.
+// The legacy per-type flags are covered transitively: adoptLegacyContentFlags
+// has already folded them into collectionSources by the time this runs.
+func checkNoMockContentPaths(opts buildOptions) error {
+	paths := make([]string, 0, len(opts.collectionSources)+1)
+	paths = append(paths, opts.postsDir)
+	for _, name := range sortedSourceNames(opts.collectionSources) {
+		paths = append(paths, opts.collectionSources[name])
+	}
+
+	for _, p := range paths {
+		if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
+			return fmt.Errorf(
+				"content path %q contains /mock/ but --content-source=%q: "+
+					"mock content cannot be used outside --content-source=mock; "+
+					"pass --content-source=mock to enable mock content",
+				p, opts.contentSource,
+			)
+		}
+	}
+	return nil
+}
+
+func sortedSourceNames(sources map[string]string) []string {
+	names := make([]string, 0, len(sources))
+	for name := range sources {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func resolveBuildPaths(opts buildOptions) (assetsDir string, templatesDir string, err error) {

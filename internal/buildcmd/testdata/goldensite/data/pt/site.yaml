@@ -1,0 +1,15 @@
+base_url: "https://golden.example"
+base_path: "/pt"
+html_lang: "pt-BR"
+
+person:
+  first_name: "Felipe"
+  last_name: "Reis"
+
+nav:
+  - label: "Início"
+    href: "/"
+  - label: "Projetos"
+    href: "/projects/"
+  - label: "Contato"
+    href: "/contact/"

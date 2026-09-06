@@ -1,0 +1,5 @@
+{{define "footer"}}
+<footer class="site-footer">
+  <p>{{required (dig .SiteData "ui" "footer" "copyright_prefix") "missing ui.footer.copyright_prefix"}} {{required (dig .SiteData "person" "first_name") "missing person.first_name"}} {{required (dig .SiteData "person" "last_name") "missing person.last_name"}}</p>
+</footer>
+{{end}}

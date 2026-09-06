@@ -1,0 +1,3 @@
+.projects-grid { display: grid; gap: 1rem; }
+.project-card { border: 1px solid #ddd; }
+.pagination-list { display: flex; list-style: none; }

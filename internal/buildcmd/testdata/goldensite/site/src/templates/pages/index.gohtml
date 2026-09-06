@@ -1,0 +1,27 @@
+{{/* Home page. Two jobs in this fixture:
+     1. It renders the projects home carousel from siteData["projects"], which
+        injectProjectsHomeCarousel fills with the FIRST -items-per-page records.
+     2. It is the hreflang CONTROL: this page goes through writePages, so it DOES
+        receive <link rel="alternate" hreflang=...>. /projects/ does not (Q2).
+        Without a control the "no hreflang on /projects/" assertion would pass
+        vacuously on a site where hreflang never runs at all. */}}
+{{define "page_title"}}{{$p := dig .SiteData "pages" "index"}}{{if $p}}{{dig $p "title"}}{{else}}Home{{end}}{{end}}
+
+{{define "page"}}
+{{$pageData := required (dig .SiteData "pages" "index") "missing pages.index"}}
+{{$carousel := dig .SiteData "projects"}}
+<main class="home-main" id="main-content">
+  <h1 class="site-heading">{{required (dig $pageData "heading") "missing index heading"}}</h1>
+  {{if $carousel}}
+  <section class="projects-carousel">
+    <h2>{{required (dig $pageData "projects_heading") "missing index projects_heading"}}</h2>
+    <div class="carousel-track" data-carousel>
+      {{range $carousel}}
+      {{template "project-card-preview" (dict "Project" .)}}
+      {{end}}
+    </div>
+    <a href="/projects/" class="carousel-more">{{required (dig $pageData "projects_more") "missing index projects_more"}}</a>
+  </section>
+  {{end}}
+</main>
+{{end}}
