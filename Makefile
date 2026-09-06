@@ -22,6 +22,18 @@ LEFTHOOK_DIR ?= $(CURDIR)/.bin
 LEFTHOOK_BIN ?= $(LEFTHOOK_DIR)/lefthook
 PREFIX ?= ffreis
 
+# VERSION resolves to the current release tag (release-please cuts vN.N.N
+# tags off main — see .release-please-config.json) when HEAD is exactly at
+# one, or a dev-descriptive string derived from git otherwise. Injected via
+# -ldflags so `website-compiler version` reports this build's real source
+# instead of a string hardcoded in source that would silently drift the
+# moment a release is cut. `go build`/`go install` stamp the same info
+# automatically via VCS build info even without this (see
+# internal/versioncmd's resolvedVersion), but a real tag only surfaces
+# through the exact-match `git describe` this computes.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)
+VERSION_LDFLAGS := -X ffreis-website-compiler/internal/versioncmd.Version=$(VERSION)
+
 MUTATION_PACKAGES ?= ./internal/...
 MUTATION_THRESHOLD ?= 60
 FUZZ_PACKAGES ?= ./internal/...
@@ -77,7 +89,7 @@ info: ## Print effective variables
 	@echo "WEBSITE_COMPILER_RUNTIME_IMAGE=$(WEBSITE_COMPILER_RUNTIME_IMAGE)"
 
 install: ## Install website-compiler in GOPATH/bin
-	go install ./cmd/website-compiler
+	go install -ldflags "$(VERSION_LDFLAGS)" ./cmd/website-compiler
 
 # scan-fix(lefthook:release-tier): platform-standards' lefthook/go.yml release
 # tier requires `make build-all` unconditionally (no graceful skip). This repo
