@@ -198,6 +198,14 @@ make help                     # list targets
 
 Build variants: `make build-inline` (inlined assets), `make build-no-assets` (skip asset copy). Git hooks (lefthook) install via `make lefthook`; local CI via `make ci-local`.
 
+## Versioning
+
+`main` is the development branch; releases are semver tags cut by
+[release-please](https://github.com/googleapis/release-please). Consumers
+should pin the `stable` branch (moved only after a fleet-wide verification
+build) or an exact release tag — never `main`. See
+[AGENTS.md](AGENTS.md#versioning--the-stable-pointer) for the full contract.
+
 ## License
 
 Proprietary — All Rights Reserved. Copyright (c) 2026 Felipe Fuhr. See [LICENSE](LICENSE).
