@@ -51,7 +51,7 @@ EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 
 .PHONY: mutation-test mutation fuzz help info install build build-all build-inline build-no-assets serve \
 	example-build clean clean-example container-build docker-build ci-list \
-	fmt fmt-check lint test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
+	fmt fmt-check lint lint-instructions test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
 	validate plan \
 	secrets-scan-staged hook-generated-drift \
 	lefthook-bootstrap lefthook-install lefthook-run lefthook
@@ -135,6 +135,9 @@ fmt-check: ## Fail if Go files are not gofmt-formatted
 lint: ## Run golangci-lint
 	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || (echo "Missing tool: $(GOLANGCI_LINT). Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest" && exit 1)
 	$(GOLANGCI_LINT) run
+
+lint-instructions: ## Verify the AGENTS.md rules/reference split hasn't silently dropped a rule
+	@bash scripts/check-instructions.sh
 
 validate: ## Static analysis and compilation check (go vet + build)
 	go vet ./...

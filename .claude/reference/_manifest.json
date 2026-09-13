@@ -1,0 +1,47 @@
+{
+  "AGENTS.md": {
+    "preamble_bytes": 863,
+    "sections": [
+      {
+        "heading": "Versioning & the stable pointer",
+        "file": ".claude/reference/versioning-stable-pointer.md",
+        "bytes": 2815
+      },
+      {
+        "heading": "Public repo — private-repo hygiene",
+        "file": ".claude/reference/public-repo-hygiene.md",
+        "bytes": 407
+      },
+      {
+        "heading": "Content-level language routing (`available_languages`)",
+        "file": ".claude/reference/language-routing-available-languages.md",
+        "bytes": 2157
+      },
+      {
+        "heading": "Hreflang alternate injection (`injectHreflangAlternates` in `internal/buildcmd/hreflang.go`)",
+        "file": ".claude/reference/hreflang-alternate-injection.md",
+        "bytes": 793
+      },
+      {
+        "heading": "Automatic page transforms (`transformPage` in `internal/buildcmd/buildcmd.go`)",
+        "file": ".claude/reference/automatic-page-transforms.md",
+        "bytes": 11855
+      },
+      {
+        "heading": "Image alt-text validation (warning only, `imgalt.go` — `validateImageAltText`)",
+        "file": ".claude/reference/image-alt-text-validation.md",
+        "bytes": 1029
+      },
+      {
+        "heading": "Template extensibility blocks",
+        "file": ".claude/reference/template-extensibility-blocks.md",
+        "bytes": 641
+      },
+      {
+        "heading": "Keeping this file current",
+        "file": ".claude/reference/keeping-this-file-current.md",
+        "bytes": 297
+      }
+    ]
+  }
+}
