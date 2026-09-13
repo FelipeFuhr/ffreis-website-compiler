@@ -1,0 +1,44 @@
+name: Lint Instructions
+
+# Guardrail for the AGENTS.md rules/reference split (see AGENTS.md § "Where
+# the rest lives"): fails if a section the manifest maps to a reference file
+# ever goes missing or empty, or if a .claude/rules/*.md file lacks the
+# `paths:` frontmatter that makes it load at all. Reuses this repo's own
+# general-run-commands.yml mechanism (already used by examples.yml/e2e.yml)
+# rather than a bespoke job type — the check itself is just `make
+# lint-instructions`, no Go toolchain required.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "**/*.md"
+      - ".claude/reference/_manifest.json"
+      - ".claude/rules/**"
+      - "scripts/check-instructions.sh"
+      - "Makefile"
+      - ".github/workflows/lint-instructions.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "**/*.md"
+      - ".claude/reference/_manifest.json"
+      - ".claude/rules/**"
+      - "scripts/check-instructions.sh"
+      - "Makefile"
+      - ".github/workflows/lint-instructions.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-instructions:
+    permissions:
+      contents: read
+    uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-run-commands.yml@5dfbb4986ceb88f6518fa719da3a255294cf03cf
+    with:
+      working-directory: "."
+      timeout-minutes: 5
+      commands: |-
+        set -euo pipefail
+        make lint-instructions
