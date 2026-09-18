@@ -47,7 +47,37 @@ if [[ "${DO_BUILD}" == "true" ]]; then
     "${SCRIPT_DIR}" >/dev/null
 fi
 
+# scan-fix(website-compiler:absolute-path-mount): callers (e.g. ffreis-siteops's
+# smoke-check) pass absolute host paths outside $WORKSPACE_DIR as CLI args —
+# --website-root/-out pointed at a mktemp -d scratch dir. Only $WORKSPACE_DIR
+# was ever mounted, so those paths didn't exist inside the container and every
+# such invocation failed with "could not resolve website directories". Scan
+# "$@" for absolute-path-looking args outside the workspace and bind-mount
+# each one's nearest existing ancestor (a not-yet-created -out dir has none of
+# its own, but mktemp -d already created its parent) at the same path, so the
+# path resolves identically inside and outside the container.
+EXTRA_MOUNTS=()
+declare -A MOUNTED=()
+for arg in "$@"; do
+  case "${arg}" in
+    /*) ;;
+    *) continue ;;
+  esac
+  candidate="${arg}"
+  while [[ "${candidate}" != "/" && ! -e "${candidate}" ]]; do
+    candidate="$(dirname "${candidate}")"
+  done
+  [[ "${candidate}" == "/" ]] && continue
+  case "${candidate}" in
+    "${WORKSPACE_DIR}" | "${WORKSPACE_DIR}"/*) continue ;;
+  esac
+  [[ -n "${MOUNTED[${candidate}]:-}" ]] && continue
+  MOUNTED["${candidate}"]=1
+  EXTRA_MOUNTS+=(-v "${candidate}:${candidate}")
+done
+
 exec "${ENGINE}" run --rm \
   -v "${WORKSPACE_DIR}:/workspace" \
+  "${EXTRA_MOUNTS[@]}" \
   -w /workspace \
   "${WEBSITE_COMPILER_IMAGE}" "$@"
