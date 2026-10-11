@@ -706,16 +706,16 @@ func TestInjectTracker_InjectsScriptAndInitBeforeHeadClose(t *testing.T) {
 	got := injectTracker(html, buildOptions{
 		trackerEnabled:    true,
 		trackerSDKVersion: "1.2.3",
-		trackerSiteID:     "flemming",
-		trackerEndpoint:   "https://events.flemming.com.br",
+		trackerSiteID:     "example",
+		trackerEndpoint:   "https://events.example.com",
 	})
 	if !strings.Contains(got, `src="https://cdn.ffreis.com/tracker-sdk/v1.2.3/tracker.min.js"`) {
 		t.Errorf("expected SDK script src with pinned version, got: %s", got)
 	}
-	if !strings.Contains(got, `siteId:"flemming"`) {
+	if !strings.Contains(got, `siteId:"example"`) {
 		t.Errorf("expected JSON-quoted siteId, got: %s", got)
 	}
-	if !strings.Contains(got, `endpoint:"https://events.flemming.com.br"`) {
+	if !strings.Contains(got, `endpoint:"https://events.example.com"`) {
 		t.Errorf("expected JSON-quoted endpoint, got: %s", got)
 	}
 	if !strings.Contains(got, "DOMContentLoaded") {

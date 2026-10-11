@@ -11,7 +11,7 @@ import (
 const (
 	validateDataLayoutTmpl = `{{define "layout"}}{{template "page" .}}{{end}}`
 	validateDataHeadTmpl   = `{{define "head"}}{{end}}`
-	validateDataAgendaMain = `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "start_text") "missing start_text"}}{{end}}`
+	validateDataAgendaMain = `{{define "page"}}{{required (dig .SiteData "courses" "examplecourse" "start_text") "missing start_text"}}{{end}}`
 
 	contractFileName = "site.contract.yaml"
 	externalDataFile = "site.yaml"
@@ -43,8 +43,8 @@ func TestRun_ValidatesExternalSiteDataAgainstContract(t *testing.T) {
 	websiteRoot, dataRoot := setupWebsiteRoot(t, validateDataAgendaMain)
 	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
 	testutil.WriteFiles(t, map[string]string{
-		filepath.Join(dataRoot, contractFileName): "required:\n  - courses.ssyb.start_text\nallowed:\n  - courses.*.start_text\n",
-		externalDataPath: "courses:\n  ssyb:\n    start_text: Em definição.\n",
+		filepath.Join(dataRoot, contractFileName): "required:\n  - courses.examplecourse.start_text\nallowed:\n  - courses.*.start_text\n",
+		externalDataPath: "courses:\n  examplecourse:\n    start_text: Em definição.\n",
 	})
 
 	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger()); err != nil {
@@ -57,14 +57,14 @@ func TestRun_FailsForInvalidExternalSiteData(t *testing.T) {
 	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(dataRoot, contractFileName): "allowed:\n  - courses.*.start_text\n",
-		externalDataPath: "courses:\n  ssyb:\n    unexpected: value\n",
+		externalDataPath: "courses:\n  examplecourse:\n    unexpected: value\n",
 	})
 
 	err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger())
 	if err == nil {
 		t.Fatal("expected validate-site-data to fail")
 	}
-	if !strings.Contains(err.Error(), "courses.ssyb.unexpected") {
+	if !strings.Contains(err.Error(), "courses.examplecourse.unexpected") {
 		t.Fatalf("expected dangling path in error, got %v", err)
 	}
 }
@@ -74,7 +74,7 @@ func TestRun_FailsForUnusedContractPath(t *testing.T) {
 	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(dataRoot, contractFileName): "allowed:\n  - courses.*.start_text\n  - courses.*.duration\n",
-		externalDataPath: "courses:\n  ssyb:\n    start_text: Em definição.\n    duration: 16 horas\n",
+		externalDataPath: "courses:\n  examplecourse:\n    start_text: Em definição.\n    duration: 16 horas\n",
 	})
 
 	err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger())
@@ -90,7 +90,7 @@ func TestRun_FailsWhenLocalContractMissing(t *testing.T) {
 	websiteRoot, _ := setupWebsiteRoot(t, `{{define "page"}}ok{{end}}`)
 	externalDataPath := filepath.Join(t.TempDir(), externalDataFile)
 	testutil.WriteFiles(t, map[string]string{
-		externalDataPath: "courses:\n  ssyb:\n    start_text: Em definição.\n",
+		externalDataPath: "courses:\n  examplecourse:\n    start_text: Em definição.\n",
 	})
 
 	err := Run([]string{flagWebsiteRoot, websiteRoot, flagSiteData, externalDataPath}, testutil.DiscardLogger())

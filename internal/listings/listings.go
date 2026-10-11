@@ -12,10 +12,10 @@ import (
 )
 
 // Listing holds data for a single curated listing entry. Field names and YAML
-// tags match the existing casaboa-data schema exactly, since ToSiteDataList's
-// output also becomes the window.CASABOA_LISTINGS JS blob already consumed by
-// the site's client-side rendering — changing a key here would be a breaking
-// change to that contract.
+// tags match the consuming site's existing data schema exactly, since
+// ToSiteDataList's output also becomes the window.LISTINGS JS blob already
+// consumed by the site's client-side rendering — changing a key here would
+// be a breaking change to that contract.
 type Listing struct {
 	ID            string         `yaml:"id"`
 	Title         string         `yaml:"title"`
@@ -39,7 +39,7 @@ type Listing struct {
 }
 
 // listingsFile is the on-disk shape: a top-level "listings:" key holding the
-// list (not a bare YAML list), matching casaboa-data's existing file.
+// list (not a bare YAML list), matching the consuming site's existing file.
 type listingsFile struct {
 	Listings []Listing `yaml:"listings"`
 }
@@ -113,7 +113,7 @@ func baseMap(l Listing) map[string]any {
 }
 
 // ToSiteDataList converts a slice of Listing to the []any map format expected
-// by Go templates and by the window.CASABOA_LISTINGS JS blob. Each entry now
+// by Go templates and by the window.LISTINGS JS blob. Each entry now
 // also carries a computed "href" so client-side rendering can link to a real,
 // crawlable per-listing URL instead of an in-page anchor.
 func ToSiteDataList(list []Listing) []any {

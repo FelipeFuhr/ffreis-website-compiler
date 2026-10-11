@@ -371,7 +371,7 @@ func TestRun_FailsWhenSiteDataViolatesContract(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
-		filepath.Join(websiteRoot, "src", "data", fileSiteYAML):                   "courses:\n  ssyb:\n    start_text: Em definição.\n    unexpected: value\n",
+		filepath.Join(websiteRoot, "src", "data", fileSiteYAML):                   "courses:\n  examplecourse:\n    start_text: Em definição.\n    unexpected: value\n",
 		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "allowed:\n  - courses.*.start_text\n",
 		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}ok{{end}}`,
 	})
@@ -381,7 +381,7 @@ func TestRun_FailsWhenSiteDataViolatesContract(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected build run to fail when site data violates contract")
 	}
-	if !strings.Contains(err.Error(), "dangling site data path not declared in contract: courses.ssyb.unexpected") {
+	if !strings.Contains(err.Error(), "dangling site data path not declared in contract: courses.examplecourse.unexpected") {
 		t.Fatalf("expected dangling path error, got %v", err)
 	}
 }
@@ -391,7 +391,7 @@ func TestRun_FailsWhenContractDeclaresUnusedTemplatePath(t *testing.T) {
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
 		filepath.Join(websiteRoot, "src", "data", fileSiteYAML): `courses:
-  ssyb:
+  examplecourse:
     investment:
       total: R$ 100,00
       installments_text: Em até 2 parcelas
@@ -400,7 +400,7 @@ func TestRun_FailsWhenContractDeclaresUnusedTemplatePath(t *testing.T) {
   - courses.*.investment.total
   - courses.*.investment.installments_text
 `,
-		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}{{required (dig .SiteData "courses" "ssyb" "investment" "total") "missing total"}}{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}{{required (dig .SiteData "courses" "examplecourse" "investment" "total") "missing total"}}{{end}}`,
 	})
 
 	err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, t.TempDir()}, testutil.DiscardLogger())
