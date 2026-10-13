@@ -338,6 +338,21 @@ func ValidateSiteDataAndUsageFromRoot(templatesRoot string, siteDataResult SiteD
 	return nil
 }
 
+// IsPageInternal reports whether siteData marks pageName as
+// pages.<pageName>.internal: true -- a compiler-managed page that exists
+// only so its template renders for validation purposes (asset-usage
+// checks, CSS-usage checks) and is never emitted as standalone output.
+// Shared by buildcmd (to exclude it from output/sitemap) and
+// validatecsscmd (to exclude it from the per-page CSS usage check, since
+// an internal stub's minimal content would otherwise look like every rule
+// it's forced to link is "unused").
+func IsPageInternal(siteData map[string]any, pageName string) bool {
+	pagesData, _ := siteData["pages"].(map[string]any)
+	pageData, _ := pagesData[pageName].(map[string]any)
+	internal, _ := pageData["internal"].(bool)
+	return internal
+}
+
 func isHTTPURL(v string) bool {
 	return strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://")
 }
