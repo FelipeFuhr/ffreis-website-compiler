@@ -72,6 +72,11 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 			"trimPrefix": strings.TrimPrefix,
 			"has":        hasString,
 			"pageSlug":   pageSlugFunc,
+			"add":        add,
+			"sub":        sub,
+			"mul":        mul,
+			"div":        div,
+			"mod":        mod,
 		}).ParseFiles(parseFiles...)
 		if err != nil {
 			return nil, err

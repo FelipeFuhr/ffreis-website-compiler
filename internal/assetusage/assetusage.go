@@ -50,6 +50,30 @@ func Validate(assetsRoot string, renderedPages map[string]string) (Result, error
 	return result, nil
 }
 
+// LocalStylesheetHrefs returns the local (non-external, non-data) stylesheet
+// hrefs referenced by a single rendered page's own <link rel="stylesheet">
+// tags, in source order. Unlike Validate (which checks file-level reachability
+// across the whole site), this scopes to one page's own markup -- used by
+// cssusage to know which sheets a given page actually loads before checking
+// whether that page's rendered output uses any of their rules.
+func LocalStylesheetHrefs(html string) ([]string, error) {
+	var hrefs []string
+	for _, match := range stylesheetTagRE.FindAllStringSubmatch(html, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		relPath, local, err := normalizeHTMLAssetRef(match[1])
+		if err != nil {
+			return nil, fmt.Errorf("normalizing asset reference %q: %w", match[1], err)
+		}
+		if !local || filepath.Ext(relPath) != ".css" {
+			continue
+		}
+		hrefs = append(hrefs, relPath)
+	}
+	return hrefs, nil
+}
+
 func collectInitialUsedAssets(renderedPages map[string]string) (used map[string]struct{}, queue []string, err error) {
 	used = make(map[string]struct{})
 	queue = make([]string, 0)

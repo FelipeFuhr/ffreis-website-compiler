@@ -12,7 +12,7 @@ A Go CLI that builds and validates the static websites in the ffreis fleet. It l
 - **Optimizes output** during the build: critical CSS inlined into `<head>` (minified, `@import` flattened), below-fold CSS deferred, small SVGs/JS/raster images inlined, LQIP blur-up placeholders for eager images, content-hash fingerprinting of all local assets, optional font embedding, optional external-asset mirroring, optional per-page CSS scoping, and progressive-enhancement hints (view transitions, speculation rules, script preloads).
 - **Handles multilingual content** via `available_languages` per content item (renders or writes a redirect stub) and injects `<link rel="alternate" hreflang>` tags from `language_variants` site data.
 - **Generates derived content**: Markdown blog posts (`-posts-dir`) into `dist/blog/<slug>/` plus an RSS feed, and paginated `/projects/` and `/courses/` listings from YAML data files.
-- **Validates** the local site-data contract, that rendered pages only reference reachable local CSS/JS assets, baseline sanity invariants, and YAML key parity across language directories.
+- **Validates** the local site-data contract, that rendered pages only reference reachable local CSS/JS assets, baseline sanity invariants, YAML key parity across language directories, and (advisory) whether a page's own CSS has rules unused by that page's own rendered output.
 - **Serves** the site locally over HTTP for development with live template rendering and security headers.
 
 ## Usage
@@ -94,9 +94,21 @@ Flags: `-website-root` (`.`), `-addr` (`:8080`), `-site-data`, `-sanity` (`true`
 ```bash
 website-compiler validate-site-data -website-root ../my-website
 website-compiler validate-assets    -website-root ../my-website
+website-compiler validate-css       -website-root ../my-website
 website-compiler validate-sanity    -website-root ../my-website
 website-compiler test-output        -website-root ../my-website -out ../my-website/dist
 ```
+
+`validate-css` is the per-page counterpart to `validate-assets`: instead of asking
+"is this CSS file reachable from *any* page" (a hard gate), it asks "does *this*
+page's own rendered HTML use the rules in *the stylesheets this page itself
+links*" and logs a warning for every rule it can prove isn't. It never fails --
+its class-presence check is a conservative heuristic (a rule is flagged only
+when a class/ID it requires is provably absent from the page's rendered
+markup), and it has one known blind spot: markup a page's own client-side
+JavaScript adds after load is invisible to it, since it only sees
+server-rendered HTML. Run it, read the warnings, and judge each one yourself --
+it is a lead to investigate, not something to blindly delete.
 
 ### Website-owned compiled-output tests
 
