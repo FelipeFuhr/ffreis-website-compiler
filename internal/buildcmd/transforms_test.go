@@ -55,6 +55,86 @@ func TestInjectNavigationEnhancements_InjectedExactlyOnce(t *testing.T) {
 	}
 }
 
+// ── injectPerPageStylesheet ────────────────────────────────────────────────────
+
+func TestInjectPerPageStylesheet_FileExists_LinkInjected(t *testing.T) {
+	dir := makeStylesheetDir(t, map[string]string{"css/pages/login.css": ".login{}"})
+	html := `<html><head><link rel="stylesheet" href="/css/app.css"></head><body></body></html>`
+	got := injectPerPageStylesheet(html, dir, "login")
+	if !strings.Contains(got, `<link rel="stylesheet" href="/css/pages/login.css">`) {
+		t.Errorf("expected per-page stylesheet link injected, got: %s", got)
+	}
+}
+
+func TestInjectPerPageStylesheet_FileAbsent_NoOp(t *testing.T) {
+	dir := t.TempDir() // no css/pages/ directory at all
+	html := `<html><head><link rel="stylesheet" href="/css/app.css"></head><body></body></html>`
+	got := injectPerPageStylesheet(html, dir, "login")
+	if got != html {
+		t.Errorf("expected byte-identical output when no per-page stylesheet exists, got: %s", got)
+	}
+}
+
+func TestInjectPerPageStylesheet_EmptyPageName_NoOp(t *testing.T) {
+	dir := makeStylesheetDir(t, map[string]string{"css/pages/.css": "x"}) // pathological, shouldn't matter
+	html := `<html><head></head><body></body></html>`
+	got := injectPerPageStylesheet(html, dir, "")
+	if got != html {
+		t.Errorf("expected no-op for empty pageName, got: %s", got)
+	}
+}
+
+func TestInjectPerPageStylesheet_InjectedAfterExistingHeadLinks(t *testing.T) {
+	// Cascade order: the per-page link must land AFTER any stylesheet links
+	// already in the template (right before </head>) so page-specific rules
+	// can override shared ones.
+	dir := makeStylesheetDir(t, map[string]string{"css/pages/login.css": ".login{}"})
+	html := `<html><head><link rel="stylesheet" href="/css/app.css"></head><body></body></html>`
+	got := injectPerPageStylesheet(html, dir, "login")
+	appIdx := strings.Index(got, "app.css")
+	pageIdx := strings.Index(got, "pages/login.css")
+	if appIdx < 0 || pageIdx < 0 || pageIdx < appIdx {
+		t.Errorf("expected pages/login.css after app.css in document order, got: %s", got)
+	}
+	if strings.Index(got, "</head>") < pageIdx {
+		t.Errorf("expected per-page link still inside <head>, got: %s", got)
+	}
+}
+
+func TestInjectPerPageStylesheet_DifferentPageNameNotMatched(t *testing.T) {
+	// Only the exact css/pages/<pageName>.css file is picked up — a stylesheet
+	// for a DIFFERENT page must not leak onto this one.
+	dir := makeStylesheetDir(t, map[string]string{"css/pages/signup.css": ".signup{}"})
+	html := `<html><head></head><body></body></html>`
+	got := injectPerPageStylesheet(html, dir, "login")
+	if got != html {
+		t.Errorf("expected no-op when only a different page's stylesheet exists, got: %s", got)
+	}
+}
+
+func TestInjectPerPageStylesheet_FlowsThroughExistingInlinePipeline(t *testing.T) {
+	// End-to-end proof that the injected link needs no new CSS-handling code:
+	// transformStylesheets (the same function every other stylesheet goes
+	// through) must pick it up and inline it exactly like an explicit
+	// template-authored <link> tag.
+	dir := makeStylesheetDir(t, map[string]string{
+		"css/app.css":         "body{margin:0}",
+		"css/pages/login.css": ".login{color:red}",
+	})
+	html := `<html><head><link rel="stylesheet" href="/css/app.css"></head><body></body></html>`
+	withPageCSS := injectPerPageStylesheet(html, dir, "login")
+	got, err := transformStylesheets(withPageCSS, dir, false, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, `<link rel="stylesheet"`) {
+		t.Error("expected both stylesheets converted to <style> blocks, found a surviving <link>")
+	}
+	if !strings.Contains(got, "margin:0") || !strings.Contains(got, "color:red") {
+		t.Errorf("expected both shared and per-page CSS content inlined, got: %s", got)
+	}
+}
+
 // ── transformStylesheets ──────────────────────────────────────────────────────
 
 func makeStylesheetDir(t *testing.T, files map[string]string) string {

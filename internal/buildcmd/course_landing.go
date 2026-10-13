@@ -86,7 +86,7 @@ func renderAndWriteCourse(
 		return nil, fmt.Errorf("rendering course %s: %w", c.Slug, err)
 	}
 
-	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, mirrorer)
+	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, "course", mirrorer)
 	if err != nil {
 		return nil, fmt.Errorf("transforming course %s: %w", c.Slug, err)
 	}
