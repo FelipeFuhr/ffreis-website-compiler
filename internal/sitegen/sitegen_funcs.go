@@ -23,6 +23,101 @@ func pageSlugFunc(siteData any, pageName string) string {
 	return slug
 }
 
+// add, sub, mul, div, and mod give templates the arithmetic html/template's
+// stdlib FuncMap has no equivalent for (pagination offsets, ordinal
+// numbering, zero/one-based index conversion). Each accepts int or float64 --
+// the two numeric kinds YAML/JSON site data and template range indexes
+// actually produce -- and returns float64, matching how Go's fmt prints
+// whole-number floats without a trailing ".0" (3.0 -> "3").
+func add(a, b any) (float64, error) {
+	x, y, err := numericOperands("add", a, b)
+	if err != nil {
+		return 0, err
+	}
+	return x + y, nil
+}
+
+func sub(a, b any) (float64, error) {
+	x, y, err := numericOperands("sub", a, b)
+	if err != nil {
+		return 0, err
+	}
+	return x - y, nil
+}
+
+func mul(a, b any) (float64, error) {
+	x, y, err := numericOperands("mul", a, b)
+	if err != nil {
+		return 0, err
+	}
+	return x * y, nil
+}
+
+func div(a, b any) (float64, error) {
+	x, y, err := numericOperands("div", a, b)
+	if err != nil {
+		return 0, err
+	}
+	if y == 0 {
+		return 0, fmt.Errorf("div: division by zero")
+	}
+	return x / y, nil
+}
+
+func mod(a, b any) (int, error) {
+	x, y, err := numericOperands("mod", a, b)
+	if err != nil {
+		return 0, err
+	}
+	if y == 0 {
+		return 0, fmt.Errorf("mod: division by zero")
+	}
+	return int(x) % int(y), nil
+}
+
+func numericOperands(funcName string, a, b any) (float64, float64, error) {
+	x, ok := toFloat64(a)
+	if !ok {
+		return 0, 0, fmt.Errorf("%s: left operand is not a number, got %T", funcName, a)
+	}
+	y, ok := toFloat64(b)
+	if !ok {
+		return 0, 0, fmt.Errorf("%s: right operand is not a number, got %T", funcName, b)
+	}
+	return x, y, nil
+}
+
+func toFloat64(value any) (float64, bool) {
+	switch v := value.(type) {
+	case int:
+		return float64(v), true
+	case int8:
+		return float64(v), true
+	case int16:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint8:
+		return float64(v), true
+	case uint16:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	default:
+		return 0, false
+	}
+}
+
 func dict(values ...any) (map[string]any, error) {
 	if len(values)%2 != 0 {
 		return nil, fmt.Errorf("dict expects an even number of arguments")

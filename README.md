@@ -9,10 +9,10 @@ A Go CLI that builds and validates the static websites in the ffreis fleet. It l
 ## What it does
 
 - **Builds** a static site from a website root laid out as `<root>/src/{assets,templates}` (legacy fallback `<root>/{site,templates}`), merging `site.d/*.yaml` data layers (shared + per-language) and rendering each page template.
-- **Optimizes output** during the build: critical CSS inlined into `<head>` (minified, `@import` flattened), below-fold CSS deferred, small SVGs/JS/raster images inlined, LQIP blur-up placeholders for eager images, content-hash fingerprinting of all local assets, optional font embedding, optional external-asset mirroring, and progressive-enhancement hints (view transitions, speculation rules, script preloads).
+- **Optimizes output** during the build: critical CSS inlined into `<head>` (minified, `@import` flattened), below-fold CSS deferred, small SVGs/JS/raster images inlined, LQIP blur-up placeholders for eager images, content-hash fingerprinting of all local assets, optional font embedding, optional external-asset mirroring, optional per-page CSS scoping, optional social preview image injection (`og:image`/`twitter:image`), and progressive-enhancement hints (view transitions, speculation rules, script preloads).
 - **Handles multilingual content** via `available_languages` per content item (renders or writes a redirect stub) and injects `<link rel="alternate" hreflang>` tags from `language_variants` site data.
 - **Generates derived content**: Markdown blog posts (`-posts-dir`) into `dist/blog/<slug>/` plus an RSS feed, and paginated `/projects/` and `/courses/` listings from YAML data files.
-- **Validates** the local site-data contract, that rendered pages only reference reachable local CSS/JS assets, baseline sanity invariants, and YAML key parity across language directories.
+- **Validates** the local site-data contract, that rendered pages only reference reachable local CSS/JS assets, baseline sanity invariants, YAML key parity across language directories, and (advisory) whether a page's own CSS has rules unused by that page's own rendered output.
 - **Serves** the site locally over HTTP for development with live template rendering and security headers.
 
 ## Usage
@@ -66,6 +66,45 @@ Common flags (defaults in parentheses):
 | `-output-test-manifest` | Override the default output-test manifest path |
 | `-tracker-enabled` (`false`) | Inject the tracker SDK + `Tracker.init(...)`; needs `-tracker-sdk-version`, `-tracker-site-id`, `-tracker-endpoint` |
 
+#### Per-page CSS scoping
+
+Every page always gets the site's shared stylesheets (whatever `<link
+rel="stylesheet">` tags the layout/partials declare). If
+`src/assets/css/pages/<pageName>.css` also exists, it's automatically added at
+the end of `<head>` for that page only — so e.g. a marketing landing page
+doesn't carry rules that only the logged-in app view needs. `<pageName>` is
+the page's template name (`src/templates/pages/login.gohtml` → `login`), or
+one of the fixed content-type names for generated content: `course`,
+`listing`, `post`, or the configured section name for a paginated listing
+(`-projects-file`/`-courses-file`). No flag, no template changes required —
+a site with no `css/pages/` directory sees zero behavior change. The
+per-page file is injected last, so its rules win the cascade over the shared
+stylesheets for the same selector.
+
+#### Social preview image (`og:image` / `twitter:image`)
+
+If `src/assets/img/og-image.{png,jpg,jpeg,webp}` exists (first match in that
+order), every page gets `<meta property="og:image">` (plus
+`og:image:width`/`og:image:height`, read from the file itself) and
+`<meta name="twitter:image">` injected before `</head>`, pointing at
+`base_url` + the asset's fingerprinted path. Requires `base_url` in site
+data — without it the tags would be relative, not the absolute URL Open
+Graph/Twitter crawlers require, so nothing is injected. A page template
+that already declares its own `og:image`/`twitter:image` tag is left alone;
+the site-wide default only fills in when one isn't already present. No
+flag, no template changes required — a site with no `og-image.*` file sees
+zero behavior change.
+
+This runs as its own pass (unlike CSS/JS/`<img>` references, which the
+generic asset-fingerprinting pass rewrites in place): that pass only
+resolves *relative* local references and treats any `http(s)://` value as
+external, untouched — exactly what an Open-Graph-compliant, already-absolute
+`<meta content="https://...">` written by a template would be, so it can
+reference a local file but can never get that file copied to `dist/` on its
+own. This feature closes that gap at the source (constructing the absolute
+URL itself from `base_url`) rather than asking template authors to work
+around it.
+
 ### serve
 
 ```bash
@@ -79,9 +118,21 @@ Flags: `-website-root` (`.`), `-addr` (`:8080`), `-site-data`, `-sanity` (`true`
 ```bash
 website-compiler validate-site-data -website-root ../my-website
 website-compiler validate-assets    -website-root ../my-website
+website-compiler validate-css       -website-root ../my-website
 website-compiler validate-sanity    -website-root ../my-website
 website-compiler test-output        -website-root ../my-website -out ../my-website/dist
 ```
+
+`validate-css` is the per-page counterpart to `validate-assets`: instead of asking
+"is this CSS file reachable from *any* page" (a hard gate), it asks "does *this*
+page's own rendered HTML use the rules in *the stylesheets this page itself
+links*" and logs a warning for every rule it can prove isn't. It never fails --
+its class-presence check is a conservative heuristic (a rule is flagged only
+when a class/ID it requires is provably absent from the page's rendered
+markup), and it has one known blind spot: markup a page's own client-side
+JavaScript adds after load is invisible to it, since it only sees
+server-rendered HTML. Run it, read the warnings, and judge each one yourself --
+it is a lead to investigate, not something to blindly delete.
 
 ### Website-owned compiled-output tests
 

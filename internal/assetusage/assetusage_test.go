@@ -66,6 +66,29 @@ func TestValidate_FailsForUnusedAssets(t *testing.T) {
 	}
 }
 
+func TestLocalStylesheetHrefs(t *testing.T) {
+	html := `<!doctype html><html><head>
+		<link rel="stylesheet" href="css/base.css">
+		<link rel="stylesheet" href="/css/pages/index.css">
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Foo">
+		<link rel="icon" href="favicon.ico">
+	</head><body></body></html>`
+
+	hrefs, err := LocalStylesheetHrefs(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"css/base.css", "css/pages/index.css"}
+	if len(hrefs) != len(want) {
+		t.Fatalf("got %#v, want %#v", hrefs, want)
+	}
+	for i, h := range want {
+		if hrefs[i] != h {
+			t.Fatalf("got %#v, want %#v", hrefs, want)
+		}
+	}
+}
+
 func TestValidate_FailsForMissingReferencedAsset(t *testing.T) {
 	assetsRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(assetsRoot, "css"), 0o755); err != nil {

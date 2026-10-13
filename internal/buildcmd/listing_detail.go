@@ -97,7 +97,7 @@ func renderAndWriteListing(
 		return nil, fmt.Errorf("rendering listing %s: %w", id, err)
 	}
 
-	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, mirrorer)
+	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, "listing", mirrorer)
 	if err != nil {
 		return nil, fmt.Errorf("transforming listing %s: %w", id, err)
 	}
