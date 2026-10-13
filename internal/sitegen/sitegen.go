@@ -300,14 +300,16 @@ func RenderPages(pages []PageTemplate, siteData map[string]any) (map[string]stri
 // embeddable widgets and demo snippets that must ship without the rest of
 // the site's chrome.
 func templateEntryPoint(siteData map[string]any, pageName string) string {
-	if isFragmentPage(siteData, pageName) {
+	if IsPageFragment(siteData, pageName) {
 		return pageName
 	}
 	return "layout"
 }
 
-// isFragmentPage reports whether site data marks pages.<name>.fragment: true.
-func isFragmentPage(siteData map[string]any, pageName string) bool {
+// IsPageFragment reports whether siteData marks pageName as
+// pages.<pageName>.fragment: true — mirrors IsPageInternal's shape for the
+// sibling compiler-managed page flag.
+func IsPageFragment(siteData map[string]any, pageName string) bool {
 	pagesData, _ := siteData["pages"].(map[string]any)
 	pageData, _ := pagesData[pageName].(map[string]any)
 	fragment, _ := pageData["fragment"].(bool)

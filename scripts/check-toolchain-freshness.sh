@@ -20,20 +20,20 @@ set -euo pipefail
 mod_file="${1:-go.mod}"
 
 pinned="$(grep -E '^toolchain[[:space:]]+go[0-9]' "$mod_file" | awk '{print $2}' || true)"
-if [ -z "$pinned" ]; then
+if [[ -z "$pinned" ]]; then
   go_directive="$(grep -E '^go[[:space:]]+[0-9]' "$mod_file" | awk '{print $2}' || true)"
-  if [ -n "$go_directive" ]; then
+  if [[ -n "$go_directive" ]]; then
     pinned="go$go_directive"
   fi
 fi
-if [ -z "$pinned" ]; then
+if [[ -z "$pinned" ]]; then
   echo "FAIL toolchain-freshness: could not find a 'toolchain' or 'go' directive in $mod_file"
   exit 1
 fi
 
 releases_file="$(mktemp)"
 trap 'rm -f "$releases_file"' EXIT
-curl -fsSL --max-time 15 'https://go.dev/dl/?mode=json' -o "$releases_file"
+curl -fsSL --proto '=https' --tlsv1.2 --max-time 15 'https://go.dev/dl/?mode=json' -o "$releases_file"
 
 result="$(python3 - "$pinned" "$releases_file" <<'PY'
 import json, re, sys

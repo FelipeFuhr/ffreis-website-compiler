@@ -112,20 +112,23 @@ func TestTraceSiteDataUsage_FragmentPageDoesNotRequireLayoutContentBlock(t *test
 	}
 }
 
-func TestIsFragmentPage(t *testing.T) {
+func TestIsPageFragment(t *testing.T) {
 	siteData := map[string]any{
 		"pages": map[string]any{
 			"widget": map[string]any{"fragment": true},
 			"index":  map[string]any{},
 		},
 	}
-	if !isFragmentPage(siteData, "widget") {
+	if !IsPageFragment(siteData, "widget") {
 		t.Error("expected widget to be a fragment page")
 	}
-	if isFragmentPage(siteData, "index") {
+	if IsPageFragment(siteData, "index") {
 		t.Error("expected index not to be a fragment page")
 	}
-	if isFragmentPage(siteData, "missing") {
+	if IsPageFragment(siteData, "missing") {
 		t.Error("expected an unknown page name to default to non-fragment")
+	}
+	if IsPageFragment(map[string]any{}, "widget") {
+		t.Error("expected no pages map at all to default to non-fragment")
 	}
 }

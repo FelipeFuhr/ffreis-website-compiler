@@ -169,19 +169,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 		return buildOptions{}, err
 	}
 
-	// Anti-leak guard: reject /mock/ paths when content-source is prod (the default).
-	// This makes it impossible to bake mock content into a prod build by accident.
-	if opts.contentSource != "mock" {
-		for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile, opts.listingsFile} {
-			if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
-				return buildOptions{}, fmt.Errorf(
-					"content path %q contains /mock/ but --content-source=%q: "+
-						"mock content cannot be used in a prod build; "+
-						"pass --content-source=mock to enable mock content",
-					p, opts.contentSource,
-				)
-			}
-		}
+	if err := validateMockContentPaths(opts); err != nil {
+		return buildOptions{}, err
 	}
 
 	if assetsDirFlag == "" && siteDirFlag != "" {
@@ -191,34 +180,47 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	opts.templatesDir = templatesDirFlag
 	opts.cssSafelistPath = cssSafelistFlag
 
-	if siblingBasePathsFlag != "" {
-		for _, s := range strings.Split(siblingBasePathsFlag, ",") {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				opts.siblingBasePaths = append(opts.siblingBasePaths, s)
-			}
-		}
-	}
-
-	for _, s := range strings.Split(disableSectionsFlag, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			opts.disabledSections = append(opts.disabledSections, s)
-		}
-	}
-
-	for _, s := range strings.Split(assetsIgnoreFlag, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			opts.assetsIgnore = append(opts.assetsIgnore, s)
-		}
-	}
-
-	for _, s := range strings.Split(passthroughFilesFlag, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			opts.passthroughFiles = append(opts.passthroughFiles, s)
-		}
-	}
+	opts.siblingBasePaths = splitCommaList(siblingBasePathsFlag)
+	opts.disabledSections = splitCommaList(disableSectionsFlag)
+	opts.assetsIgnore = splitCommaList(assetsIgnoreFlag)
+	opts.passthroughFiles = splitCommaList(passthroughFilesFlag)
 
 	return opts, nil
+}
+
+// validateMockContentPaths is the anti-leak guard: it rejects any /mock/
+// content path when content-source is prod (the default), so mock data
+// cannot be baked into a prod build by accident.
+func validateMockContentPaths(opts buildOptions) error {
+	if opts.contentSource == "mock" {
+		return nil
+	}
+	for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile, opts.listingsFile} {
+		if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
+			return fmt.Errorf(
+				"content path %q contains /mock/ but --content-source=%q: "+
+					"mock content cannot be used in a prod build; "+
+					"pass --content-source=mock to enable mock content",
+				p, opts.contentSource,
+			)
+		}
+	}
+	return nil
+}
+
+// splitCommaList splits a comma-separated flag value into a trimmed,
+// empty-entry-free slice — shared by every flag that accepts a
+// comma-separated list (sibling base paths, disabled sections, assets-ignore
+// globs, passthrough files). Returns nil for an empty or all-empty input, so
+// an unset flag leaves the corresponding buildOptions field at its zero value.
+func splitCommaList(s string) []string {
+	var result []string
+	for _, item := range strings.Split(s, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func resolveBuildPaths(opts buildOptions) (assetsDir string, templatesDir string, err error) {

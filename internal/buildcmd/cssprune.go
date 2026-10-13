@@ -100,53 +100,75 @@ func classifyAtRule(prelude string) atRuleKind {
 	return atRuleAlwaysKeep
 }
 
+// cssStatementScanner holds the running state of parseCSSStatements' brace-
+// depth scan. Extracted into its own type (with one method per character
+// case) so each case's logic reads as a flat, low-complexity unit instead of
+// nested ifs inside a switch inside a loop.
+type cssStatementScanner struct {
+	out        []cssStatement
+	depth      int
+	start      int
+	preludeEnd int
+}
+
 // parseCSSStatements splits protected CSS (comments/strings/url() already
 // replaced by brace-free placeholder tokens, see protectCSSLiterals) into
 // top-level statements by tracking brace depth. Only depth-0 boundaries end a
 // statement, so nested @media bodies stay intact as one statement's body,
 // parsed recursively later.
 func parseCSSStatements(css string) []cssStatement {
-	var out []cssStatement
-	depth := 0
-	start := 0
-	preludeEnd := -1
+	s := &cssStatementScanner{preludeEnd: -1}
 	for i := 0; i < len(css); i++ {
 		switch css[i] {
 		case '{':
-			if depth == 0 {
-				preludeEnd = i
-			}
-			depth++
+			s.openBrace(i)
 		case '}':
-			if depth > 0 {
-				depth--
-			}
-			if depth == 0 && preludeEnd >= 0 {
-				out = append(out, cssStatement{
-					prelude:  strings.TrimSpace(css[start:preludeEnd]),
-					body:     css[preludeEnd+1 : i],
-					hasBlock: true,
-				})
-				start = i + 1
-				preludeEnd = -1
-			}
+			s.closeBrace(css, i)
 		case ';':
-			if depth == 0 {
-				stmt := strings.TrimSpace(css[start : i+1])
-				if stmt != "" && stmt != ";" {
-					out = append(out, cssStatement{prelude: stmt, hasBlock: false})
-				}
-				start = i + 1
-			}
+			s.semicolon(css, i)
 		}
 	}
-	if tail := strings.TrimSpace(css[start:]); tail != "" {
+	if tail := strings.TrimSpace(css[s.start:]); tail != "" {
 		// Trailing text with no terminating brace/semicolon (malformed, or
 		// just whitespace already trimmed away) — keep verbatim rather than
 		// silently drop content we can't classify.
-		out = append(out, cssStatement{prelude: tail, hasBlock: false})
+		s.out = append(s.out, cssStatement{prelude: tail, hasBlock: false})
 	}
-	return out
+	return s.out
+}
+
+func (s *cssStatementScanner) openBrace(i int) {
+	if s.depth == 0 {
+		s.preludeEnd = i
+	}
+	s.depth++
+}
+
+func (s *cssStatementScanner) closeBrace(css string, i int) {
+	if s.depth > 0 {
+		s.depth--
+	}
+	if s.depth != 0 || s.preludeEnd < 0 {
+		return
+	}
+	s.out = append(s.out, cssStatement{
+		prelude:  strings.TrimSpace(css[s.start:s.preludeEnd]),
+		body:     css[s.preludeEnd+1 : i],
+		hasBlock: true,
+	})
+	s.start = i + 1
+	s.preludeEnd = -1
+}
+
+func (s *cssStatementScanner) semicolon(css string, i int) {
+	if s.depth != 0 {
+		return
+	}
+	stmt := strings.TrimSpace(css[s.start : i+1])
+	if stmt != "" && stmt != ";" {
+		s.out = append(s.out, cssStatement{prelude: stmt, hasBlock: false})
+	}
+	s.start = i + 1
 }
 
 func joinCSSStatements(stmts []cssStatement) string {
@@ -248,28 +270,31 @@ func selectorIsRelevant(sel string, tokens htmlTokens, safelist []string) bool {
 	if len(tags) == 0 && len(classes) == 0 && len(ids) == 0 && len(attrs) == 0 {
 		return true // nothing extractable (e.g. a bare pseudo-class like ":hover") — err safe
 	}
+	if containsRootTag(tags) {
+		return true // document root/body — always relevant
+	}
+	return allTokensPresent(tags, tokens.tags) &&
+		allTokensPresent(classes, tokens.classes) &&
+		allTokensPresent(ids, tokens.ids) &&
+		allTokensPresent(attrs, tokens.attrs)
+}
+
+func containsRootTag(tags []string) bool {
 	for _, t := range tags {
 		if t == "html" || t == "body" {
-			return true // document root/body — always relevant
+			return true
 		}
 	}
-	for _, t := range tags {
-		if !tokens.tags[t] {
-			return false
-		}
-	}
-	for _, c := range classes {
-		if !tokens.classes[c] {
-			return false
-		}
-	}
-	for _, id := range ids {
-		if !tokens.ids[id] {
-			return false
-		}
-	}
-	for _, a := range attrs {
-		if !tokens.attrs[strings.ToLower(a)] {
+	return false
+}
+
+// allTokensPresent reports whether every token in toks is a key in present.
+// Shared by selectorIsRelevant's four token-kind checks (tags, classes, ids,
+// attrs) — all four reduce to the same "is this required token reachable on
+// the page" test once both sides are normalized (lowercase) the same way.
+func allTokensPresent(toks []string, present map[string]bool) bool {
+	for _, t := range toks {
+		if !present[t] {
 			return false
 		}
 	}
@@ -291,7 +316,10 @@ func selectorTokens(sel string) (tags, classes, ids, attrs []string) {
 		ids = append(ids, strings.TrimPrefix(m, "#"))
 	}
 	for _, m := range attrTokenRE.FindAllStringSubmatch(sel, -1) {
-		attrs = append(attrs, m[1])
+		// Lowercased at extraction so allTokensPresent's plain map lookup
+		// matches tokens.attrs, which is populated lowercase too (HTML
+		// attribute names are case-insensitive).
+		attrs = append(attrs, strings.ToLower(m[1]))
 	}
 
 	stripped := classTokenRE.ReplaceAllString(sel, " ")
@@ -412,30 +440,41 @@ func extractHTMLTokens(html string) htmlTokens {
 	for _, m := range openTagRE.FindAllStringSubmatch(html, -1) {
 		t.tags[strings.ToLower(m[1])] = true
 		attrText := m[2]
-
-		for _, cm := range classAttrRE.FindAllStringSubmatch(attrText, -1) {
-			classVal := cm[1]
-			if classVal == "" {
-				classVal = cm[2]
-			}
-			for _, c := range strings.Fields(classVal) {
-				t.classes[c] = true
-			}
-		}
-		for _, im := range idAttrRE.FindAllStringSubmatch(attrText, -1) {
-			idVal := im[1]
-			if idVal == "" {
-				idVal = im[2]
-			}
-			if idVal != "" {
-				t.ids[idVal] = true
-			}
-		}
-		for _, am := range attrNameRE.FindAllStringSubmatch(attrText, -1) {
-			t.attrs[strings.ToLower(am[1])] = true
-		}
+		addClassTokens(attrText, t.classes)
+		addIDToken(attrText, t.ids)
+		addAttrNameTokens(attrText, t.attrs)
 	}
 	return t
+}
+
+func addClassTokens(attrText string, classes map[string]bool) {
+	for _, cm := range classAttrRE.FindAllStringSubmatch(attrText, -1) {
+		classVal := cm[1]
+		if classVal == "" {
+			classVal = cm[2]
+		}
+		for _, c := range strings.Fields(classVal) {
+			classes[c] = true
+		}
+	}
+}
+
+func addIDToken(attrText string, ids map[string]bool) {
+	for _, im := range idAttrRE.FindAllStringSubmatch(attrText, -1) {
+		idVal := im[1]
+		if idVal == "" {
+			idVal = im[2]
+		}
+		if idVal != "" {
+			ids[idVal] = true
+		}
+	}
+}
+
+func addAttrNameTokens(attrText string, attrs map[string]bool) {
+	for _, am := range attrNameRE.FindAllStringSubmatch(attrText, -1) {
+		attrs[strings.ToLower(am[1])] = true
+	}
 }
 
 var (
@@ -514,41 +553,43 @@ func scanTextForClassIDAttrTokens(text string, t *htmlTokens) {
 	for _, tm := range openTagRE.FindAllStringSubmatch(text, -1) {
 		t.tags[strings.ToLower(tm[1])] = true
 	}
+	addClassTokensFromJS(text, t.classes)
+	addIDToken(text, t.ids)
+	for _, am := range jsHyphenAttrRE.FindAllStringSubmatch(text, -1) {
+		t.attrs[strings.ToLower(am[1])] = true
+	}
+}
+
+func addClassTokensFromJS(text string, classes map[string]bool) {
 	for _, cm := range classAttrRE.FindAllStringSubmatch(text, -1) {
 		classVal := cm[1]
 		if classVal == "" {
 			classVal = cm[2]
 		}
 		for _, c := range strings.Fields(classVal) {
-			if classTokenCandidateRE.MatchString(c) {
-				t.classes[c] = true
-				continue
-			}
-			// Not a clean token on its own (JS expression syntax leaked in,
-			// e.g. "${p.logo" or "'fallback'}") — pull any quoted
-			// identifier-shaped substrings out of it instead.
-			for _, qm := range quotedIdentifierRE.FindAllStringSubmatch(c, -1) {
-				ident := qm[1]
-				if ident == "" {
-					ident = qm[2]
-				}
-				if ident != "" {
-					t.classes[ident] = true
-				}
-			}
+			addClassCandidate(c, classes)
 		}
 	}
-	for _, im := range idAttrRE.FindAllStringSubmatch(text, -1) {
-		idVal := im[1]
-		if idVal == "" {
-			idVal = im[2]
-		}
-		if idVal != "" {
-			t.ids[idVal] = true
-		}
+}
+
+// addClassCandidate adds c to classes if it's already a clean token on its
+// own, or — when JS expression syntax has leaked into it (e.g. "${p.logo" or
+// "'fallback'}" from a template-literal ternary) — pulls any quoted
+// identifier-shaped substrings out of it instead. See classTokenCandidateRE's
+// doc comment for why this recovery pass is worth it.
+func addClassCandidate(c string, classes map[string]bool) {
+	if classTokenCandidateRE.MatchString(c) {
+		classes[c] = true
+		return
 	}
-	for _, am := range jsHyphenAttrRE.FindAllStringSubmatch(text, -1) {
-		t.attrs[strings.ToLower(am[1])] = true
+	for _, qm := range quotedIdentifierRE.FindAllStringSubmatch(c, -1) {
+		ident := qm[1]
+		if ident == "" {
+			ident = qm[2]
+		}
+		if ident != "" {
+			classes[ident] = true
+		}
 	}
 }
 
