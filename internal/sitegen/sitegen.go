@@ -285,6 +285,46 @@ func RenderPages(pages []PageTemplate, siteData map[string]any) (map[string]stri
 	return renderedPages, nil
 }
 
+// FragmentContentBlocks lists the template block names a fragment page's inner
+// content may be defined under, in resolution order. A fragment is rendered by
+// executing the first of these the page's template set defines, instead of the
+// shared "layout" block RenderPages executes: a fragment is mounted inside a
+// consuming app's own document, so it must carry no <html>/<head>/<body> shell
+// and no header/footer partials.
+//
+// "page" and "content" are the two names page templates in this fleet already
+// use for their inner content, so an existing page template needs no edit to
+// become a fragment. "fragment" takes precedence so a template that wants a
+// different body when mounted client-side than when rendered as a full page can
+// define both.
+var FragmentContentBlocks = []string{"fragment", "page", "content"}
+
+// RenderFragment executes only a page template's inner content block, returning
+// the HTML with no surrounding layout. The template receives exactly the data
+// RenderPages passes (.PageName + .SiteData) and has every template function
+// available, so a fragment goes through the same data pipeline as a full page.
+func RenderFragment(page PageTemplate, siteData map[string]any) (string, error) {
+	block := ""
+	for _, candidate := range FragmentContentBlocks {
+		if page.Tmpl.Lookup(candidate) != nil {
+			block = candidate
+			break
+		}
+	}
+	if block == "" {
+		return "", fmt.Errorf(
+			"page %q is marked as a fragment but its template defines none of the content blocks %s",
+			page.Name, strings.Join(FragmentContentBlocks, ", "),
+		)
+	}
+
+	var rendered bytes.Buffer
+	if err := page.Tmpl.ExecuteTemplate(&rendered, block, NewTemplateData(page.Name, siteData)); err != nil {
+		return "", fmt.Errorf("rendering fragment %s (block %q): %w", page.Name, block, err)
+	}
+	return rendered.String(), nil
+}
+
 // ValidateSiteDataAndUsage validates site data against its contract, then
 // checks that every contract path is referenced by at least one template.
 func ValidateSiteDataAndUsage(pages []PageTemplate, siteDataResult SiteDataLoadResult, siteDataContractResult SiteDataContractLoadResult) error {

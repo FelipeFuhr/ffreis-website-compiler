@@ -28,6 +28,11 @@
         "bytes": 11855
       },
       {
+        "heading": "Fragment page output mode (`pages.<name>.fragment`)",
+        "file": ".claude/reference/fragment-page-output-mode.md",
+        "bytes": 9276
+      },
+      {
         "heading": "Image alt-text validation (warning only, `imgalt.go` — `validateImageAltText`)",
         "file": ".claude/reference/image-alt-text-validation.md",
         "bytes": 1029

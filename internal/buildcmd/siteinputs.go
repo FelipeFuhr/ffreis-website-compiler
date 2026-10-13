@@ -66,10 +66,18 @@ func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteD
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
+// compilerManagedPageFlags are the per-page site data keys the compiler reads
+// as build metadata rather than as site content: "internal" excludes a page
+// from disk output and the sitemap, "fragment" switches it to <template>
+// fragment output. Both are exempt from contract validation — a site can set
+// either without declaring it in site.contract.yaml, and declaring it anyway
+// does not make it a dangling path.
+var compilerManagedPageFlags = []string{"internal", "fragment"}
+
 // siteDataWithoutPageInternalFlags returns a shallow copy of siteData where
-// the "internal" key has been removed from every page entry. Only the two
-// affected levels (top-level map and the pages map) are copied; deeper values
-// are shared and never mutated.
+// every compilerManagedPageFlags key has been removed from every page entry.
+// Only the two affected levels (top-level map and the pages map) are copied;
+// deeper values are shared and never mutated.
 func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
 	pagesData, ok := siteData["pages"].(map[string]any)
 	if !ok {
@@ -87,7 +95,9 @@ func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
 		for k, v := range pageMap {
 			copied[k] = v
 		}
-		delete(copied, "internal")
+		for _, flag := range compilerManagedPageFlags {
+			delete(copied, flag)
+		}
 		newPages[name] = copied
 	}
 
@@ -116,9 +126,12 @@ func contractPatternsWithoutPageInternal(patterns []string) []string {
 	return filtered
 }
 
+// isPageInternalPattern reports whether a contract pattern names one of the
+// compiler-managed per-page flags (pages.<name>.internal, pages.*.fragment,
+// ...) and should therefore be dropped before contract validation.
 func isPageInternalPattern(pattern string) bool {
 	parts := strings.Split(strings.TrimSpace(pattern), ".")
-	if len(parts) != 3 || parts[0] != "pages" || parts[2] != "internal" {
+	if len(parts) != 3 || parts[0] != "pages" || !isCompilerManagedPageFlag(parts[2]) {
 		return false
 	}
 	segment := parts[1]
@@ -126,6 +139,16 @@ func isPageInternalPattern(pattern string) bool {
 		return true
 	}
 	return segment != "" && !strings.Contains(segment, "*")
+}
+
+// isCompilerManagedPageFlag reports whether key is one of compilerManagedPageFlags.
+func isCompilerManagedPageFlag(key string) bool {
+	for _, flag := range compilerManagedPageFlags {
+		if key == flag {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveSiblingBasePaths returns the URL prefixes of sibling deployments by
