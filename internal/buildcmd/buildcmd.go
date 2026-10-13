@@ -85,7 +85,7 @@ type optionalContent struct {
 	posts           []posts.Post
 	projects        []projects.Project
 	courses         []courses.Course
-	listings        []listings.Listing
+	listings        []map[string]any
 	postTemplate    *sitegen.PageTemplate
 	blogTemplate    *sitegen.PageTemplate
 	courseTemplate  *sitegen.PageTemplate // the internal "course" landing template
@@ -879,7 +879,7 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 	if sectionEnabled(siteData, "listings") {
 		payload.Listings = make([]devItemEntry, 0, len(content.listings))
 		for _, l := range content.listings {
-			payload.Listings = append(payload.Listings, devItemEntry{ID: l.ID, Langs: nil})
+			payload.Listings = append(payload.Listings, devItemEntry{ID: listings.ID(l), Langs: nil})
 		}
 	}
 
