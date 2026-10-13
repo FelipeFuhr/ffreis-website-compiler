@@ -39,15 +39,26 @@ type buildOptions struct {
 	sharedScripts              map[string]bool // populated at runtime by collectSharedScripts
 	embedFonts                 bool
 	inlineBodyCSS              bool
-	rasterInlineThreshold      int
-	siblingBasePaths           []string
-	mirrorExternalAssets       bool
-	mirroredAssetsDir          string
-	enableSanity               bool
-	strictContract             bool
-	cleanURLs                  bool
-	runOutputTests             bool
-	outputTestManifest         string
+	// cssPrune, when enabled, drops CSS rules from an inlined <head> stylesheet
+	// whose selectors don't match anything in that specific page's rendered
+	// HTML — so a page carries only the CSS it actually needs instead of a
+	// shared stylesheet's full contents. See cssprune.go. Off by default:
+	// this changes page output, so sites opt in deliberately.
+	cssPrune cssPruneOptions
+	// cssSafelistPath is the resolved path to the safelist YAML file (flag
+	// override or the <website-root>/src/data/css-safelist.yaml default).
+	// Loaded into cssPrune.safelist by loadCSSSafelist in prepareBuild, once
+	// resolveBuildPaths has determined the data dir.
+	cssSafelistPath       string
+	rasterInlineThreshold int
+	siblingBasePaths      []string
+	mirrorExternalAssets  bool
+	mirroredAssetsDir     string
+	enableSanity          bool
+	strictContract        bool
+	cleanURLs             bool
+	runOutputTests        bool
+	outputTestManifest    string
 	// disabledSections lists content sections (see sectionTable in sections.go
 	// for the current set) to hide: their pages, nav/footer entries, home-page
 	// blocks, and sitemap URLs are omitted. Injected into siteData as
@@ -107,6 +118,9 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.IntVar(&opts.jsSharedInlineThreshold, "js-shared-inline-threshold", -1, "for JS files referenced by more than one page, only inline if smaller than this many bytes; -1 to disable (all JS uses -js-inline-threshold regardless of page count)")
 	fs.BoolVar(&opts.embedFonts, "embed-fonts", false, "embed font files (woff2/woff/ttf/otf/eot) as base64 data URIs in inlined CSS; eliminates font files from dist but increases HTML size")
 	fs.BoolVar(&opts.inlineBodyCSS, "inline-body-css", false, "inline body <link rel=stylesheet> as <style> blocks instead of deferred external links; eliminates CSS files from dist but prevents cross-page CSS cache reuse")
+	fs.BoolVar(&opts.cssPrune.enabled, "prune-unused-css-per-page", false, "drop CSS rules from an inlined <head> stylesheet whose selectors don't match anything in that page's rendered HTML, so each page's inline <style> carries only what it needs; see -css-safelist for classes/attributes a client script adds after load, which must be declared there or their rules will be pruned")
+	var cssSafelistFlag string
+	fs.StringVar(&cssSafelistFlag, "css-safelist", "", "path to a YAML file listing selector substrings (class/attribute patterns a client script toggles after load, e.g. .active, [hidden]) that -prune-unused-css-per-page always keeps regardless of static HTML presence; defaults to <website-root>/src/data/css-safelist.yaml if present")
 	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")
 	var siblingBasePathsFlag string
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
@@ -158,6 +172,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	}
 	opts.assetsDir = assetsDirFlag
 	opts.templatesDir = templatesDirFlag
+	opts.cssSafelistPath = cssSafelistFlag
 
 	if siblingBasePathsFlag != "" {
 		for _, s := range strings.Split(siblingBasePathsFlag, ",") {

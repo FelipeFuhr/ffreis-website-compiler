@@ -158,7 +158,7 @@ func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *e
 func applyPositionBasedTransforms(html string, opts buildOptions, assetsDir string) (string, error) {
 	// Position-based CSS: head CSS → <style> (critical), body CSS → deferred external
 	// (or inlined when -inline-body-css is set).
-	updated, err := transformStylesheets(html, assetsDir, opts.embedFonts, opts.inlineBodyCSS)
+	updated, err := transformStylesheets(html, assetsDir, opts.embedFonts, opts.inlineBodyCSS, opts.cssPrune)
 	if err != nil {
 		return "", fmt.Errorf("transforming stylesheets: %w", err)
 	}
@@ -252,18 +252,18 @@ func injectCachedScriptPreloads(html string) string {
 // This mirrors the JS-at-end convention: document position signals loading priority.
 // Templates that want a stylesheet deferred simply place its <link> in the body.
 // If </head> is absent the entire document is treated as head (all CSS inlined).
-func transformStylesheets(doc, assetsDir string, embedFonts, inlineBodyCSS bool) (string, error) {
+func transformStylesheets(doc, assetsDir string, embedFonts, inlineBodyCSS bool, prune cssPruneOptions) (string, error) {
 	loc := headEndRE.FindStringIndex(doc)
 	if loc == nil {
-		return inlineLocalStylesheetsPreserveURLs(doc, assetsDir, embedFonts)
+		return inlineLocalStylesheetsPreserveURLs(doc, doc, assetsDir, embedFonts, prune)
 	}
-	head, err := inlineLocalStylesheetsPreserveURLs(doc[:loc[0]], assetsDir, embedFonts)
+	head, err := inlineLocalStylesheetsPreserveURLs(doc[:loc[0]], doc, assetsDir, embedFonts, prune)
 	if err != nil {
 		return "", err
 	}
 	var tail string
 	if inlineBodyCSS {
-		tail, err = inlineLocalStylesheetsPreserveURLs(doc[loc[0]:], assetsDir, embedFonts)
+		tail, err = inlineLocalStylesheetsPreserveURLs(doc[loc[0]:], doc, assetsDir, embedFonts, prune)
 	} else {
 		tail, err = deferLocalStylesheets(doc[loc[0]:], assetsDir)
 	}

@@ -202,6 +202,14 @@ func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assets
 		return
 	}
 
+	if opts.cssPrune.enabled {
+		safelistPath := resolveCSSSafelistPath(opts.cssSafelistPath, templatesDir)
+		opts.cssPrune.safelist, err = loadCSSSafelist(safelistPath)
+		if err != nil {
+			return
+		}
+	}
+
 	logBuildStart(logger, opts, assetsDir, templatesDir)
 
 	if err = validateBuildDirs(assetsDir, templatesDir); err != nil {
