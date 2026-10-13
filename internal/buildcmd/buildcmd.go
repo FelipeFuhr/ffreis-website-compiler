@@ -426,7 +426,7 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		// applyPositionBasedTransforms is about to inline into <svg> (icons
 		// under svgInlineSizeLimit lose their <img> tag entirely).
 		validateImageAltText(logger, page.Name, renderedPages[page.Name])
-		htmlOut, pageCopy, err := transformPage(renderedPages[page.Name], opts, assetsDir, mirrorer)
+		htmlOut, pageCopy, err := transformPage(renderedPages[page.Name], opts, assetsDir, page.Name, mirrorer)
 		if err != nil {
 			return fmt.Errorf("transforming %s: %w", target, err)
 		}

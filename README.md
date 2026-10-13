@@ -9,7 +9,7 @@ A Go CLI that builds and validates the static websites in the ffreis fleet. It l
 ## What it does
 
 - **Builds** a static site from a website root laid out as `<root>/src/{assets,templates}` (legacy fallback `<root>/{site,templates}`), merging `site.d/*.yaml` data layers (shared + per-language) and rendering each page template.
-- **Optimizes output** during the build: critical CSS inlined into `<head>` (minified, `@import` flattened), below-fold CSS deferred, small SVGs/JS/raster images inlined, LQIP blur-up placeholders for eager images, content-hash fingerprinting of all local assets, optional font embedding, optional external-asset mirroring, and progressive-enhancement hints (view transitions, speculation rules, script preloads).
+- **Optimizes output** during the build: critical CSS inlined into `<head>` (minified, `@import` flattened), below-fold CSS deferred, small SVGs/JS/raster images inlined, LQIP blur-up placeholders for eager images, content-hash fingerprinting of all local assets, optional font embedding, optional external-asset mirroring, optional per-page CSS scoping, and progressive-enhancement hints (view transitions, speculation rules, script preloads).
 - **Handles multilingual content** via `available_languages` per content item (renders or writes a redirect stub) and injects `<link rel="alternate" hreflang>` tags from `language_variants` site data.
 - **Generates derived content**: Markdown blog posts (`-posts-dir`) into `dist/blog/<slug>/` plus an RSS feed, and paginated `/projects/` and `/courses/` listings from YAML data files.
 - **Validates** the local site-data contract, that rendered pages only reference reachable local CSS/JS assets, baseline sanity invariants, and YAML key parity across language directories.
@@ -65,6 +65,21 @@ Common flags (defaults in parentheses):
 | `-run-output-tests` (`false`) | Run the website-owned `tests/output.yaml` manifest after compiling |
 | `-output-test-manifest` | Override the default output-test manifest path |
 | `-tracker-enabled` (`false`) | Inject the tracker SDK + `Tracker.init(...)`; needs `-tracker-sdk-version`, `-tracker-site-id`, `-tracker-endpoint` |
+
+#### Per-page CSS scoping
+
+Every page always gets the site's shared stylesheets (whatever `<link
+rel="stylesheet">` tags the layout/partials declare). If
+`src/assets/css/pages/<pageName>.css` also exists, it's automatically added at
+the end of `<head>` for that page only — so e.g. a marketing landing page
+doesn't carry rules that only the logged-in app view needs. `<pageName>` is
+the page's template name (`src/templates/pages/login.gohtml` → `login`), or
+one of the fixed content-type names for generated content: `course`,
+`listing`, `post`, or the configured section name for a paginated listing
+(`-projects-file`/`-courses-file`). No flag, no template changes required —
+a site with no `css/pages/` directory sees zero behavior change. The
+per-page file is injected last, so its rules win the cascade over the shared
+stylesheets for the same selector.
 
 ### serve
 

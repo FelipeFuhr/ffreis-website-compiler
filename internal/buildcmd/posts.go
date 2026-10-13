@@ -164,7 +164,7 @@ func renderAndWritePost(logger *slog.Logger, opts buildOptions, postTpl sitegen.
 		return nil, fmt.Errorf("rendering post %s: %w", post.Meta.Slug, err)
 	}
 
-	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, mirrorer)
+	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, "post", mirrorer)
 	if err != nil {
 		return nil, fmt.Errorf("transforming post %s: %w", post.Meta.Slug, err)
 	}

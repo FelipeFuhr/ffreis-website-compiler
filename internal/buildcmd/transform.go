@@ -3,7 +3,9 @@ package buildcmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -74,7 +76,43 @@ func injectDevData(html string, opts buildOptions) string {
 	return strings.Replace(html, "</head>", inject+headEndTag, 1)
 }
 
-func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
+// perPageStylesheetRelPath returns the conventional per-page stylesheet path
+// (css/pages/<pageName>.css) for pageName, or "" when pageName is empty.
+// pageName is always compiler-internal (a loaded template's name, or one of
+// the fixed "course"/"listing"/"post" content-type names, or a configured
+// section name) — never raw user input — so a plain filepath.Join is safe
+// here without readAsset's extra path-escape guarding.
+func perPageStylesheetRelPath(pageName string) string {
+	if pageName == "" {
+		return ""
+	}
+	return "css/pages/" + pageName + ".css"
+}
+
+// injectPerPageStylesheet adds a <link rel="stylesheet"> for
+// css/pages/<pageName>.css at the end of <head> — but ONLY when that file
+// actually exists under assetsDir. A page/site with no per-page stylesheet
+// sees zero change, so this is purely additive and needs no opt-in flag.
+// Injected last (after any explicit <link> tags already in the template)
+// so page-specific rules win the cascade over shared tokens/fonts/app/public
+// stylesheets. Must run before transformStylesheets/inlineLocalAssets so the
+// injected tag flows through the SAME existing inline/fingerprint pipeline
+// as every other stylesheet link — no new CSS-handling code needed, this is
+// purely "decide whether to add one more <link> tag before head closes".
+func injectPerPageStylesheet(html, assetsDir, pageName string) string {
+	relPath := perPageStylesheetRelPath(pageName)
+	if relPath == "" {
+		return html
+	}
+	if _, err := os.Stat(filepath.Join(assetsDir, relPath)); err != nil {
+		return html
+	}
+	inject := `<link rel="stylesheet" href="/` + relPath + `">`
+	return strings.Replace(html, "</head>", inject+headEndTag, 1)
+}
+
+func transformPage(html string, opts buildOptions, assetsDir, pageName string, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
+	html = injectPerPageStylesheet(html, assetsDir, pageName)
 	html = injectNavigationEnhancements(html)
 	html = injectTracker(html, opts)
 	html = injectDevData(html, opts)
