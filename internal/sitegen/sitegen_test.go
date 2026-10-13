@@ -23,6 +23,36 @@ func TestDictOddPairsError(t *testing.T) {
 	}
 }
 
+func TestIsPageInternal(t *testing.T) {
+	siteData := map[string]any{
+		"pages": map[string]any{
+			"game":  map[string]any{"internal": true},
+			"index": map[string]any{"internal": false},
+			"about": map[string]any{"title": "About"},
+		},
+	}
+
+	cases := []struct {
+		name     string
+		siteData map[string]any
+		pageName string
+		want     bool
+	}{
+		{"marked internal", siteData, "game", true},
+		{"explicitly not internal", siteData, "index", false},
+		{"no internal key at all", siteData, "about", false},
+		{"page not present in site data", siteData, "missing", false},
+		{"no pages map at all", map[string]any{}, "game", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsPageInternal(tc.siteData, tc.pageName); got != tc.want {
+				t.Fatalf("IsPageInternal(%q) = %v, want %v", tc.pageName, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestArithmeticFuncs(t *testing.T) {
 	cases := []struct {
 		name string

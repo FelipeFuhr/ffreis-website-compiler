@@ -41,6 +41,7 @@ func Run(args []string, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	renderedPages = withoutInternalPages(renderedPages, inputs.SiteDataResult.Data)
 
 	result, err := cssusage.Validate(assetsDir, renderedPages)
 	if err != nil {
@@ -64,6 +65,23 @@ func Run(args []string, logger *slog.Logger) error {
 		"findings", len(result.Findings),
 	)
 	return nil
+}
+
+// withoutInternalPages drops pages.<name>.internal: true pages before the
+// CSS usage check. Those templates exist only so the compiler's asset-usage
+// validator sees a given CSS file as "used" by something it renders -- their
+// real content is minimal or empty by design, so checking them here would
+// report nearly every rule in whatever they're forced to link as "unused",
+// which is noise about the stub, not a finding about the site.
+func withoutInternalPages(renderedPages map[string]string, siteData map[string]any) map[string]string {
+	filtered := make(map[string]string, len(renderedPages))
+	for pageName, html := range renderedPages {
+		if sitegen.IsPageInternal(siteData, pageName) {
+			continue
+		}
+		filtered[pageName] = html
+	}
+	return filtered
 }
 
 type validateCSSOptions struct {

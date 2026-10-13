@@ -197,11 +197,9 @@ func sectionEnabled(siteData map[string]any, name string) bool {
 // validation) but excluded from HTML output and sitemap generation; disabled
 // sections are dropped entirely so no listing/detail page is emitted.
 func filterInternalPages(pages []sitegen.PageTemplate, siteData map[string]any) []sitegen.PageTemplate {
-	pagesData, _ := siteData["pages"].(map[string]any)
 	result := pages[:0:0]
 	for _, p := range pages {
-		pd, _ := pagesData[p.Name].(map[string]any)
-		if internal, _ := pd["internal"].(bool); internal {
+		if sitegen.IsPageInternal(siteData, p.Name) {
 			continue
 		}
 		if sec := pageSection(p.Name); sec != "" && !sectionEnabled(siteData, sec) {
