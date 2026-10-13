@@ -836,3 +836,237 @@ func TestInjectTracker_QuotesEmbeddedInValuesAreEscaped(t *testing.T) {
 		t.Errorf("expected escaped quote in siteId, got: %s", got)
 	}
 }
+
+// ── injectScriptDefer ──────────────────────────────────────────────────────
+
+func TestInjectScriptDefer_AddsDeferToLocalScript(t *testing.T) {
+	html := `<body><script src="/app.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Exact-shape check, not just substring presence: a regression here once
+	// inserted defer="defer" into the CLOSING tag ("</script defer=\"defer\">"),
+	// which still contains the substring `defer="defer"` and so passed a
+	// looser Contains-only check despite being invalid HTML.
+	want := `<body><script src="/app.js" defer="defer"></script></body>`
+	if got != want {
+		t.Errorf("expected defer on the opening tag, got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestInjectScriptDefer_LeavesExternalScriptUntouched(t *testing.T) {
+	html := `<body><script src="https://cdn.example.com/lib.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "defer") {
+		t.Errorf("expected external script left untouched, got: %s", got)
+	}
+}
+
+func TestInjectScriptDefer_LeavesModuleScriptUntouched(t *testing.T) {
+	html := `<body><script type="module" src="/app.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "defer") {
+		t.Errorf("expected type=module script left untouched (already deferred by spec), got: %s", got)
+	}
+}
+
+func TestInjectScriptDefer_RespectsExistingDefer(t *testing.T) {
+	html := `<body><script defer src="/app.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Count(got, "defer") != 1 {
+		t.Errorf("expected exactly one defer (not duplicated), got: %s", got)
+	}
+}
+
+func TestInjectScriptDefer_RespectsExistingAsync(t *testing.T) {
+	html := `<body><script async src="/app.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "defer") {
+		t.Errorf("expected async script left as-is, not also given defer, got: %s", got)
+	}
+}
+
+func TestInjectScriptDefer_DoesNotMatchDeferSubstringInSrcPath(t *testing.T) {
+	// A src path that happens to contain "defer" (e.g. a directory name) must
+	// not be mistaken for an already-deferred script.
+	html := `<body><script src="/deferred-utils/app.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `defer="defer"`) {
+		t.Errorf("expected defer added despite 'defer' substring in src path, got: %s", got)
+	}
+}
+
+func TestInjectScriptDefer_MultipleScriptsAllDeferred(t *testing.T) {
+	html := `<body><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `<body><script src="/a.js" defer="defer"></script><script src="/b.js" defer="defer"></script><script src="/c.js" defer="defer"></script></body>`
+	if got != want {
+		t.Errorf("expected all three local scripts deferred on their opening tags in order, got: %s\nwant: %s", got, want)
+	}
+	if strings.Contains(got, "</script defer") {
+		t.Errorf("expected no closing tag to carry an attribute, got: %s", got)
+	}
+}
+
+// ── hoistExternalCSSImports ─────────────────────────────────────────────────
+
+func TestHoistExternalCSSImports_HoistsImportToLinkAndPreconnect(t *testing.T) {
+	html := `<head><style>@import url("https://fonts.example.com/css?family=X");body{color:red}</style></head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "@import") {
+		t.Errorf("expected @import removed from style block, got: %s", got)
+	}
+	if !strings.Contains(got, `<link rel="stylesheet" href="https://fonts.example.com/css?family=X">`) {
+		t.Errorf("expected hoisted stylesheet link, got: %s", got)
+	}
+	if !strings.Contains(got, `<link rel="preconnect" href="https://fonts.example.com">`) {
+		t.Errorf("expected preconnect for the import's origin, got: %s", got)
+	}
+	if !strings.Contains(got, "color:red") {
+		t.Errorf("expected the rest of the style block's CSS preserved, got: %s", got)
+	}
+}
+
+func TestHoistExternalCSSImports_HoistedLinkPrecedesStyleBlock(t *testing.T) {
+	html := `<head><style>@import url("https://fonts.example.com/css");body{}</style></head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	linkIdx := strings.Index(got, "<link")
+	styleIdx := strings.Index(got, "<style")
+	if linkIdx == -1 || styleIdx == -1 || linkIdx > styleIdx {
+		t.Errorf("expected hoisted <link> to precede <style> (cascade order), got: %s", got)
+	}
+}
+
+func TestHoistExternalCSSImports_GoogleFontsGetsBonusGstaticPreconnect(t *testing.T) {
+	html := `<head><style>@import url("https://fonts.googleapis.com/css2?family=Roboto");</style></head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>`) {
+		t.Errorf("expected bonus fonts.gstatic.com preconnect for a Google Fonts import, got: %s", got)
+	}
+}
+
+func TestHoistExternalCSSImports_NonGoogleFontsImportNoBonusPreconnect(t *testing.T) {
+	html := `<head><style>@import url("https://fonts.example.com/css");</style></head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "gstatic") {
+		t.Errorf("expected no gstatic preconnect for a non-Google-Fonts import, got: %s", got)
+	}
+}
+
+func TestHoistExternalCSSImports_SameImportAcrossTwoStyleBlocksHoistedOnce(t *testing.T) {
+	html := `<head>` +
+		`<style>@import url("https://fonts.example.com/css");body{}</style>` +
+		`<style>@import url("https://fonts.example.com/css");.w{}</style>` +
+		`</head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n := strings.Count(got, `<link rel="stylesheet" href="https://fonts.example.com/css">`); n != 1 {
+		t.Errorf("expected the duplicate import hoisted exactly once, got %d: %s", n, got)
+	}
+	if n := strings.Count(got, `<link rel="preconnect" href="https://fonts.example.com">`); n != 1 {
+		t.Errorf("expected preconnect deduplicated exactly once, got %d: %s", n, got)
+	}
+}
+
+func TestHoistExternalCSSImports_NoOpWhenNoExternalImport(t *testing.T) {
+	html := `<head><style>body{color:red}</style></head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != html {
+		t.Errorf("expected no change when there's no external @import, got: %s", got)
+	}
+}
+
+func TestHoistExternalCSSImports_LocalImportLeftAlone(t *testing.T) {
+	// A local @import should never appear here in practice (flattenCSSImports
+	// already expands it before this runs), but this function must not
+	// mistake one for external if it somehow does.
+	html := `<head><style>@import url("/css/shared.css");body{}</style></head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `@import url("/css/shared.css")`) {
+		t.Errorf("expected local @import left untouched, got: %s", got)
+	}
+	if strings.Contains(got, `<link rel="stylesheet"`) {
+		t.Errorf("expected no hoisted link for a local import, got: %s", got)
+	}
+}
+
+func TestHoistExternalCSSImports_PreservesMediaQuerySuffix(t *testing.T) {
+	// "@import url(...) print;" must become a <link media="print">, not an
+	// unconditional one -- dropping the suffix would silently make a
+	// conditional import apply unconditionally.
+	html := `<head><style>@import url("https://fonts.example.com/print.css") print;</style></head>`
+	got, err := hoistExternalCSSImports(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `<link rel="stylesheet" href="https://fonts.example.com/print.css" media="print">`) {
+		t.Errorf("expected hoisted link to carry the media=print condition, got: %s", got)
+	}
+}
+
+func TestRun_HoistsExternalFontImportThroughFullPipeline(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           `@import url("https://fonts.googleapis.com/css2?family=Roboto");body{color:#000}`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>hello</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	html := string(mustReadFile(t, filepath.Join(outDir, fileAgendaHTML)))
+	if strings.Contains(html, "@import") {
+		t.Fatalf("expected @import hoisted out of the rendered page, got: %s", html)
+	}
+	if !strings.Contains(html, `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto">`) {
+		t.Fatalf("expected hoisted Google Fonts stylesheet link in rendered page, got: %s", html)
+	}
+	if !strings.Contains(html, `<link rel="preconnect" href="https://fonts.googleapis.com">`) {
+		t.Fatalf("expected preconnect to fonts.googleapis.com in rendered page, got: %s", html)
+	}
+	if !strings.Contains(html, `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>`) {
+		t.Fatalf("expected bonus preconnect to fonts.gstatic.com in rendered page, got: %s", html)
+	}
+}

@@ -53,6 +53,7 @@ var (
 	imgTagRE        = regexp.MustCompile(`(?is)<img\s+[^>]*src=["']([^"']+)["'][^>]*>`)
 	iconTagRE       = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["'][^"']*icon[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>`)
 	manifestTagRE   = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["']manifest["'][^>]*href=["']([^"']+)["'][^>]*>`)
+	styleTagRE      = regexp.MustCompile(`(?is)<style([^>]*)>(.*?)</style>`)
 	cssURLRE        = regexp.MustCompile(`url\(\s*['"]?([^'"\)]+)['"]?\s*\)`)
 	cssImportRE     = regexp.MustCompile(`(?is)@import\s+(?:url\(\s*)?['"]?([^'"\)\s;]+)['"]?\s*\)?([^;]*);`)
 	xmlProcInstRE   = regexp.MustCompile(`(?i)<\?xml\b[^?]*\?>`)
@@ -68,6 +69,13 @@ var (
 
 	// headEndRE matches </head> for position-based CSS loading split.
 	headEndRE = regexp.MustCompile(`(?i)</head>`)
+
+	// scriptDeferOrAsyncRE detects a bare boolean `defer`/`async` attribute
+	// (getTagAttr can't: it only matches `attr="value"` shapes) preceded by
+	// whitespace so it can't false-match "defer"/"async" appearing inside a
+	// quoted attribute value (e.g. a src like "/defer/x.js" is not preceded
+	// by whitespace at that position).
+	scriptDeferOrAsyncRE = regexp.MustCompile(`(?i)\s(?:defer|async)\b`)
 
 	// baseHrefTagRE extracts the href value from a <base href="..."> tag.
 	baseHrefTagRE = regexp.MustCompile(`(?is)<base\s+[^>]*href=["']([^"']+)["'][^>]*>`)

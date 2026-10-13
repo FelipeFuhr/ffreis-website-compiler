@@ -3,6 +3,7 @@ package buildcmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -133,6 +134,18 @@ func transformPage(html string, opts buildOptions, assetsDir, pageName string, m
 		html = updated
 	}
 
+	// Hoist any external @import (e.g. a Google Fonts stylesheet) left inside
+	// an inlined <style> block out into a real <link rel="stylesheet"> plus a
+	// preconnect hint. Runs after both the -inline-assets and the default
+	// branch above, since either can produce a <style> block containing one
+	// (flattenCSSImports always leaves an external @import verbatim — see
+	// expandCSSImport in inlining.go).
+	hoistedHTML, err := hoistExternalCSSImports(html)
+	if err != nil {
+		return "", nil, fmt.Errorf("hoisting external CSS imports: %w", err)
+	}
+	html = hoistedHTML
+
 	// Default lazy-loading: any <img> not already carrying a loading attribute
 	// gets loading="lazy" so the browser defers fetching/decoding it until it's
 	// near the viewport. Above-the-fold images opt out by setting
@@ -220,12 +233,65 @@ func applyPositionBasedTransforms(html string, opts buildOptions, assetsDir stri
 		}
 		html = updated
 	}
+	// Defer every remaining local <script src> tag so the browser can keep
+	// parsing/painting instead of blocking on each script's fetch in turn.
+	updated, err = injectScriptDefer(html)
+	if err != nil {
+		return "", fmt.Errorf("deferring scripts: %w", err)
+	}
+	html = updated
+
 	// Inject <link rel="preload" as="script"> hints for any local scripts that were NOT
 	// inlined (i.e. they will be fingerprinted and served as separate cached files).
 	// Preloads let the browser start fetching these scripts at HTML parse time instead
 	// of waiting to encounter the <script> tag later in the body.
 	html = injectCachedScriptPreloads(html)
 	return html, nil
+}
+
+// injectScriptDefer adds `defer` to every local <script src="..."> tag that
+// doesn't already declare `defer`, `async`, or `type="module"` (a module
+// script is deferred by the HTML spec already). A script tag the template
+// author already marked defer/async keeps whatever they chose.
+//
+// defer lets the browser continue parsing the rest of the document instead
+// of blocking on each script's fetch in turn, while defer's own spec
+// guarantee — deferred scripts execute in document order, after parsing
+// completes but before DOMContentLoaded — keeps every script's relative
+// execution order identical to today's synchronous load. That's the same
+// "strictly faster, never a behavior change" shape as
+// injectCachedScriptPreloads/injectDefaultLazyLoading, so — like them —
+// this is unconditional, no flag.
+//
+// Scoped to local scripts only, matching inlineSmallLocalScripts/
+// injectCachedScriptPreloads: an externally-hosted script may have an
+// author-intended synchronous-load reason (e.g. a polyfill gating what
+// runs after it) that this compiler has no visibility into.
+func injectScriptDefer(html string) (string, error) {
+	return replaceTagWith(html, scriptTagRE, func(tag string, refs []string) (string, error) {
+		src := refs[1]
+		if isExternalRef(src) {
+			return tag, nil
+		}
+		if strings.EqualFold(getTagAttr(tag, "type"), "module") {
+			return tag, nil
+		}
+		if scriptDeferOrAsyncRE.MatchString(tag) {
+			return tag, nil
+		}
+		// tag is the whole "<script ...src=...>...</script>" span --
+		// scriptTagRE requires an immediately-following close tag with no
+		// body — so addOrReplaceAttr's generic "insert before the tag's
+		// last >" would land on </script>'s '>' instead of the opening
+		// tag's, producing invalid markup like "</script defer=\"defer\">".
+		// Insert right after the OPENING tag's own '>' (the first one)
+		// explicitly instead.
+		idx := strings.Index(tag, ">")
+		if idx == -1 {
+			return tag, nil
+		}
+		return tag[:idx] + ` defer="defer"` + tag[idx:], nil
+	})
 }
 
 // injectCachedScriptPreloads injects a <link rel="preload" as="script" href="..."> hint
@@ -422,4 +488,97 @@ func svgFromImgTag(imgTag string, svgData []byte) string {
 	}
 
 	return svg[:loc[0]] + root + svg[loc[1]:]
+}
+
+// googleFontsCSSOrigin is special-cased in hoistExternalCSSImports: Google's
+// own documented recommendation is to preconnect to fonts.googleapis.com (the
+// CSS) AND fonts.gstatic.com (the font files that CSS response references),
+// not just the host the @import itself names. Specific and verifiable enough
+// to hardcode; a general CDN-to-related-host table is not attempted here.
+const (
+	googleFontsCSSOrigin  = "https://fonts.googleapis.com"
+	googleFontsFileOrigin = "https://fonts.gstatic.com"
+)
+
+// hoistExternalCSSImports finds @import url("https://...") statements left
+// inside an inlined <style> block — flattenCSSImports always leaves an
+// external @import verbatim (see expandCSSImport in inlining.go), since the
+// compiler has no local file to expand it from — and hoists each into a real
+// <link rel="stylesheet"> immediately before that <style> block, plus a
+// <link rel="preconnect"> for its origin.
+//
+// An @import nested inside a <style> block still carries @import's inherent
+// "this stylesheet isn't ready until the import resolves" semantics, and is
+// less reliably/early discovered by a browser's preload scanner than an
+// explicit sibling <link> — the same reason every web-performance guide
+// recommends <link> over @import, regardless of whether the importing
+// stylesheet is itself inline or external. Hoisting changes nothing about
+// what loads or how the page looks, only when the browser can start
+// fetching it — like injectCachedScriptPreloads/injectDefaultLazyLoading,
+// this is unconditional, no flag: strictly faster, never a behavior change.
+//
+// The hoisted <link> is inserted immediately before the <style> block it
+// came from (not collected and dropped at the end of <head>) so cascade
+// order is preserved exactly: @import rules apply before the rest of that
+// stylesheet, same as a preceding sibling <link> would. Each distinct
+// import URL is hoisted once per page even if it's repeated across multiple
+// <style> blocks (e.g. separately inlined head and body CSS both importing
+// the same font).
+func hoistExternalCSSImports(html string) (string, error) {
+	seenImport := map[string]bool{}
+	seenOrigin := map[string]bool{}
+
+	return replaceTagWith(html, styleTagRE, func(_ string, refs []string) (string, error) {
+		attrs, content := refs[1], refs[2]
+
+		var prefix strings.Builder
+		newContent := cssImportRE.ReplaceAllStringFunc(content, func(stmt string) string {
+			m := cssImportRE.FindStringSubmatch(stmt)
+			if m == nil {
+				return stmt
+			}
+			ref := strings.TrimSpace(m[1])
+			if !isExternalRef(ref) {
+				return stmt // local @import: flattenCSSImports already expanded it
+			}
+			// @import's optional trailing media query ("@import url(...)
+			// print;") must carry over as the hoisted <link>'s media
+			// attribute — dropping it would silently make a conditional
+			// import unconditional.
+			media := strings.TrimSpace(m[2])
+			if seenImport[ref] {
+				return "" // already hoisted elsewhere on this page
+			}
+			seenImport[ref] = true
+
+			origin := originOf(ref)
+			if !seenOrigin[origin] {
+				seenOrigin[origin] = true
+				prefix.WriteString(`<link rel="preconnect" href="` + origin + `">` + "\n    ")
+				if origin == googleFontsCSSOrigin && !seenOrigin[googleFontsFileOrigin] {
+					seenOrigin[googleFontsFileOrigin] = true
+					prefix.WriteString(`<link rel="preconnect" href="` + googleFontsFileOrigin + `" crossorigin>` + "\n    ")
+				}
+			}
+			mediaAttr := ""
+			if media != "" {
+				mediaAttr = ` media="` + htmlEscape(media) + `"`
+			}
+			prefix.WriteString(`<link rel="stylesheet" href="` + ref + `"` + mediaAttr + `>` + "\n    ")
+			return ""
+		})
+
+		return prefix.String() + "<style" + attrs + ">" + newContent + "</style>", nil
+	})
+}
+
+// originOf returns rawURL's scheme://host, or rawURL itself if it doesn't
+// parse as an absolute URL (defensive only — isExternalRef already confirmed
+// an http(s):// or scheme-relative prefix before this is ever called).
+func originOf(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return rawURL
+	}
+	return u.Scheme + "://" + u.Host
 }
