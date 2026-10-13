@@ -60,7 +60,7 @@ EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 
 .PHONY: mutation-test mutation fuzz help info install build build-all build-inline build-no-assets serve \
 	example-build clean clean-example container-build docker-build ci-list \
-	fmt fmt-check lint lint-instructions test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
+	fmt fmt-check lint lint-instructions check-toolchain test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
 	validate plan \
 	secrets-scan-staged hook-generated-drift \
 	lefthook-bootstrap lefthook-install lefthook-run lefthook
@@ -154,6 +154,9 @@ lint: ## Run golangci-lint
 
 lint-instructions: ## Verify the AGENTS.md rules/reference split hasn't silently dropped a rule
 	@bash scripts/check-instructions.sh
+
+check-toolchain: ## Fail if go.mod's toolchain pin isn't the latest patch of its branch
+	@bash scripts/check-toolchain-freshness.sh go.mod
 
 validate: ## Static analysis and compilation check (go vet + build)
 	go vet ./...

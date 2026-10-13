@@ -1,0 +1,75 @@
+name: Toolchain Freshness
+
+# Detects a stale go.mod `toolchain` pin. govulncheck (part of `make
+# quality-gates`, run on every push) only flags vulnerabilities reachable from
+# this module's own call graph — it does not treat an outdated Go toolchain
+# as a finding on its own. go.mod's toolchain pin once accumulated 13
+# unpatched CVEs before anyone noticed. `make check-toolchain`
+# (scripts/check-toolchain-freshness.sh) compares the pin against go.dev's
+# release feed directly: Go patch releases are security/bugfix-only, so
+# anything but the latest patch of the pinned major.minor branch is itself
+# the signal, independent of reachability.
+#
+# Scheduled rather than wired into pre-commit/pre-push: it needs network
+# access to go.dev, and a transient fetch failure should not block every
+# local commit or push. Also runs on any PR/push that touches go.mod, for
+# fast feedback on a toolchain bump introduced in that change.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # weekly, Monday 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual run (optional)"
+        required: false
+        type: string
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "go.mod"
+      - "scripts/check-toolchain-freshness.sh"
+      - ".github/workflows/toolchain-freshness.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "go.mod"
+      - "scripts/check-toolchain-freshness.sh"
+      - ".github/workflows/toolchain-freshness.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-toolchain:
+    permissions:
+      contents: read
+    uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-run-commands.yml@5dfbb4986ceb88f6518fa719da3a255294cf03cf
+    with:
+      working-directory: "."
+      timeout-minutes: 5
+      commands: |-
+        set -euo pipefail
+        make check-toolchain
+
+  notify-failure:
+    needs: [check-toolchain]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ [CI] ${context.workflow} failed (${new Date().toISOString().split('T')[0]})`,
+              body: [
+                `**Workflow:** ${context.workflow}`,
+                `**Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              ].join('\n'),
+            });
