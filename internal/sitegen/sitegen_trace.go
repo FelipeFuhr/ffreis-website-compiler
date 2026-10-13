@@ -34,7 +34,8 @@ func TraceSiteDataUsage(pages []PageTemplate, siteData map[string]any) ([]string
 	tracedData := wrapTracedValue(siteData, tracer, "")
 
 	for _, page := range pages {
-		if err := page.Tmpl.ExecuteTemplate(io.Discard, "layout", NewTemplateData(page.Name, tracedData)); err != nil {
+		entry := templateEntryPoint(siteData, page.Name)
+		if err := page.Tmpl.ExecuteTemplate(io.Discard, entry, NewTemplateData(page.Name, tracedData)); err != nil {
 			return nil, fmt.Errorf("rendering %s for site data trace: %w", page.Name, err)
 		}
 	}

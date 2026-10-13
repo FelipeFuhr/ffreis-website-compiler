@@ -277,12 +277,36 @@ func RenderPages(pages []PageTemplate, siteData map[string]any) (map[string]stri
 	renderedPages := make(map[string]string, len(pages))
 	for _, page := range pages {
 		var rendered bytes.Buffer
-		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", NewTemplateData(page.Name, siteData)); err != nil {
+		entry := templateEntryPoint(siteData, page.Name)
+		if err := page.Tmpl.ExecuteTemplate(&rendered, entry, NewTemplateData(page.Name, siteData)); err != nil {
 			return nil, fmt.Errorf("rendering %s.html: %w", page.Name, err)
 		}
 		renderedPages[page.Name] = rendered.String()
 	}
 	return renderedPages, nil
+}
+
+// templateEntryPoint returns the template name to execute for a page: by
+// default "layout" (base.gohtml's full page wrapper, which includes the
+// page's own content block), or the page's own name when site data sets
+// pages.<name>.fragment: true. A fragment page defines
+// {{define "<pageName>"}}...{{end}} directly instead of the wrapper's usual
+// content block, so it renders standalone with no head/nav/footer — for
+// embeddable widgets and demo snippets that must ship without the rest of
+// the site's chrome.
+func templateEntryPoint(siteData map[string]any, pageName string) string {
+	if isFragmentPage(siteData, pageName) {
+		return pageName
+	}
+	return "layout"
+}
+
+// isFragmentPage reports whether site data marks pages.<name>.fragment: true.
+func isFragmentPage(siteData map[string]any, pageName string) bool {
+	pagesData, _ := siteData["pages"].(map[string]any)
+	pageData, _ := pagesData[pageName].(map[string]any)
+	fragment, _ := pageData["fragment"].(bool)
+	return fragment
 }
 
 // ValidateSiteDataAndUsage validates site data against its contract, then
