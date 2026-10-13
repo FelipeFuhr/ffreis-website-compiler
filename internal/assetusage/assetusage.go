@@ -152,6 +152,15 @@ func buildResult(allCSS, allJS map[string]struct{}, used map[string]struct{}, mi
 }
 
 func validateResult(result Result) error {
+	return FormatIssues(result)
+}
+
+// FormatIssues renders a Result's MissingRef/UnusedCSS/UnusedJS entries as a
+// single error, in the same format Validate itself fails the build with —
+// or nil if the result has none of the three. Exported so a caller that
+// post-processes a Result (e.g. buildcmd filtering out deliberately-ignored
+// paths via -assets-ignore) can report the same way on what's left.
+func FormatIssues(result Result) error {
 	errs := make([]string, 0, len(result.MissingRef)+len(result.UnusedCSS)+len(result.UnusedJS))
 	for _, relPath := range result.MissingRef {
 		errs = append(errs, fmt.Sprintf("missing local asset reference: %s", relPath))

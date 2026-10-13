@@ -49,7 +49,14 @@ type buildOptions struct {
 	// override or the <website-root>/src/data/css-safelist.yaml default).
 	// Loaded into cssPrune.safelist by loadCSSSafelist in prepareBuild, once
 	// resolveBuildPaths has determined the data dir.
-	cssSafelistPath       string
+	cssSafelistPath string
+	// assetsIgnore lists glob patterns (path.Match syntax, matched against a
+	// local CSS/JS file's path relative to assetsDir — e.g. "js/examples/*.js")
+	// that validateAssetUsage exempts from its unused-asset check: files the
+	// site genuinely keeps for a reason other than a page loading them (type
+	// declarations, example/test scripts a different tool runs), which would
+	// otherwise fail the build just for sitting in assetsDir unreferenced.
+	assetsIgnore          []string
 	rasterInlineThreshold int
 	siblingBasePaths      []string
 	mirrorExternalAssets  bool
@@ -126,6 +133,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
 	var disableSectionsFlag string
 	fs.StringVar(&disableSectionsFlag, "disable-sections", "", disableSectionsHelpText())
+	var assetsIgnoreFlag string
+	fs.StringVar(&assetsIgnoreFlag, "assets-ignore", "", "comma-separated glob patterns (path.Match syntax, relative to the assets dir — e.g. 'js/examples/*.js,js/ports/*.js') exempting local css/js files from the unused-asset check: files kept for a reason other than a page loading them (type declarations, scripts a different tool runs)")
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
@@ -186,6 +195,12 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	for _, s := range strings.Split(disableSectionsFlag, ",") {
 		if s = strings.TrimSpace(s); s != "" {
 			opts.disabledSections = append(opts.disabledSections, s)
+		}
+	}
+
+	for _, s := range strings.Split(assetsIgnoreFlag, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			opts.assetsIgnore = append(opts.assetsIgnore, s)
 		}
 	}
 
