@@ -69,7 +69,7 @@ func detectMimeType(p string, content []byte) string {
 	}
 }
 
-func copyStaticAssets(srcRoot, dstRoot string) error {
+func copyStaticAssets(srcRoot, dstRoot string, passthrough []string) error {
 	// css, fonts, images, and js are written directly as fingerprinted copies by
 	// writeHashedAssets; copying the originals would produce unreferenced dead files.
 	// ld/ (JSON-LD structured data) and .well-known/ (e.g. security.txt) are served
@@ -83,10 +83,36 @@ func copyStaticAssets(srcRoot, dstRoot string) error {
 	dirs := []string{"ld", wellKnownDir}
 	files := []string{"favicon.ico", "robots.txt", sitemapXML, "llms.txt", "humans.txt"}
 
+	extraDirs, extraFiles := classifyPassthroughPaths(srcRoot, passthrough)
+	dirs = append(dirs, extraDirs...)
+	files = append(files, extraFiles...)
+
 	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
 		return err
 	}
 	return copyExistingFiles(srcRoot, dstRoot, files)
+}
+
+// classifyPassthroughPaths sorts -passthrough-files entries (relative to
+// srcRoot) into the dirs/files buckets copyExistingDirs/copyExistingFiles
+// expect, by stat'ing each one. A path that doesn't exist is silently
+// dropped here rather than guessed at — copyExistingFiles/copyExistingDirs
+// already tolerate a missing entry the same way the hardcoded well-known
+// list does, so there's no behavioral difference, just one stat instead of
+// two for a path this function already knows doesn't exist.
+func classifyPassthroughPaths(srcRoot string, passthrough []string) (dirs, files []string) {
+	for _, p := range passthrough {
+		info, err := os.Stat(filepath.Join(srcRoot, p))
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			dirs = append(dirs, p)
+		} else {
+			files = append(files, p)
+		}
+	}
+	return dirs, files
 }
 
 // manifestFiles lists the JSON web-app-manifest files whose icons[].src entries

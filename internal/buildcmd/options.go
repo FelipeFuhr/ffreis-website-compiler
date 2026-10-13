@@ -56,7 +56,13 @@ type buildOptions struct {
 	// site genuinely keeps for a reason other than a page loading them (type
 	// declarations, example/test scripts a different tool runs), which would
 	// otherwise fail the build just for sitting in assetsDir unreferenced.
-	assetsIgnore          []string
+	assetsIgnore []string
+	// passthroughFiles lists extra paths (relative to assetsDir, files or
+	// directories) copied verbatim into the output alongside the hardcoded
+	// well-known list (favicon.ico, robots.txt, sitemap.xml, llms.txt,
+	// humans.txt, ld/, .well-known/) — e.g. a static demo page that isn't a
+	// compiler-rendered template and has no other way to reach the output.
+	passthroughFiles      []string
 	rasterInlineThreshold int
 	siblingBasePaths      []string
 	mirrorExternalAssets  bool
@@ -135,6 +141,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&disableSectionsFlag, "disable-sections", "", disableSectionsHelpText())
 	var assetsIgnoreFlag string
 	fs.StringVar(&assetsIgnoreFlag, "assets-ignore", "", "comma-separated glob patterns (path.Match syntax, relative to the assets dir — e.g. 'js/examples/*.js,js/ports/*.js') exempting local css/js files from the unused-asset check: files kept for a reason other than a page loading them (type declarations, scripts a different tool runs)")
+	var passthroughFilesFlag string
+	fs.StringVar(&passthroughFilesFlag, "passthrough-files", "", "comma-separated extra paths (relative to the assets dir, files or directories) copied verbatim into the output alongside the built-in well-known list (favicon.ico, robots.txt, sitemap.xml, llms.txt, humans.txt, ld/, .well-known/) — e.g. a static demo page that isn't a compiler-rendered template")
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
@@ -204,6 +212,12 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 		}
 	}
 
+	for _, s := range strings.Split(passthroughFilesFlag, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			opts.passthroughFiles = append(opts.passthroughFiles, s)
+		}
+	}
+
 	return opts, nil
 }
 
@@ -267,7 +281,7 @@ func maybeCopyAssets(opts buildOptions, assetsDir string) error {
 	if err := checkRobotsTxtSafety(assetsDir, opts); err != nil {
 		return err
 	}
-	if err := copyStaticAssets(assetsDir, opts.outDir); err != nil {
+	if err := copyStaticAssets(assetsDir, opts.outDir, opts.passthroughFiles); err != nil {
 		return fmt.Errorf("copying assets: %w", err)
 	}
 	return nil
