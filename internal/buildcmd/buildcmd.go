@@ -149,6 +149,12 @@ func Run(args []string, logger *slog.Logger) error {
 
 	pages = filterInternalPages(pages, siteDataResult.Data)
 
+	// Opt-in fragment output: pages marked pages.<name>.fragment: true are not
+	// written as standalone documents — they are collected into one
+	// <template>-per-page bundle after the link check below. A site that marks
+	// no page returns pages unchanged, so nothing downstream sees a difference.
+	pages, fragmentPages := splitFragmentPages(pages, siteDataResult.Data)
+
 	if err := writePages(logger, opts, pages, assetsDir, siteDataResult.Data, renderedPages, mirrorer); err != nil {
 		return err
 	}
@@ -170,6 +176,20 @@ func Run(args []string, logger *slog.Logger) error {
 		return fmt.Errorf("link validation: %w", err)
 	}
 	logger.Info("internal link check passed", "out_dir", opts.outDir)
+
+	// Written after the link check on purpose: a fragment's links are
+	// client-side routes (e.g. href="#/orders") resolved by the consuming app
+	// at view time, not static pages this build emits, so a static link checker
+	// cannot validate them.
+	if err := maybeWriteFragmentBundle(logger, fragmentBuildInput{
+		opts:         opts,
+		assetsDir:    assetsDir,
+		siteData:     siteDataResult.Data,
+		pages:        fragmentPages,
+		regularPages: pages,
+	}); err != nil {
+		return err
+	}
 
 	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs, siteDataResult.Data); err != nil {
 		return err

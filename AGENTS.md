@@ -43,6 +43,7 @@ heading → file → byte-count mapping, and `scripts/check-instructions.sh`
 | Content-level language routing (`available_languages`) | `.claude/reference/language-routing-available-languages.md` |
 | Hreflang alternate injection | `.claude/reference/hreflang-alternate-injection.md` |
 | Automatic page transforms | `.claude/reference/automatic-page-transforms.md` |
+| Fragment page output mode (`pages.<name>.fragment`) | `.claude/reference/fragment-page-output-mode.md` |
 | Image alt-text validation | `.claude/reference/image-alt-text-validation.md` |
 | Template extensibility blocks | `.claude/reference/template-extensibility-blocks.md` |
 | Keeping this file current | `.claude/reference/keeping-this-file-current.md` |
