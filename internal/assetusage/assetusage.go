@@ -33,7 +33,7 @@ func Validate(assetsRoot string, renderedPages map[string]string) (Result, error
 		return Result{}, err
 	}
 
-	used, queue, err := collectInitialUsedAssets(renderedPages)
+	used, queue, err := collectInitialUsedAssets(renderedPages, allCSS)
 	if err != nil {
 		return Result{}, err
 	}
@@ -74,9 +74,21 @@ func LocalStylesheetHrefs(html string) ([]string, error) {
 	return hrefs, nil
 }
 
-func collectInitialUsedAssets(renderedPages map[string]string) (used map[string]struct{}, queue []string, err error) {
+func collectInitialUsedAssets(renderedPages map[string]string, allCSS map[string]struct{}) (used map[string]struct{}, queue []string, err error) {
 	used = make(map[string]struct{})
 	queue = make([]string, 0)
+
+	// Both call sites below only ever pass a non-empty relPath: the HTML-ref
+	// loop filters to isCSSOrJS (impossible for ""), and the per-page-stylesheet
+	// call only fires when allCSS contains the path (never "" — every entry
+	// comes from an actual file on disk).
+	markUsed := func(relPath string) {
+		if _, seen := used[relPath]; seen {
+			return
+		}
+		used[relPath] = struct{}{}
+		queue = append(queue, relPath)
+	}
 
 	for pageName, html := range renderedPages {
 		for _, ref := range collectHTMLRefs(html) {
@@ -84,21 +96,40 @@ func collectInitialUsedAssets(renderedPages map[string]string) (used map[string]
 			if err != nil {
 				return nil, nil, fmt.Errorf("normalizing asset reference %q in %s: %w", ref, pageName, err)
 			}
-			if !local {
+			if !local || !isCSSOrJS(relPath) {
 				continue
 			}
-			if !isCSSOrJS(relPath) {
-				continue
-			}
-			if _, seen := used[relPath]; seen {
-				continue
-			}
-			used[relPath] = struct{}{}
-			queue = append(queue, relPath)
+			markUsed(relPath)
+		}
+
+		// transformPage injects css/pages/<pageName>.css into <head> (when the
+		// file exists) AFTER this function runs — renderedPages here is the
+		// pre-transform HTML, so that <link> tag is never in it to scan for.
+		// Mark the conventional path used directly instead of re-deriving the
+		// same "page name -> optional per-page stylesheet" rule a second way.
+		// Only when allCSS actually has the file: queueing a NONEXISTENT path
+		// here (unlike a used-but-absent entry with no queue effect) would
+		// make expandImportedAssets treat it as a genuinely missing
+		// reference and hard-fail the build for every page that simply has
+		// no per-page stylesheet.
+		perPage := perPageStylesheetRelPath(pageName)
+		if _, exists := allCSS[perPage]; exists {
+			markUsed(perPage)
 		}
 	}
 
 	return used, queue, nil
+}
+
+// perPageStylesheetRelPath mirrors buildcmd's injectPerPageStylesheet
+// convention (css/pages/<pageName>.css) so this validator and the actual
+// injection logic can never silently drift apart — if the convention ever
+// changes, both call sites break the same way instead of one going stale.
+func perPageStylesheetRelPath(pageName string) string {
+	if pageName == "" {
+		return ""
+	}
+	return "css/pages/" + pageName + ".css"
 }
 
 func isCSSOrJS(relPath string) bool {

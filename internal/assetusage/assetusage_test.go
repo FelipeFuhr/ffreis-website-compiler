@@ -108,3 +108,110 @@ func TestValidate_FailsForMissingReferencedAsset(t *testing.T) {
 		t.Fatalf("expected missing asset error, got %v", err)
 	}
 }
+
+// ── css/pages/<pageName>.css convention ────────────────────────────────────
+//
+// renderedPages here is deliberately the PRE-transform HTML (as Validate
+// always receives it in the real pipeline — see buildcmd.go's call site
+// comment) — these tests never put the per-page stylesheet <link> in the
+// HTML themselves, proving the validator has to know the convention on its
+// own rather than happening to find a tag transformPage hasn't injected yet.
+
+func TestValidate_PerPageStylesheetExists_NotFlaggedUnused(t *testing.T) {
+	assetsRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(assetsRoot, "css", "pages", "login.css"), `.login{}`)
+
+	result, err := Validate(assetsRoot, map[string]string{
+		"login": `<!doctype html><html><head></head><body></body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("expected validation success, got %v", err)
+	}
+	if len(result.UnusedCSS) != 0 {
+		t.Fatalf("expected css/pages/login.css not flagged unused, got %#v", result.UnusedCSS)
+	}
+}
+
+func TestValidate_PerPageStylesheetAbsent_NoMissingRefError(t *testing.T) {
+	// No css/pages/ directory at all — the overwhelming majority of pages in
+	// the overwhelming majority of sites. Must NOT produce a "missing local
+	// asset reference" error for a file nobody ever claimed to need.
+	assetsRoot := t.TempDir()
+
+	result, err := Validate(assetsRoot, map[string]string{
+		"login": `<!doctype html><html><head></head><body></body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("expected validation success when no per-page stylesheet exists, got %v", err)
+	}
+	if len(result.MissingRef) != 0 {
+		t.Fatalf("expected no missing-reference entries, got %#v", result.MissingRef)
+	}
+}
+
+func TestValidate_PerPageStylesheetForDifferentPage_StillFlaggedUnused(t *testing.T) {
+	// signup.css exists but only "login" is being rendered — a genuinely
+	// orphaned file (e.g. a page that got renamed/removed) must still be
+	// caught, not swallowed by the convention.
+	assetsRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(assetsRoot, "css", "pages", "signup.css"), `.signup{}`)
+
+	_, err := Validate(assetsRoot, map[string]string{
+		"login": `<!doctype html><html><head></head><body></body></html>`,
+	})
+	if err == nil {
+		t.Fatal("expected unused asset validation failure")
+	}
+	if !strings.Contains(err.Error(), "unused local css asset: css/pages/signup.css") {
+		t.Fatalf("expected signup.css flagged unused, got %v", err)
+	}
+}
+
+func TestValidate_PerPageStylesheetAlsoExplicitlyLinked_NoDoubleQueue(t *testing.T) {
+	// The page's own markup already links its conventional per-page
+	// stylesheet explicitly (e.g. hand-authored before the convention
+	// existed, or just redundant) -- the HTML-ref scan marks it used first,
+	// then the per-page-convention check marks the same path again.
+	// Exercises markUsed's dedup branch; a regression here would double the
+	// path onto the import-expansion queue.
+	assetsRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(assetsRoot, "css", "pages", "login.css"), `.login{}`)
+
+	result, err := Validate(assetsRoot, map[string]string{
+		"login": `<!doctype html><html><head><link rel="stylesheet" href="/css/pages/login.css"></head><body></body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("expected validation success, got %v", err)
+	}
+	if len(result.UnusedCSS) != 0 {
+		t.Fatalf("expected css/pages/login.css not flagged unused, got %#v", result.UnusedCSS)
+	}
+}
+
+func TestValidate_EmptyPageName_NoPerPageStylesheetLookup(t *testing.T) {
+	// An empty page key is never produced by the real pipeline, but nothing
+	// stops it from reaching Validate -- must not panic or misbehave, and
+	// perPageStylesheetRelPath("") must stay a no-op rather than resolving
+	// to a bogus "css/pages/.css" lookup.
+	assetsRoot := t.TempDir()
+
+	_, err := Validate(assetsRoot, map[string]string{
+		"": `<!doctype html><html><head></head><body></body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("expected validation success for an empty page name, got %v", err)
+	}
+	if got := perPageStylesheetRelPath(""); got != "" {
+		t.Fatalf("expected empty pageName to yield empty path, got %q", got)
+	}
+}
+
+func mustWriteFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
