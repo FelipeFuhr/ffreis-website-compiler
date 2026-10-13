@@ -9,7 +9,7 @@ A Go CLI that builds and validates the static websites in the ffreis fleet. It l
 ## What it does
 
 - **Builds** a static site from a website root laid out as `<root>/src/{assets,templates}` (legacy fallback `<root>/{site,templates}`), merging `site.d/*.yaml` data layers (shared + per-language) and rendering each page template.
-- **Optimizes output** during the build: critical CSS inlined into `<head>` (minified, `@import` flattened), below-fold CSS deferred, small SVGs/JS/raster images inlined, LQIP blur-up placeholders for eager images, content-hash fingerprinting of all local assets, optional font embedding, optional external-asset mirroring, optional per-page CSS scoping, and progressive-enhancement hints (view transitions, speculation rules, script preloads).
+- **Optimizes output** during the build: critical CSS inlined into `<head>` (minified, `@import` flattened), below-fold CSS deferred, small SVGs/JS/raster images inlined, LQIP blur-up placeholders for eager images, content-hash fingerprinting of all local assets, optional font embedding, optional external-asset mirroring, optional per-page CSS scoping, optional social preview image injection (`og:image`/`twitter:image`), and progressive-enhancement hints (view transitions, speculation rules, script preloads).
 - **Handles multilingual content** via `available_languages` per content item (renders or writes a redirect stub) and injects `<link rel="alternate" hreflang>` tags from `language_variants` site data.
 - **Generates derived content**: Markdown blog posts (`-posts-dir`) into `dist/blog/<slug>/` plus an RSS feed, and paginated `/projects/` and `/courses/` listings from YAML data files.
 - **Validates** the local site-data contract, that rendered pages only reference reachable local CSS/JS assets, baseline sanity invariants, and YAML key parity across language directories.
@@ -80,6 +80,30 @@ one of the fixed content-type names for generated content: `course`,
 a site with no `css/pages/` directory sees zero behavior change. The
 per-page file is injected last, so its rules win the cascade over the shared
 stylesheets for the same selector.
+
+#### Social preview image (`og:image` / `twitter:image`)
+
+If `src/assets/img/og-image.{png,jpg,jpeg,webp}` exists (first match in that
+order), every page gets `<meta property="og:image">` (plus
+`og:image:width`/`og:image:height`, read from the file itself) and
+`<meta name="twitter:image">` injected before `</head>`, pointing at
+`base_url` + the asset's fingerprinted path. Requires `base_url` in site
+data — without it the tags would be relative, not the absolute URL Open
+Graph/Twitter crawlers require, so nothing is injected. A page template
+that already declares its own `og:image`/`twitter:image` tag is left alone;
+the site-wide default only fills in when one isn't already present. No
+flag, no template changes required — a site with no `og-image.*` file sees
+zero behavior change.
+
+This runs as its own pass (unlike CSS/JS/`<img>` references, which the
+generic asset-fingerprinting pass rewrites in place): that pass only
+resolves *relative* local references and treats any `http(s)://` value as
+external, untouched — exactly what an Open-Graph-compliant, already-absolute
+`<meta content="https://...">` written by a template would be, so it can
+reference a local file but can never get that file copied to `dist/` on its
+own. This feature closes that gap at the source (constructing the absolute
+URL itself from `base_url`) rather than asking template authors to work
+around it.
 
 ### serve
 

@@ -436,9 +436,16 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		if err := validateRenderedPageStructure(page.Name, htmlOut); err != nil {
 			return err
 		}
+		htmlOut, socialImageCopy, err := injectSocialImage(htmlOut, siteData, assetsDir, opts.basePath)
+		if err != nil {
+			return fmt.Errorf("injecting social image for %s: %w", target, err)
+		}
 		htmlOut = injectHreflangAlternates(htmlOut, siteData, page.Name, opts.cleanURLs)
 		htmlOut = injectLangSwitcherHrefs(htmlOut, siteData, page.Name, opts.cleanURLs)
 		for k, v := range pageCopy {
+			allToCopy[k] = v
+		}
+		for k, v := range socialImageCopy {
 			allToCopy[k] = v
 		}
 		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
