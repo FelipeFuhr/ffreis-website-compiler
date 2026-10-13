@@ -3,6 +3,15 @@ SHELL := /bin/bash
 CONTAINER_COMMAND ?= podman
 GOFMT ?= gofmt
 GOLANGCI_LINT ?= golangci-lint
+# GOLANGCI_LINT_VERSION must match .pre-commit-config.yaml's golangci-lint rev.
+# This repo runs golangci-lint through two independent local paths — lefthook's
+# `lint` hook (this Makefile target, against whatever is on PATH) and
+# pre-commit-compat's own isolated pre-commit-managed build — and a version
+# mismatch between them silently produces two different sets of findings
+# (seen directly: a gosec G115 case the two versions disagreed on). `lint`
+# below checks the PATH binary against this pin instead of trusting
+# `command -v` alone, so a drift is a loud failure instead of a silent one.
+GOLANGCI_LINT_VERSION := v2.11.4
 GITLEAKS ?= gitleaks
 GOVULNCHECK ?= govulncheck
 # NOTE: this was `?= 90` but that number was never real — `coverage-gate` was
@@ -133,7 +142,14 @@ fmt-check: ## Fail if Go files are not gofmt-formatted
 	fi
 
 lint: ## Run golangci-lint
-	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || (echo "Missing tool: $(GOLANGCI_LINT). Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest" && exit 1)
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || (echo "Missing tool: $(GOLANGCI_LINT). Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)" && exit 1)
+	@got="$$($(GOLANGCI_LINT) version 2>&1 | grep -oE 'version [0-9]+\.[0-9]+\.[0-9]+' | awk '{print $$2}')"; \
+	want="$$(echo $(GOLANGCI_LINT_VERSION) | sed 's/^v//')"; \
+	if [ "$$got" != "$$want" ]; then \
+		echo "golangci-lint version mismatch: PATH has v$$got, this repo pins $(GOLANGCI_LINT_VERSION) (see .pre-commit-config.yaml, kept in sync with GOLANGCI_LINT_VERSION above)."; \
+		echo "Install the pinned version with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"; \
+		exit 1; \
+	fi
 	$(GOLANGCI_LINT) run
 
 lint-instructions: ## Verify the AGENTS.md rules/reference split hasn't silently dropped a rule
