@@ -53,6 +53,7 @@ Common flags (defaults in parentheses):
 | `-site-data` | Site-data source override (file/URL/directory of YAML layers) |
 | `-copy-assets` (`true`) | Copy static assets into the output |
 | `-inline-assets` (`false`) | Inline CSS/JS/images into each page for self-contained output |
+| `-split-css-per-page` (`false`) | When inlining CSS, drop rules whose selectors reference no class/id/tag present on that specific page — each page ships only the CSS it uses instead of the whole site's stylesheet |
 | `-clean-urls` (`false`) | Emit `<name>/index.html` for extension-free URLs |
 | `-js-inline-threshold` (`8192`) | Inline local `<script src>` below N bytes (0 disables) |
 | `-raster-inline-threshold` (`0`) | Inline local raster `<img>` below N bytes (0 disables) |

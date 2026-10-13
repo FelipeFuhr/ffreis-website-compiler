@@ -570,6 +570,79 @@ func TestRun_InlineBodyCSS(t *testing.T) {
 	}
 }
 
+// TestRun_SplitCSSPerPage_DifferentPagesGetDifferentInlinedCSS is the
+// end-to-end proof for -split-css-per-page: two real pages built through the
+// full Run() pipeline, sharing one main.css that styles components neither
+// page uses in full, each page's <style> block ends up containing only the
+// rules its own rendered HTML references.
+func TestRun_SplitCSSPerPage_DifferentPagesGetDifferentInlinedCSS(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	sharedCSS := ".hero{color:red}\n.team-card{color:blue}\n.unused-everywhere{color:green}\n"
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):         sharedCSS,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):         "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", "home.gohtml"):  `{{define "page"}}<div class="hero">Welcome</div>{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "pages", "about.gohtml"): `{{define "page"}}<div class="team-card">Team</div>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	args := []string{flagWebsiteRoot, websiteRoot, flagOut, outDir, "-split-css-per-page"}
+	if err := Run(args, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	home := string(mustReadFile(t, filepath.Join(outDir, "home.html")))
+	if !strings.Contains(home, "color:red") {
+		t.Fatalf("expected home.html to keep .hero (used on this page), got: %s", home)
+	}
+	if strings.Contains(home, "color:blue") {
+		t.Fatalf("expected home.html to drop .team-card (not used on this page), got: %s", home)
+	}
+	if strings.Contains(home, "color:green") {
+		t.Fatalf("expected home.html to drop .unused-everywhere, got: %s", home)
+	}
+
+	about := string(mustReadFile(t, filepath.Join(outDir, "about.html")))
+	if !strings.Contains(about, "color:blue") {
+		t.Fatalf("expected about.html to keep .team-card (used on this page), got: %s", about)
+	}
+	if strings.Contains(about, "color:red") {
+		t.Fatalf("expected about.html to drop .hero (not used on this page), got: %s", about)
+	}
+}
+
+// TestRun_SplitCSSPerPageFalse_BothPagesGetIdenticalFullCSS is the control:
+// with the flag off (the default), both pages get the full, identical,
+// unfiltered stylesheet — confirms the flag is genuinely opt-in and changes
+// nothing when absent.
+func TestRun_SplitCSSPerPageFalse_BothPagesGetIdenticalFullCSS(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	sharedCSS := ".hero{color:red}\n.team-card{color:blue}\n"
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):         sharedCSS,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):         "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", "home.gohtml"):  `{{define "page"}}<div class="hero">Welcome</div>{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "pages", "about.gohtml"): `{{define "page"}}<div class="team-card">Team</div>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	args := []string{flagWebsiteRoot, websiteRoot, flagOut, outDir}
+	if err := Run(args, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	home := string(mustReadFile(t, filepath.Join(outDir, "home.html")))
+	about := string(mustReadFile(t, filepath.Join(outDir, "about.html")))
+	for _, want := range []string{"color:red", "color:blue"} {
+		if !strings.Contains(home, want) {
+			t.Fatalf("expected home.html to keep every rule by default (flag off), missing %q in: %s", want, home)
+		}
+		if !strings.Contains(about, want) {
+			t.Fatalf("expected about.html to keep every rule by default (flag off), missing %q in: %s", want, about)
+		}
+	}
+}
+
 func TestRun_EmbedFonts(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "fonts"))

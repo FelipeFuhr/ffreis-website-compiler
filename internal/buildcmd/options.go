@@ -39,6 +39,7 @@ type buildOptions struct {
 	sharedScripts              map[string]bool // populated at runtime by collectSharedScripts
 	embedFonts                 bool
 	inlineBodyCSS              bool
+	splitCSSPerPage            bool
 	rasterInlineThreshold      int
 	siblingBasePaths           []string
 	mirrorExternalAssets       bool
@@ -107,6 +108,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.IntVar(&opts.jsSharedInlineThreshold, "js-shared-inline-threshold", -1, "for JS files referenced by more than one page, only inline if smaller than this many bytes; -1 to disable (all JS uses -js-inline-threshold regardless of page count)")
 	fs.BoolVar(&opts.embedFonts, "embed-fonts", false, "embed font files (woff2/woff/ttf/otf/eot) as base64 data URIs in inlined CSS; eliminates font files from dist but increases HTML size")
 	fs.BoolVar(&opts.inlineBodyCSS, "inline-body-css", false, "inline body <link rel=stylesheet> as <style> blocks instead of deferred external links; eliminates CSS files from dist but prevents cross-page CSS cache reuse")
+	fs.BoolVar(&opts.splitCSSPerPage, "split-css-per-page", false, "when inlining CSS (always true for head CSS; body CSS only when -inline-body-css is also set), drop rules whose selectors reference no class/id/tag present anywhere in that page's own rendered HTML; conservative (never drops a rule gated by an attribute selector or a functional pseudo-class argument) — reduces per-page inline CSS weight on multi-template sites where each page only uses a subset of the site's components")
 	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")
 	var siblingBasePathsFlag string
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
