@@ -14,3 +14,5 @@ The compiler registers these functions in `internal/sitegen/sitegen.go`:
 - `required(v, msg)` — panics with msg if v is nil/zero
 - `trimSuffix(s, suffix)` — wraps `strings.TrimSuffix`
 - `has(slice, val)` — returns true if val (string) is present in slice ([]any or []string); used by listing templates to check `available_languages` membership
+- `add(a, b)`, `sub(a, b)`, `mul(a, b)`, `div(a, b)` — arithmetic over int/float64 operands, returns `float64`; `div` errors on division by zero
+- `mod(a, b)` — integer remainder, returns `int`; errors on division by zero

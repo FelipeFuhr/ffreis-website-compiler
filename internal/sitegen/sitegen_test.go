@@ -23,6 +23,63 @@ func TestDictOddPairsError(t *testing.T) {
 	}
 }
 
+func TestArithmeticFuncs(t *testing.T) {
+	cases := []struct {
+		name string
+		fn   func(a, b any) (float64, error)
+		a, b any
+		want float64
+	}{
+		{"add ints", add, 1, 2, 3},
+		{"add mixed int/float", add, 1, 2.5, 3.5},
+		{"sub", sub, 5, 2, 3},
+		{"mul", mul, 3, 4, 12},
+		{"div", div, 9, 2, 4.5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.fn(tc.a, tc.b)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDiv_DivisionByZero(t *testing.T) {
+	if _, err := div(1, 0); err == nil {
+		t.Fatal("expected error for division by zero")
+	}
+}
+
+func TestMod_IntRemainder(t *testing.T) {
+	got, err := mod(7, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != 1 {
+		t.Fatalf("got %v, want 1", got)
+	}
+}
+
+func TestMod_DivisionByZero(t *testing.T) {
+	if _, err := mod(1, 0); err == nil {
+		t.Fatal("expected error for division by zero")
+	}
+}
+
+func TestArithmeticFuncs_NonNumericOperandError(t *testing.T) {
+	if _, err := add("x", 1); err == nil {
+		t.Fatal("expected error for non-numeric left operand")
+	}
+	if _, err := add(1, "x"); err == nil {
+		t.Fatal("expected error for non-numeric right operand")
+	}
+}
+
 func TestValidateSiteData_PassesWithContract(t *testing.T) {
 	siteData := map[string]any{
 		"fictional_courses": map[string]any{

@@ -11,6 +11,7 @@ import (
 	"ffreis-website-compiler/internal/paritycmd"
 	"ffreis-website-compiler/internal/servecmd"
 	"ffreis-website-compiler/internal/validateassetscmd"
+	"ffreis-website-compiler/internal/validatecsscmd"
 	"ffreis-website-compiler/internal/validatedatacmd"
 	"ffreis-website-compiler/internal/validatesanitycmd"
 )
@@ -36,6 +37,8 @@ func Run(programName string) {
 		err = validatedatacmd.Run(args, logger)
 	case "validate-assets":
 		err = validateassetscmd.Run(args, logger)
+	case "validate-css":
+		err = validatecsscmd.Run(args, logger)
 	case "export-site-data":
 		err = exportsitedatacmd.Run(args, logger)
 	case "validate-sanity":
@@ -71,6 +74,7 @@ Commands:
   export-site-data  Export merged site data (incl. layers) as JSON/YAML
   validate-site-data  Validate site data against the required local site contract
   validate-assets     Validate local CSS/JS assets are reachable from rendered pages
+  validate-css        Warn when a page's own CSS has rules unused by that page's own rendered output (advisory, never fails)
   validate-sanity     Run a baseline set of sanity checks (site data contract + invariants + optional asset reachability)
   check-lang-parity   Check YAML key parity across multilingual data directories
   test-output         Run a website-owned manifest against compiled static output
@@ -81,6 +85,7 @@ Examples:
   website-compiler export-site-data -website-root ../my-website -format json
   website-compiler validate-site-data -website-root ../my-website
   website-compiler validate-assets -website-root ../my-website
+  website-compiler validate-css -website-root ../my-website
   website-compiler validate-sanity -website-root ../my-website
   website-compiler test-output -website-root ../my-website -out ../my-website/dist
 `, programName)
