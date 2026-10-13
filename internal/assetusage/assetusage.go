@@ -78,10 +78,11 @@ func collectInitialUsedAssets(renderedPages map[string]string, allCSS map[string
 	used = make(map[string]struct{})
 	queue = make([]string, 0)
 
+	// Both call sites below only ever pass a non-empty relPath: the HTML-ref
+	// loop filters to isCSSOrJS (impossible for ""), and the per-page-stylesheet
+	// call only fires when allCSS contains the path (never "" — every entry
+	// comes from an actual file on disk).
 	markUsed := func(relPath string) {
-		if relPath == "" {
-			return
-		}
 		if _, seen := used[relPath]; seen {
 			return
 		}

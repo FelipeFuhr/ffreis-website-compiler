@@ -167,6 +167,45 @@ func TestValidate_PerPageStylesheetForDifferentPage_StillFlaggedUnused(t *testin
 	}
 }
 
+func TestValidate_PerPageStylesheetAlsoExplicitlyLinked_NoDoubleQueue(t *testing.T) {
+	// The page's own markup already links its conventional per-page
+	// stylesheet explicitly (e.g. hand-authored before the convention
+	// existed, or just redundant) -- the HTML-ref scan marks it used first,
+	// then the per-page-convention check marks the same path again.
+	// Exercises markUsed's dedup branch; a regression here would double the
+	// path onto the import-expansion queue.
+	assetsRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(assetsRoot, "css", "pages", "login.css"), `.login{}`)
+
+	result, err := Validate(assetsRoot, map[string]string{
+		"login": `<!doctype html><html><head><link rel="stylesheet" href="/css/pages/login.css"></head><body></body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("expected validation success, got %v", err)
+	}
+	if len(result.UnusedCSS) != 0 {
+		t.Fatalf("expected css/pages/login.css not flagged unused, got %#v", result.UnusedCSS)
+	}
+}
+
+func TestValidate_EmptyPageName_NoPerPageStylesheetLookup(t *testing.T) {
+	// An empty page key is never produced by the real pipeline, but nothing
+	// stops it from reaching Validate -- must not panic or misbehave, and
+	// perPageStylesheetRelPath("") must stay a no-op rather than resolving
+	// to a bogus "css/pages/.css" lookup.
+	assetsRoot := t.TempDir()
+
+	_, err := Validate(assetsRoot, map[string]string{
+		"": `<!doctype html><html><head></head><body></body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("expected validation success for an empty page name, got %v", err)
+	}
+	if got := perPageStylesheetRelPath(""); got != "" {
+		t.Fatalf("expected empty pageName to yield empty path, got %q", got)
+	}
+}
+
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
