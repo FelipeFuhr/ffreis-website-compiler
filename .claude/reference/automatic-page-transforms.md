@@ -3,6 +3,45 @@
 Every page produced by `build` / `build-static` passes through `transformPage`, which
 applies these transforms in order:
 
+### CSS/JS delivery: the coherent model
+
+Every local CSS or JS reference ends up delivered one of three ways. Which one applies
+is decided **per reference**, by **where it sits in the rendered page**, not by any
+per-file configuration:
+
+| Delivery | How a reference gets here | Cacheable across pages? | Extra HTTP request? |
+| --- | --- | --- | --- |
+| **Inlined** (`<style>`/`<script>` body) | CSS in `<head>` (always); CSS in `<body>` with `-inline-body-css`; JS under `-js-inline-threshold` (or `-js-shared-inline-threshold` for multi-page scripts); anything at all under `-inline-assets` | No — duplicated into every page's HTML | No |
+| **Deferred external** | `<link rel=stylesheet>` in `<body>`, default (no `-inline-body-css`) | Yes | Yes, but non-blocking (`media="print"` trick) |
+| **Fingerprinted external** | JS at/above the inline threshold; any CSS/JS left external by the rules above | Yes, long-term (`Cache-Control: immutable`) | Yes |
+
+Two independent flags change the *boundary*, not the mechanism: `-inline-assets` moves
+**everything** (CSS, JS, images, icons) to the inlined column regardless of position —
+see "Full inlining" below, a wholly separate code path from the position-based one.
+`-inline-body-css` only moves body CSS from deferred-external to inlined; it never
+touches JS.
+
+**Per-page CSS pruning (`-prune-unused-css-per-page`, `internal/buildcmd/cssprune.go`)
+is an orthogonal layer that runs on any CSS about to be inlined as a `<style>` block** —
+head CSS always, plus body CSS too when `-inline-body-css` is set, but never the
+deferred-external or fingerprinted-external paths (nothing to prune in a file that stays
+external and shared), and not currently the `-inline-assets` full-inline path — see the
+limitation noted under "Full inlining" below. Before a stylesheet is wrapped in
+`<style>`, every selector is checked
+against the tokens (class/id names) actually reachable from that one page: its own
+rendered HTML, any inline `<script>` body, and any local `<script src>` file it
+references (so classes assembled client-side in JS template literals still count as
+"used"). A selector with no matching token on this page is dropped. This is what makes
+each page's inlined CSS scoped to *that page* instead of carrying the whole site's
+stylesheet — see `-css-safelist` below for the escape hatch when a class is added by
+something the scanner can't see (e.g. a third-party script, or markup built from a
+string concatenation the scanner doesn't recognize).
+
+- **`-css-safelist <path>`** (default: `src/data/css-safelist.yaml` if present) — selector
+  patterns (supports a single trailing `*` wildcard) that always survive pruning
+  regardless of token matching. Use for classes a site knows are added dynamically in a
+  way the JS/HTML scanner can't trace.
+
 ### 1. Position-based CSS loading
 
 Document position signals loading priority — mirroring the JS-at-end convention:
@@ -35,7 +74,15 @@ needed; position alone is the signal.
 blocks so responsive CSS continues to behave correctly.
 
 When `-inline-assets` is set, full inlining (including data-URI fonts) is used for both
-head and body instead, bypassing this step.
+head and body instead, bypassing this step — see "Full inlining" below.
+
+**Fragment pages (`pages.<name>.fragment: true`, `internal/sitegen/sitegen.go`):** a
+fragment page's template defines `{{define "<pageName>"}}` directly instead of using the
+shared layout, so its rendered output has no `<head>`/`</head>` at all. `transformStylesheets`
+treats a document with no `</head>` as **entirely head content** — so every stylesheet
+`<link>` a fragment page references (wherever it appears in its own markup) is inlined and
+pruned exactly like normal head CSS, never deferred. A fragment page is therefore always
+fully self-contained CSS-wise; there is no body-CSS behavior to opt into for it.
 
 **Optional flags:**
 
@@ -193,7 +240,38 @@ assets, and the rewritten JSON — unchanged if there is no `icons` key — is
 written to dist. A manifest with no icons, an empty icons array, or invalid
 JSON is left as-is rather than failing the build.
 
+A local CSS/JS file under `src/assets/` must be reachable from at least one rendered
+page (directly, or transitively via `@import`/`import`/`export from`) or the build fails
+with an unused-asset error (`internal/assetusage`). Two flags narrow this check:
+
+- **`-assets-ignore <glob,glob,...>`** (comma-separated `path.Match` globs, relative to
+  the assets dir) — exempts matching paths (e.g. `js/examples/*.js`) from the unused-asset
+  check entirely. Does not exempt a path that is referenced but missing — that still
+  fails as a broken link, never silently ignored.
+- **`-passthrough-files <path,path,...>`** (comma-separated, relative to the assets dir,
+  each a file or directory) — copies the extra paths verbatim to dist, the same way the
+  hardcoded well-known files (`favicon.ico`, `robots.txt`, ...) are. For files that
+  aren't reachable through the template pipeline at all (e.g. a legacy static demo page)
+  rather than merely exempt from the usage check.
+
 ### 8. External asset mirroring (flag: `-mirror-external-assets`)
 
 Optional; downloads external CSS/JS/images and rewrites URLs to local copies.
 Also processes `url()` references inside inline `<style>` blocks via `styleBlockRE`.
+
+### Full inlining (flag: `-inline-assets`, `internal/buildcmd/inlining.go` — `inlineLocalAssets`)
+
+An alternate pipeline, not an addition to the one above: when set, `transformPage` calls
+`inlineLocalAssets` instead of `applyPositionBasedTransforms` (step 1 through 4a never
+run). Inlines, regardless of document position: stylesheets (`inlineLocalStylesheets`,
+data-URI `url()` refs including fonts), scripts (`inlineLocalScripts`), icons
+(`inlineLocalIcons`), and images (`inlineLocalImages`) — producing a single
+self-contained HTML file with zero other local HTTP requests. Appropriate for
+single-page embeds or offline/intranet delivery where cross-page caching has no value.
+
+**Known limitation:** `-prune-unused-css-per-page` is not applied on this path —
+`inlineLocalStylesheets` inlines each stylesheet's full content with no token-matching
+step. A site built with both flags together still gets the unpruned, full stylesheet
+inlined. Fragment pages (above) are unaffected by this since they go through the
+position-based pipeline (`-inline-assets` is a separate, whole-page flag, not something
+a fragment page opts into on its own).

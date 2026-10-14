@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -93,7 +94,7 @@ type optionalContent struct {
 	posts           []posts.Post
 	projects        []projects.Project
 	courses         []courses.Course
-	listings        []listings.Listing
+	listings        []map[string]any
 	postTemplate    *sitegen.PageTemplate
 	blogTemplate    *sitegen.PageTemplate
 	courseTemplate  *sitegen.PageTemplate // the internal "course" landing template
@@ -208,6 +209,14 @@ func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assets
 	assetsDir, templatesDir, err = resolveBuildPaths(opts)
 	if err != nil {
 		return
+	}
+
+	if opts.cssPrune.enabled {
+		safelistPath := resolveCSSSafelistPath(opts.cssSafelistPath, templatesDir)
+		opts.cssPrune.safelist, err = loadCSSSafelist(safelistPath)
+		if err != nil {
+			return
+		}
 	}
 
 	logBuildStart(logger, opts, assetsDir, templatesDir)
@@ -645,13 +654,49 @@ func validateAssetUsage(logger *slog.Logger, opts buildOptions, assetsDir string
 	if err == nil {
 		return nil
 	}
+
+	if len(opts.assetsIgnore) > 0 {
+		var ignoredCSS, ignoredJS []string
+		result.UnusedCSS, ignoredCSS = partitionIgnoredAssets(result.UnusedCSS, opts.assetsIgnore)
+		result.UnusedJS, ignoredJS = partitionIgnoredAssets(result.UnusedJS, opts.assetsIgnore)
+		for _, a := range append(ignoredCSS, ignoredJS...) {
+			logger.Info("unused asset exempted by -assets-ignore", "asset", a)
+		}
+	}
+	if len(result.UnusedCSS) == 0 && len(result.UnusedJS) == 0 && len(result.MissingRef) == 0 {
+		return nil
+	}
+
 	if len(opts.disabledSections) > 0 && len(result.MissingRef) == 0 {
 		for _, a := range append(result.UnusedCSS, result.UnusedJS...) {
 			logger.Warn("unused asset tolerated because a content section is disabled", "asset", a)
 		}
 		return nil
 	}
-	return fmt.Errorf("validating local css/js asset usage: %w", err)
+	return fmt.Errorf("validating local css/js asset usage: %w", assetusage.FormatIssues(result))
+}
+
+// partitionIgnoredAssets splits relPaths into (kept, ignored) by matching
+// each against patterns — glob syntax (path.Match), e.g. "js/examples/*.js".
+// A malformed pattern matches nothing rather than erroring, since this runs
+// after Validate has already decided the build would otherwise fail; a typo
+// in -assets-ignore should surface as "still unused", not a crash.
+func partitionIgnoredAssets(relPaths, patterns []string) (kept, ignored []string) {
+	for _, p := range relPaths {
+		matched := false
+		for _, pattern := range patterns {
+			if ok, _ := path.Match(pattern, p); ok {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			ignored = append(ignored, p)
+		} else {
+			kept = append(kept, p)
+		}
+	}
+	return kept, ignored
 }
 
 // injectSectionFlags writes sections.<name>: false into siteData for each
@@ -886,7 +931,7 @@ func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *op
 	if sectionEnabled(siteData, "listings") {
 		payload.Listings = make([]devItemEntry, 0, len(content.listings))
 		for _, l := range content.listings {
-			payload.Listings = append(payload.Listings, devItemEntry{ID: l.ID, Langs: nil})
+			payload.Listings = append(payload.Listings, devItemEntry{ID: listings.ID(l), Langs: nil})
 		}
 	}
 

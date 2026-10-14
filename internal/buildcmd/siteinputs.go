@@ -33,7 +33,8 @@ func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templates
 
 // loadSiteDataWithOptionalUsageCheck loads templates and data, validates site
 // data against the contract, and optionally validates contract usage by
-// templates. The build command treats pages.<name>.internal as compiler-managed
+// templates. The build command treats pages.<name>.<key> for each key in
+// compilerManagedPageKeys (e.g. internal, fragment) as compiler-managed
 // metadata and excludes it from contract checks.
 func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteDataSource string, validateUsage bool) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
 	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
@@ -49,8 +50,8 @@ func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteD
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
 	}
 	cmdutil.LogSiteDataOverride(logger, siteDataResult)
-	contract := contractWithoutPageInternalPatterns(siteDataContractResult.Contract)
-	siteDataForValidation := siteDataWithoutPageInternalFlags(siteDataResult.Data)
+	contract := contractWithoutPageManagedPatterns(siteDataContractResult.Contract)
+	siteDataForValidation := siteDataWithoutPageManagedFlags(siteDataResult.Data)
 	if err := sitegen.ValidateSiteData(siteDataForValidation, contract); err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site data against contract: %w", err)
 	}
@@ -66,11 +67,19 @@ func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteD
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
-// siteDataWithoutPageInternalFlags returns a shallow copy of siteData where
-// the "internal" key has been removed from every page entry. Only the two
-// affected levels (top-level map and the pages map) are copied; deeper values
-// are shared and never mutated.
-func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
+// compilerManagedPageKeys lists the pages.<name>.<key> keys the compiler
+// itself reads as build configuration rather than template content: a site
+// never declares these in site.contract.yaml, and setting one in site data
+// never trips the dangling-leaf check. Adding a new compiler-read page flag
+// is a one-line change here; both exemption mechanisms below pick it up
+// automatically.
+var compilerManagedPageKeys = []string{"internal", "fragment"}
+
+// siteDataWithoutPageManagedFlags returns a shallow copy of siteData where
+// every key in compilerManagedPageKeys has been removed from every page
+// entry. Only the two affected levels (top-level map and the pages map) are
+// copied; deeper values are shared and never mutated.
+func siteDataWithoutPageManagedFlags(siteData map[string]any) map[string]any {
 	pagesData, ok := siteData["pages"].(map[string]any)
 	if !ok {
 		return siteData
@@ -87,7 +96,9 @@ func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
 		for k, v := range pageMap {
 			copied[k] = v
 		}
-		delete(copied, "internal")
+		for _, key := range compilerManagedPageKeys {
+			delete(copied, key)
+		}
 		newPages[name] = copied
 	}
 
@@ -99,29 +110,39 @@ func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
 	return result
 }
 
-func contractWithoutPageInternalPatterns(contract sitegen.SiteDataContract) sitegen.SiteDataContract {
-	contract.Required = contractPatternsWithoutPageInternal(contract.Required)
-	contract.Allowed = contractPatternsWithoutPageInternal(contract.Allowed)
-	contract.CompilerConsumed = contractPatternsWithoutPageInternal(contract.CompilerConsumed)
+func contractWithoutPageManagedPatterns(contract sitegen.SiteDataContract) sitegen.SiteDataContract {
+	contract.Required = contractPatternsWithoutPageManaged(contract.Required)
+	contract.Allowed = contractPatternsWithoutPageManaged(contract.Allowed)
+	contract.CompilerConsumed = contractPatternsWithoutPageManaged(contract.CompilerConsumed)
 	return contract
 }
 
-func contractPatternsWithoutPageInternal(patterns []string) []string {
+func contractPatternsWithoutPageManaged(patterns []string) []string {
 	filtered := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
-		if !isPageInternalPattern(pattern) {
+		if !isPageManagedPattern(pattern) {
 			filtered = append(filtered, pattern)
 		}
 	}
 	return filtered
 }
 
-func isPageInternalPattern(pattern string) bool {
+func isPageManagedPattern(pattern string) bool {
 	parts := strings.Split(strings.TrimSpace(pattern), ".")
-	if len(parts) != 3 || parts[0] != "pages" || parts[2] != "internal" {
+	if len(parts) != 3 || parts[0] != "pages" {
 		return false
 	}
-	segment := parts[1]
+	segment, key := parts[1], parts[2]
+	managed := false
+	for _, k := range compilerManagedPageKeys {
+		if key == k {
+			managed = true
+			break
+		}
+	}
+	if !managed {
+		return false
+	}
 	if segment == "*" {
 		return true
 	}

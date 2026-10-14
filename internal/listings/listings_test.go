@@ -16,25 +16,14 @@ func writeListingsFile(t *testing.T, body string) string {
 	return path
 }
 
-func TestLoadListingsFile_ParsesAllFields(t *testing.T) {
+func TestLoadListingsFile_ParsesArbitraryFieldsVerbatim(t *testing.T) {
+	// A real-estate-shaped site (casaboa-data's original schema).
 	path := writeListingsFile(t, `
 listings:
   - id: pinheiros-72m2-001
     title: "Apartamento iluminado em Pinheiros"
     transaction: rent
-    price: "R$ 4.200/mês"
-    total: "Total estimado R$ 5.180/mês"
-    meta: "72 m² · 2 quartos"
-    place: "Pinheiros · São Paulo"
-    source: "QuintoAndar"
-    sourceNote: "Verify availability in the original listing."
-    tone: sp
-    photoLabel: "bright living room"
     score: 86
-    priceLabel: "Fair price"
-    locationLabel: "Excellent"
-    imageLabel: "Trustworthy photos"
-    concern: "Old building."
     sponsored: false
     reasons:
       - "Good size-to-location ratio."
@@ -49,20 +38,50 @@ listings:
 		t.Fatalf("expected 1 listing, got %d", len(list))
 	}
 	l := list[0]
-	if l.ID != "pinheiros-72m2-001" {
-		t.Errorf("ID = %q, want pinheiros-72m2-001", l.ID)
+	if ID(l) != "pinheiros-72m2-001" {
+		t.Errorf("ID = %q, want pinheiros-72m2-001", ID(l))
 	}
-	if l.Score != 86 {
-		t.Errorf("Score = %d, want 86", l.Score)
+	if l["score"] != 86 {
+		t.Errorf("score = %v, want 86", l["score"])
 	}
-	if l.Sponsored {
-		t.Errorf("Sponsored = true, want false")
+	if l["sponsored"] != false {
+		t.Errorf("sponsored = %v, want false", l["sponsored"])
 	}
-	if len(l.Reasons) != 2 {
-		t.Errorf("Reasons len = %d, want 2", len(l.Reasons))
+	reasons, ok := l["reasons"].([]any)
+	if !ok || len(reasons) != 2 {
+		t.Fatalf("reasons should be a 2-element list, got %v", l["reasons"])
 	}
-	if l.Breakdown["Price"] != 88 {
-		t.Errorf("Breakdown[Price] = %d, want 88", l.Breakdown["Price"])
+	breakdown, ok := l["breakdown"].(map[string]any)
+	if !ok || breakdown["Price"] != 88 {
+		t.Fatalf("breakdown[Price] = %v, want 88", l["breakdown"])
+	}
+}
+
+func TestLoadListingsFile_ParsesACompletelyDifferentSchema(t *testing.T) {
+	// A game-catalog-shaped site (heavy-heater's schema) — none of these
+	// field names exist anywhere in the loader; that's the point.
+	path := writeListingsFile(t, `
+listings:
+  - id: bug-metro
+    title: "Bug Metro"
+    partner: "Pocket World Arcade"
+    tokens: 6
+    tags: ["co-op routing", "tiny city"]
+`)
+	list, err := LoadListingsFile(path)
+	if err != nil {
+		t.Fatalf("LoadListingsFile: %v", err)
+	}
+	l := list[0]
+	if l["partner"] != "Pocket World Arcade" {
+		t.Errorf("partner = %v, want Pocket World Arcade", l["partner"])
+	}
+	if l["tokens"] != 6 {
+		t.Errorf("tokens = %v, want 6", l["tokens"])
+	}
+	tags, ok := l["tags"].([]any)
+	if !ok || len(tags) != 2 {
+		t.Fatalf("tags should be a 2-element list, got %v", l["tags"])
 	}
 }
 
@@ -78,8 +97,8 @@ listings:
 	if err != nil {
 		t.Fatalf("LoadListingsFile: %v", err)
 	}
-	if list[0].ID != "second" || list[1].ID != "first" {
-		t.Errorf("expected file order preserved, got %v then %v", list[0].ID, list[1].ID)
+	if ID(list[0]) != "second" || ID(list[1]) != "first" {
+		t.Errorf("expected file order preserved, got %v then %v", ID(list[0]), ID(list[1]))
 	}
 }
 
@@ -90,6 +109,17 @@ listings:
 `)
 	if _, err := LoadListingsFile(path); err == nil {
 		t.Fatal("expected an error for a listing with no id, got nil")
+	}
+}
+
+func TestLoadListingsFile_NonStringIDIsError(t *testing.T) {
+	path := writeListingsFile(t, `
+listings:
+  - id: 123
+    title: "Numeric id"
+`)
+	if _, err := LoadListingsFile(path); err == nil {
+		t.Fatal("expected an error for a non-string id, got nil")
 	}
 }
 
@@ -110,7 +140,7 @@ func TestLoadListingsFile_MissingFileIsError(t *testing.T) {
 }
 
 func TestToSiteDataList_AddsComputedHref(t *testing.T) {
-	list := []Listing{{ID: "moinhos-94m2-002", Title: "Planta ampla", Score: 81}}
+	list := []map[string]any{{"id": "moinhos-94m2-002", "title": "Planta ampla", "score": 81}}
 	got := ToSiteDataList(list)
 	m := got[0].(map[string]any)
 	if m["href"] != "/listings/moinhos-94m2-002/" {
@@ -124,26 +154,17 @@ func TestToSiteDataList_AddsComputedHref(t *testing.T) {
 	}
 }
 
-func TestToSiteDataList_PreservesReasonsAndBreakdown(t *testing.T) {
-	list := []Listing{{
-		ID:        "x",
-		Title:     "X",
-		Reasons:   []string{"a", "b"},
-		Breakdown: map[string]int{"Preço": 70},
-	}}
-	m := ToSiteDataList(list)[0].(map[string]any)
-	reasons, ok := m["reasons"].([]any)
-	if !ok || len(reasons) != 2 {
-		t.Fatalf("reasons should be a 2-element list, got %v", m["reasons"])
-	}
-	breakdown, ok := m["breakdown"].(map[string]any)
-	if !ok || breakdown["Preço"] != 70 {
-		t.Fatalf("breakdown[Preço] = %v, want 70", breakdown["Preço"])
+func TestToSiteDataList_DoesNotMutateTheInputMap(t *testing.T) {
+	src := map[string]any{"id": "x", "title": "X"}
+	list := []map[string]any{src}
+	_ = ToSiteDataList(list)
+	if _, ok := src["href"]; ok {
+		t.Error("ToSiteDataList must not add href to the caller's original map")
 	}
 }
 
 func TestToCurrentListing_MatchesGridFields(t *testing.T) {
-	l := Listing{ID: "y", Title: "Y", Place: "Somewhere", Concern: "old building"}
+	l := map[string]any{"id": "y", "title": "Y", "place": "Somewhere", "concern": "old building"}
 	m := ToCurrentListing(l)
 	if m["place"] != "Somewhere" {
 		t.Errorf("place = %v, want Somewhere", m["place"])
@@ -153,5 +174,14 @@ func TestToCurrentListing_MatchesGridFields(t *testing.T) {
 	}
 	if m["href"] != "/listings/y/" {
 		t.Errorf("href = %v, want /listings/y/", m["href"])
+	}
+}
+
+func TestID_ReturnsEmptyForMissingOrNonStringID(t *testing.T) {
+	if got := ID(map[string]any{}); got != "" {
+		t.Errorf("ID with no id key = %q, want empty", got)
+	}
+	if got := ID(map[string]any{"id": 123}); got != "" {
+		t.Errorf("ID with non-string id = %q, want empty", got)
 	}
 }

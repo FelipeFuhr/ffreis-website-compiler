@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"ffreis-website-compiler/internal/listings"
 	"ffreis-website-compiler/internal/testutil"
 )
 
@@ -705,7 +704,7 @@ func mustReadFile(t *testing.T, path string) []byte {
 func TestBuildDevDataPayload_IncludesListingsWhenSectionEnabled(t *testing.T) {
 	opts := buildOptions{devData: true, contentSource: "mock"}
 	content := &optionalContent{
-		listings: []listings.Listing{{ID: "l1", Title: "Listing One"}},
+		listings: []map[string]any{{"id": "l1", "title": "Listing One"}},
 	}
 
 	got := buildDevDataPayload(opts, map[string]any{}, content)
@@ -718,7 +717,7 @@ func TestBuildDevDataPayload_OmitsListingsWhenSectionDisabled(t *testing.T) {
 	opts := buildOptions{devData: true, contentSource: "mock"}
 	siteData := map[string]any{"sections": map[string]any{"listings": false}}
 	content := &optionalContent{
-		listings: []listings.Listing{{ID: "l1", Title: "Listing One"}},
+		listings: []map[string]any{{"id": "l1", "title": "Listing One"}},
 	}
 
 	got := buildDevDataPayload(opts, siteData, content)

@@ -120,9 +120,9 @@ func inlineLocalStylesheets(doc, srcRoot string) (string, error) {
 // avoiding the ~280 KB of base64 font data that full inlining would embed per
 // page. Local @import rules are flattened recursively. When embedFonts is true,
 // font file url() refs are embedded as base64 data URIs instead.
-func inlineLocalStylesheetsPreserveURLs(doc, srcRoot string, embedFonts bool) (string, error) {
+func inlineLocalStylesheetsPreserveURLs(slice, fullPage, srcRoot string, embedFonts bool, prune cssPruneOptions) (string, error) {
 	inlineOpts := cssInlineOpts{preserveURLs: true, embedFonts: embedFonts}
-	return replaceTagWith(doc, stylesheetTagRE, func(tag string, refs []string) (string, error) {
+	return replaceTagWith(slice, stylesheetTagRE, func(tag string, refs []string) (string, error) {
 		href := refs[1]
 		if isExternalRef(href) {
 			return tag, nil
@@ -135,6 +135,7 @@ func inlineLocalStylesheetsPreserveURLs(doc, srcRoot string, embedFonts bool) (s
 		if err != nil {
 			return "", err
 		}
+		rebasedCSS = pruneCSSForPage(rebasedCSS, fullPage, srcRoot, prune)
 		return wrapInStyleTag(rebasedCSS, getTagAttr(tag, "media")), nil
 	})
 }

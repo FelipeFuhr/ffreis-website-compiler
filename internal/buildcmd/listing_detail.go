@@ -16,7 +16,7 @@ import (
 // maps (each now carrying a real "href" to its new detail page), so any
 // existing client-side rendering fed by this key gains real per-listing URLs
 // with no other change required on the consuming site.
-func injectListingsData(siteData map[string]any, list []listings.Listing) {
+func injectListingsData(siteData map[string]any, list []map[string]any) {
 	siteData["listings"] = listings.ToSiteDataList(list)
 }
 
@@ -44,7 +44,7 @@ func writeListingDetailPages(
 	logger *slog.Logger,
 	opts buildOptions,
 	listingTpl sitegen.PageTemplate,
-	list []listings.Listing,
+	list []map[string]any,
 	siteData map[string]any,
 	assetsDir string,
 	mirrorer *externalAssetMirrorer,
@@ -61,7 +61,7 @@ func writeListingDetailPages(
 			allToCopy[k] = v
 		}
 		urls = append(urls, sitemap.URLItem{
-			Path:       "/listings/" + l.ID + "/",
+			Path:       "/listings/" + listings.ID(l) + "/",
 			Changefreq: "weekly",
 			Priority:   "0.7",
 		})
@@ -80,11 +80,12 @@ func renderAndWriteListing(
 	logger *slog.Logger,
 	opts buildOptions,
 	listingTpl sitegen.PageTemplate,
-	l listings.Listing,
+	l map[string]any,
 	siteData map[string]any,
 	assetsDir string,
 	mirrorer *externalAssetMirrorer,
 ) (map[string]string, error) {
+	id := listings.ID(l)
 	templateData := map[string]any{
 		"PageName":       "listing",
 		"SiteData":       siteData,
@@ -93,21 +94,21 @@ func renderAndWriteListing(
 
 	var rendered bytes.Buffer
 	if err := listingTpl.Tmpl.ExecuteTemplate(&rendered, "layout", templateData); err != nil {
-		return nil, fmt.Errorf("rendering listing %s: %w", l.ID, err)
+		return nil, fmt.Errorf("rendering listing %s: %w", id, err)
 	}
 
 	htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, "listing", mirrorer)
 	if err != nil {
-		return nil, fmt.Errorf("transforming listing %s: %w", l.ID, err)
+		return nil, fmt.Errorf("transforming listing %s: %w", id, err)
 	}
 
-	target := filepath.Join(opts.outDir, "listings", l.ID, "index.html")
+	target := filepath.Join(opts.outDir, "listings", id, "index.html")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return nil, fmt.Errorf("creating directory for listing %s: %w", l.ID, err)
+		return nil, fmt.Errorf("creating directory for listing %s: %w", id, err)
 	}
 	if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
 		return nil, fmt.Errorf(errFmtWriting, target, err)
 	}
-	logger.Info("generated listing detail page", "id", l.ID, "target", target)
+	logger.Info("generated listing detail page", "id", id, "target", target)
 	return toCopy, nil
 }

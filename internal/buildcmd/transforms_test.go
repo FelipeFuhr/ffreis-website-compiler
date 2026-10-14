@@ -123,7 +123,7 @@ func TestInjectPerPageStylesheet_FlowsThroughExistingInlinePipeline(t *testing.T
 	})
 	html := `<html><head><link rel="stylesheet" href="/css/app.css"></head><body></body></html>`
 	withPageCSS := injectPerPageStylesheet(html, dir, "login")
-	got, err := transformStylesheets(withPageCSS, dir, false, false)
+	got, err := transformStylesheets(withPageCSS, dir, false, false, cssPruneOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +151,7 @@ func makeStylesheetDir(t *testing.T, files map[string]string) string {
 func TestTransformStylesheets_HeadLinkBecomesStyleBlock(t *testing.T) {
 	dir := makeStylesheetDir(t, map[string]string{"css/main.css": "body{color:red}"})
 	html := `<html><head><link rel="stylesheet" href="/css/main.css"></head><body></body></html>`
-	got, err := transformStylesheets(html, dir, false, false)
+	got, err := transformStylesheets(html, dir, false, false, cssPruneOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestTransformStylesheets_HeadLinkBecomesStyleBlock(t *testing.T) {
 func TestTransformStylesheets_BodyLinkGetsDeferredPattern(t *testing.T) {
 	dir := makeStylesheetDir(t, map[string]string{"css/widget.css": ".w{}"})
 	html := `<html><head></head><body><link rel="stylesheet" href="/css/widget.css"><p>hi</p></body></html>`
-	got, err := transformStylesheets(html, dir, false, false)
+	got, err := transformStylesheets(html, dir, false, false, cssPruneOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestTransformStylesheets_BodyLinkGetsDeferredPattern(t *testing.T) {
 func TestTransformStylesheets_HeadMediaAttributePreserved(t *testing.T) {
 	dir := makeStylesheetDir(t, map[string]string{"css/print.css": "@media print{body{font-size:12pt}}"})
 	html := `<html><head><link rel="stylesheet" href="/css/print.css" media="print"></head></html>`
-	got, err := transformStylesheets(html, dir, false, false)
+	got, err := transformStylesheets(html, dir, false, false, cssPruneOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestTransformStylesheets_HeadMediaAttributePreserved(t *testing.T) {
 func TestTransformStylesheets_InlineBodyCSSFlagInlinesBodyLink(t *testing.T) {
 	dir := makeStylesheetDir(t, map[string]string{"css/widget.css": ".w{color:blue}"})
 	html := `<html><head></head><body><link rel="stylesheet" href="/css/widget.css"></body></html>`
-	got, err := transformStylesheets(html, dir, false, true) // inlineBodyCSS=true
+	got, err := transformStylesheets(html, dir, false, true, cssPruneOptions{}) // inlineBodyCSS=true
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestTransformStylesheets_NoHeadTagInlinesEverything(t *testing.T) {
 	// If there's no </head>, the entire document is treated as head.
 	dir := makeStylesheetDir(t, map[string]string{"css/main.css": "body{}"})
 	html := `<html><link rel="stylesheet" href="/css/main.css"><p>content</p></html>`
-	got, err := transformStylesheets(html, dir, false, false)
+	got, err := transformStylesheets(html, dir, false, false, cssPruneOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestTransformStylesheets_NoHeadTagInlinesEverything(t *testing.T) {
 func TestTransformStylesheets_ExternalStylesheetsUntouched(t *testing.T) {
 	dir := t.TempDir()
 	html := `<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto"></head></html>`
-	got, err := transformStylesheets(html, dir, false, false)
+	got, err := transformStylesheets(html, dir, false, false, cssPruneOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestTransformStylesheets_EmbedFontsTurnsURLsToDataURIs(t *testing.T) {
 		"fonts/f.woff2": "woff2bytes",
 	})
 	html := `<html><head><link rel="stylesheet" href="/css/main.css"></head></html>`
-	got, err := transformStylesheets(html, dir, true, false) // embedFonts=true
+	got, err := transformStylesheets(html, dir, true, false, cssPruneOptions{}) // embedFonts=true
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -1,7 +1,14 @@
-// Package listings loads curated real-estate listing entries from a YAML
-// file and converts them into the map shapes consumed by Go templates: the
-// existing client-rendered grid data, and a new per-listing detail-page data
-// map. It mirrors the internal/courses package's shape and conventions.
+// Package listings loads a site's own curated catalog/listing entries from a
+// YAML file and converts them into the map shapes Go templates (and a site's
+// own client-rendered JS, if it reads the same site-data key) expect.
+//
+// Unlike internal/courses and internal/projects, a listing's fields are not
+// a fixed Go struct: a site's own schema passes through verbatim. The first
+// consumer (casaboa-data) used real-estate-listing field names
+// (transaction, place, locationLabel, sponsored, breakdown, …), and those
+// aren't generic to every catalog a different site might need — a game
+// catalog, a product list, a team roster all have their own field sets. Only
+// "id" and "title" are required.
 package listings
 
 import (
@@ -11,37 +18,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Listing holds data for a single curated listing entry. Field names and YAML
-// tags match the existing casaboa-data schema exactly, since ToSiteDataList's
-// output also becomes the window.CASABOA_LISTINGS JS blob already consumed by
-// the site's client-side rendering — changing a key here would be a breaking
-// change to that contract.
-type Listing struct {
-	ID            string         `yaml:"id"`
-	Title         string         `yaml:"title"`
-	Transaction   string         `yaml:"transaction"`
-	Price         string         `yaml:"price"`
-	Total         string         `yaml:"total"`
-	Meta          string         `yaml:"meta"`
-	Place         string         `yaml:"place"`
-	Source        string         `yaml:"source"`
-	SourceNote    string         `yaml:"sourceNote"`
-	Tone          string         `yaml:"tone"`
-	PhotoLabel    string         `yaml:"photoLabel"`
-	Score         int            `yaml:"score"`
-	PriceLabel    string         `yaml:"priceLabel"`
-	LocationLabel string         `yaml:"locationLabel"`
-	ImageLabel    string         `yaml:"imageLabel"`
-	Concern       string         `yaml:"concern"`
-	Sponsored     bool           `yaml:"sponsored"`
-	Reasons       []string       `yaml:"reasons"`
-	Breakdown     map[string]int `yaml:"breakdown"`
-}
-
 // listingsFile is the on-disk shape: a top-level "listings:" key holding the
-// list (not a bare YAML list), matching casaboa-data's existing file.
+// list (not a bare YAML list), matching the convention casaboa-data
+// established.
 type listingsFile struct {
-	Listings []Listing `yaml:"listings"`
+	Listings []map[string]any `yaml:"listings"`
 }
 
 // listingPath is the site path for a listing's detail page.
@@ -49,11 +30,23 @@ func listingPath(id string) string {
 	return "/listings/" + id + "/"
 }
 
+// ID returns a listing's "id" field, or "" if it's missing or not a string.
+// LoadListingsFile already guarantees every listing it returns has a
+// non-empty string id, so callers that only ever see loaded listings can
+// treat a "" result as "can't happen" — this stays a plain accessor (no
+// panic) so it's still safe to call on a hand-built map in a test.
+func ID(l map[string]any) string {
+	id, _ := l["id"].(string)
+	return id
+}
+
 // LoadListingsFile reads a YAML file shaped as `listings: [...]` and returns
-// the listings in file order. Order is preserved rather than re-sorted: it
-// already reflects upstream curation/ranking (see the "score" field), unlike
-// courses/projects which have an explicit "order" field to sort by.
-func LoadListingsFile(path string) ([]Listing, error) {
+// the listings in file order — each entry's fields verbatim, whatever shape
+// the site's own schema uses. Order is preserved rather than re-sorted: it
+// already reflects upstream curation/ranking (e.g. a site-defined "score"
+// field), unlike courses/projects which have an explicit "order" field to
+// sort by.
+func LoadListingsFile(path string) ([]map[string]any, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading listings file %s: %w", path, err)
@@ -64,62 +57,42 @@ func LoadListingsFile(path string) ([]Listing, error) {
 		return nil, fmt.Errorf("parsing listings file %s: %w", path, err)
 	}
 
-	for i := range doc.Listings {
-		if doc.Listings[i].ID == "" {
+	for i, l := range doc.Listings {
+		id := ID(l)
+		if id == "" {
 			return nil, fmt.Errorf("listings[%d]: missing required field 'id'", i)
 		}
-		if doc.Listings[i].Title == "" {
-			return nil, fmt.Errorf("listings[%d] (id=%s): missing required field 'title'", i, doc.Listings[i].ID)
+		title, _ := l["title"].(string)
+		if title == "" {
+			return nil, fmt.Errorf("listings[%d] (id=%s): missing required field 'title'", i, id)
 		}
 	}
 
 	return doc.Listings, nil
 }
 
-// baseMap returns every field of a Listing as the map[string]any shape Go
-// templates and JSON serialisation expect, plus a computed "href" pointing at
-// its new detail page. Used for both the grid/JS-blob data and the detail page.
-func baseMap(l Listing) map[string]any {
-	reasons := make([]any, len(l.Reasons))
-	for i, r := range l.Reasons {
-		reasons[i] = r
+// withHref returns a shallow copy of l with a computed "href" added,
+// pointing at its detail page. A copy, not an in-place mutation, so the
+// slice LoadListingsFile returned (held in optionalContent.listings for the
+// whole build) never gains a field its own YAML source didn't declare.
+func withHref(l map[string]any) map[string]any {
+	out := make(map[string]any, len(l)+1)
+	for k, v := range l {
+		out[k] = v
 	}
-	breakdown := make(map[string]any, len(l.Breakdown))
-	for k, v := range l.Breakdown {
-		breakdown[k] = v
-	}
-	return map[string]any{
-		"id":            l.ID,
-		"title":         l.Title,
-		"href":          listingPath(l.ID),
-		"transaction":   l.Transaction,
-		"price":         l.Price,
-		"total":         l.Total,
-		"meta":          l.Meta,
-		"place":         l.Place,
-		"source":        l.Source,
-		"sourceNote":    l.SourceNote,
-		"tone":          l.Tone,
-		"photoLabel":    l.PhotoLabel,
-		"score":         l.Score,
-		"priceLabel":    l.PriceLabel,
-		"locationLabel": l.LocationLabel,
-		"imageLabel":    l.ImageLabel,
-		"concern":       l.Concern,
-		"sponsored":     l.Sponsored,
-		"reasons":       reasons,
-		"breakdown":     breakdown,
-	}
+	out["href"] = listingPath(ID(l))
+	return out
 }
 
-// ToSiteDataList converts a slice of Listing to the []any map format expected
-// by Go templates and by the window.CASABOA_LISTINGS JS blob. Each entry now
-// also carries a computed "href" so client-side rendering can link to a real,
-// crawlable per-listing URL instead of an in-page anchor.
-func ToSiteDataList(list []Listing) []any {
+// ToSiteDataList converts loaded listings to the []any format Go templates
+// expect, and that a site's own client-side JS blob (e.g.
+// window.CASABOA_LISTINGS) may also read verbatim from site data. Each entry
+// now also carries a computed "href" so client-side rendering can link to a
+// real, crawlable per-listing URL instead of an in-page anchor.
+func ToSiteDataList(list []map[string]any) []any {
 	out := make([]any, len(list))
 	for i, l := range list {
-		out[i] = baseMap(l)
+		out[i] = withHref(l)
 	}
 	return out
 }
@@ -128,6 +101,6 @@ func ToSiteDataList(list []Listing) []any {
 // "CurrentListing" template key). Kept as its own function, mirroring
 // ToCurrentCourse, so the detail template has a stable, explicit contract
 // independent of the grid's even though the fields are currently identical.
-func ToCurrentListing(l Listing) map[string]any {
-	return baseMap(l)
+func ToCurrentListing(l map[string]any) map[string]any {
+	return withHref(l)
 }

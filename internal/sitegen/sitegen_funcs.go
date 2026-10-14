@@ -229,7 +229,7 @@ func isMissingValue(value any) bool {
 
 	rv := reflect.ValueOf(value)
 	switch rv.Kind() {
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		return rv.IsNil()
 	case reflect.Slice, reflect.Map, reflect.Array:
 		return rv.Len() == 0

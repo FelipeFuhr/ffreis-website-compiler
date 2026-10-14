@@ -39,15 +39,39 @@ type buildOptions struct {
 	sharedScripts              map[string]bool // populated at runtime by collectSharedScripts
 	embedFonts                 bool
 	inlineBodyCSS              bool
-	rasterInlineThreshold      int
-	siblingBasePaths           []string
-	mirrorExternalAssets       bool
-	mirroredAssetsDir          string
-	enableSanity               bool
-	strictContract             bool
-	cleanURLs                  bool
-	runOutputTests             bool
-	outputTestManifest         string
+	// cssPrune, when enabled, drops CSS rules from an inlined <head> stylesheet
+	// whose selectors don't match anything in that specific page's rendered
+	// HTML — so a page carries only the CSS it actually needs instead of a
+	// shared stylesheet's full contents. See cssprune.go. Off by default:
+	// this changes page output, so sites opt in deliberately.
+	cssPrune cssPruneOptions
+	// cssSafelistPath is the resolved path to the safelist YAML file (flag
+	// override or the <website-root>/src/data/css-safelist.yaml default).
+	// Loaded into cssPrune.safelist by loadCSSSafelist in prepareBuild, once
+	// resolveBuildPaths has determined the data dir.
+	cssSafelistPath string
+	// assetsIgnore lists glob patterns (path.Match syntax, matched against a
+	// local CSS/JS file's path relative to assetsDir — e.g. "js/examples/*.js")
+	// that validateAssetUsage exempts from its unused-asset check: files the
+	// site genuinely keeps for a reason other than a page loading them (type
+	// declarations, example/test scripts a different tool runs), which would
+	// otherwise fail the build just for sitting in assetsDir unreferenced.
+	assetsIgnore []string
+	// passthroughFiles lists extra paths (relative to assetsDir, files or
+	// directories) copied verbatim into the output alongside the hardcoded
+	// well-known list (favicon.ico, robots.txt, sitemap.xml, llms.txt,
+	// humans.txt, ld/, .well-known/) — e.g. a static demo page that isn't a
+	// compiler-rendered template and has no other way to reach the output.
+	passthroughFiles      []string
+	rasterInlineThreshold int
+	siblingBasePaths      []string
+	mirrorExternalAssets  bool
+	mirroredAssetsDir     string
+	enableSanity          bool
+	strictContract        bool
+	cleanURLs             bool
+	runOutputTests        bool
+	outputTestManifest    string
 	// disabledSections lists content sections (see sectionTable in sections.go
 	// for the current set) to hide: their pages, nav/footer entries, home-page
 	// blocks, and sitemap URLs are omitted. Injected into siteData as
@@ -107,11 +131,18 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.IntVar(&opts.jsSharedInlineThreshold, "js-shared-inline-threshold", -1, "for JS files referenced by more than one page, only inline if smaller than this many bytes; -1 to disable (all JS uses -js-inline-threshold regardless of page count)")
 	fs.BoolVar(&opts.embedFonts, "embed-fonts", false, "embed font files (woff2/woff/ttf/otf/eot) as base64 data URIs in inlined CSS; eliminates font files from dist but increases HTML size")
 	fs.BoolVar(&opts.inlineBodyCSS, "inline-body-css", false, "inline body <link rel=stylesheet> as <style> blocks instead of deferred external links; eliminates CSS files from dist but prevents cross-page CSS cache reuse")
+	fs.BoolVar(&opts.cssPrune.enabled, "prune-unused-css-per-page", false, "drop CSS rules from an inlined <head> stylesheet whose selectors don't match anything in that page's rendered HTML, so each page's inline <style> carries only what it needs; see -css-safelist for classes/attributes a client script adds after load, which must be declared there or their rules will be pruned")
+	var cssSafelistFlag string
+	fs.StringVar(&cssSafelistFlag, "css-safelist", "", "path to a YAML file listing selector substrings (class/attribute patterns a client script toggles after load, e.g. .active, [hidden]) that -prune-unused-css-per-page always keeps regardless of static HTML presence; defaults to <website-root>/src/data/css-safelist.yaml if present")
 	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")
 	var siblingBasePathsFlag string
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
 	var disableSectionsFlag string
 	fs.StringVar(&disableSectionsFlag, "disable-sections", "", disableSectionsHelpText())
+	var assetsIgnoreFlag string
+	fs.StringVar(&assetsIgnoreFlag, "assets-ignore", "", "comma-separated glob patterns (path.Match syntax, relative to the assets dir — e.g. 'js/examples/*.js,js/ports/*.js') exempting local css/js files from the unused-asset check: files kept for a reason other than a page loading them (type declarations, scripts a different tool runs)")
+	var passthroughFilesFlag string
+	fs.StringVar(&passthroughFilesFlag, "passthrough-files", "", "comma-separated extra paths (relative to the assets dir, files or directories) copied verbatim into the output alongside the built-in well-known list (favicon.ico, robots.txt, sitemap.xml, llms.txt, humans.txt, ld/, .well-known/) — e.g. a static demo page that isn't a compiler-rendered template")
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
@@ -138,19 +169,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 		return buildOptions{}, err
 	}
 
-	// Anti-leak guard: reject /mock/ paths when content-source is prod (the default).
-	// This makes it impossible to bake mock content into a prod build by accident.
-	if opts.contentSource != "mock" {
-		for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile, opts.listingsFile} {
-			if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
-				return buildOptions{}, fmt.Errorf(
-					"content path %q contains /mock/ but --content-source=%q: "+
-						"mock content cannot be used in a prod build; "+
-						"pass --content-source=mock to enable mock content",
-					p, opts.contentSource,
-				)
-			}
-		}
+	if err := validateMockContentPaths(opts); err != nil {
+		return buildOptions{}, err
 	}
 
 	if assetsDirFlag == "" && siteDirFlag != "" {
@@ -158,23 +178,49 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	}
 	opts.assetsDir = assetsDirFlag
 	opts.templatesDir = templatesDirFlag
+	opts.cssSafelistPath = cssSafelistFlag
 
-	if siblingBasePathsFlag != "" {
-		for _, s := range strings.Split(siblingBasePathsFlag, ",") {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				opts.siblingBasePaths = append(opts.siblingBasePaths, s)
-			}
-		}
-	}
-
-	for _, s := range strings.Split(disableSectionsFlag, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			opts.disabledSections = append(opts.disabledSections, s)
-		}
-	}
+	opts.siblingBasePaths = splitCommaList(siblingBasePathsFlag)
+	opts.disabledSections = splitCommaList(disableSectionsFlag)
+	opts.assetsIgnore = splitCommaList(assetsIgnoreFlag)
+	opts.passthroughFiles = splitCommaList(passthroughFilesFlag)
 
 	return opts, nil
+}
+
+// validateMockContentPaths is the anti-leak guard: it rejects any /mock/
+// content path when content-source is prod (the default), so mock data
+// cannot be baked into a prod build by accident.
+func validateMockContentPaths(opts buildOptions) error {
+	if opts.contentSource == "mock" {
+		return nil
+	}
+	for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile, opts.listingsFile} {
+		if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
+			return fmt.Errorf(
+				"content path %q contains /mock/ but --content-source=%q: "+
+					"mock content cannot be used in a prod build; "+
+					"pass --content-source=mock to enable mock content",
+				p, opts.contentSource,
+			)
+		}
+	}
+	return nil
+}
+
+// splitCommaList splits a comma-separated flag value into a trimmed,
+// empty-entry-free slice — shared by every flag that accepts a
+// comma-separated list (sibling base paths, disabled sections, assets-ignore
+// globs, passthrough files). Returns nil for an empty or all-empty input, so
+// an unset flag leaves the corresponding buildOptions field at its zero value.
+func splitCommaList(s string) []string {
+	var result []string
+	for _, item := range strings.Split(s, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func resolveBuildPaths(opts buildOptions) (assetsDir string, templatesDir string, err error) {
@@ -237,7 +283,7 @@ func maybeCopyAssets(opts buildOptions, assetsDir string) error {
 	if err := checkRobotsTxtSafety(assetsDir, opts); err != nil {
 		return err
 	}
-	if err := copyStaticAssets(assetsDir, opts.outDir); err != nil {
+	if err := copyStaticAssets(assetsDir, opts.outDir, opts.passthroughFiles); err != nil {
 		return fmt.Errorf("copying assets: %w", err)
 	}
 	return nil

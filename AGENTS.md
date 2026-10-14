@@ -45,4 +45,5 @@ heading → file → byte-count mapping, and `scripts/check-instructions.sh`
 | Automatic page transforms | `.claude/reference/automatic-page-transforms.md` |
 | Image alt-text validation | `.claude/reference/image-alt-text-validation.md` |
 | Template extensibility blocks | `.claude/reference/template-extensibility-blocks.md` |
+| Toolchain freshness check (`make check-toolchain`) | `.claude/reference/toolchain-freshness-check.md` |
 | Keeping this file current | `.claude/reference/keeping-this-file-current.md` |
