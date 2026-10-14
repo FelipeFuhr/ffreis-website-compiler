@@ -28,7 +28,7 @@ type Result struct {
 }
 
 func Validate(assetsRoot string, renderedPages map[string]string) (Result, error) {
-	allCSS, allJS, err := collectLocalAssets(assetsRoot)
+	allCSS, allJS, realPaths, err := collectLocalAssets(assetsRoot)
 	if err != nil {
 		return Result{}, err
 	}
@@ -42,6 +42,8 @@ func Validate(assetsRoot string, renderedPages map[string]string) (Result, error
 	if err != nil {
 		return Result{}, err
 	}
+
+	used = resolveAliasedUsed(allCSS, allJS, used, realPaths)
 
 	result := buildResult(allCSS, allJS, used, missing)
 	if err := validateResult(result); err != nil {
@@ -232,10 +234,21 @@ func FormatIssues(result Result) error {
 	return errors.New(strings.Join(errs, "; "))
 }
 
-func collectLocalAssets(assetsRoot string) (map[string]struct{}, map[string]struct{}, error) {
-	allCSS := make(map[string]struct{})
-	allJS := make(map[string]struct{})
-	err := filepath.WalkDir(assetsRoot, func(path string, d os.DirEntry, walkErr error) error {
+// collectLocalAssets also returns realPaths, mapping every discovered nominal
+// relative path to its symlink-resolved relative path (identical to the
+// nominal path for a real file). WalkDir never follows a directory symlink
+// into a different subtree, but a *file* symlink is still visited at its own
+// nominal path -- a site organizing several pages' shared CSS as one real
+// file under css/pages/_shared/ plus a symlink per page (rather than
+// duplicating the content) ends up with two distinct nominal paths for what
+// is, on disk, the same bytes. realPaths lets resolveAliasedUsed recognize
+// that and avoid flagging the real file as unused just because only its
+// symlink aliases were ever directly referenced.
+func collectLocalAssets(assetsRoot string) (allCSS, allJS map[string]struct{}, realPaths map[string]string, err error) {
+	allCSS = make(map[string]struct{})
+	allJS = make(map[string]struct{})
+	realPaths = make(map[string]string)
+	walkErr := filepath.WalkDir(assetsRoot, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -246,9 +259,9 @@ func collectLocalAssets(assetsRoot string) (map[string]struct{}, map[string]stru
 		if ext != ".css" && ext != ".js" {
 			return nil
 		}
-		relPath, err := filepath.Rel(assetsRoot, path)
-		if err != nil {
-			return err
+		relPath, relErr := filepath.Rel(assetsRoot, path)
+		if relErr != nil {
+			return relErr
 		}
 		normalized := filepath.ToSlash(relPath)
 		if ext == ".css" {
@@ -256,12 +269,60 @@ func collectLocalAssets(assetsRoot string) (map[string]struct{}, map[string]stru
 		} else {
 			allJS[normalized] = struct{}{}
 		}
+		realPaths[normalized] = resolveRealRelPath(assetsRoot, path, normalized)
 		return nil
 	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("walking assets root %s: %w", assetsRoot, err)
+	if walkErr != nil {
+		return nil, nil, nil, fmt.Errorf("walking assets root %s: %w", assetsRoot, walkErr)
 	}
-	return allCSS, allJS, nil
+	return allCSS, allJS, realPaths, nil
+}
+
+// resolveRealRelPath returns path's symlink-resolved location, relative to
+// assetsRoot and slash-normalized, so two nominal paths that are really the
+// same file on disk (one of them reached through a symlink) group under one
+// key. Falls back to the nominal path itself if the symlink can't be
+// resolved, or resolves outside assetsRoot entirely -- either case should
+// stand alone rather than silently merge into some other file's group.
+func resolveRealRelPath(assetsRoot, path, normalized string) string {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return normalized
+	}
+	rel, err := filepath.Rel(assetsRoot, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+		return normalized
+	}
+	return filepath.ToSlash(rel)
+}
+
+// resolveAliasedUsed expands used so that if any nominal path aliasing a
+// given real file (per realPaths, from collectLocalAssets) is referenced,
+// every other nominal path resolving to that same real file counts as used
+// too -- see collectLocalAssets' own comment for why this aliasing is a
+// real, intentional asset-organization pattern rather than something to
+// warn about.
+func resolveAliasedUsed(allCSS, allJS map[string]struct{}, used map[string]struct{}, realPaths map[string]string) map[string]struct{} {
+	aliasesByReal := make(map[string][]string)
+	for nominal := range allCSS {
+		aliasesByReal[realPaths[nominal]] = append(aliasesByReal[realPaths[nominal]], nominal)
+	}
+	for nominal := range allJS {
+		aliasesByReal[realPaths[nominal]] = append(aliasesByReal[realPaths[nominal]], nominal)
+	}
+
+	expanded := make(map[string]struct{}, len(used))
+	for nominal := range used {
+		expanded[nominal] = struct{}{}
+		real, tracked := realPaths[nominal]
+		if !tracked {
+			continue
+		}
+		for _, alias := range aliasesByReal[real] {
+			expanded[alias] = struct{}{}
+		}
+	}
+	return expanded
 }
 
 func collectHTMLRefs(doc string) []string {

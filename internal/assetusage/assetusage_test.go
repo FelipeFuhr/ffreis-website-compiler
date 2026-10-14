@@ -215,3 +215,76 @@ func mustWriteFile(t *testing.T, path, content string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+func mustSymlink(t *testing.T, target, linkPath string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(linkPath), err)
+	}
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Fatalf("symlink %s -> %s: %v", linkPath, target, err)
+	}
+}
+
+// ── symlink-aliased shared assets ───────────────────────────────────────────
+//
+// A site organizing several pages' identical per-page CSS as one real file
+// under css/pages/_shared/ plus a symlink per page (rather than physically
+// duplicating the content) ends up with two nominal paths for what is, on
+// disk, the same bytes. Without alias resolution, the real _shared/ file
+// would always be flagged unused: nothing ever references its own nominal
+// path directly, only the per-page symlink aliases that resolve to it.
+
+func TestValidate_SymlinkedPerPageStylesheet_RealFileNotFlaggedUnused(t *testing.T) {
+	assetsRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(assetsRoot, "css", "pages", "_shared", "appshell.css"), `.appshell{}`)
+	mustSymlink(t, filepath.Join("_shared", "appshell.css"), filepath.Join(assetsRoot, "css", "pages", "login.css"))
+	mustSymlink(t, filepath.Join("_shared", "appshell.css"), filepath.Join(assetsRoot, "css", "pages", "signup.css"))
+
+	result, err := Validate(assetsRoot, map[string]string{
+		"login":  `<!doctype html><html><head></head><body></body></html>`,
+		"signup": `<!doctype html><html><head></head><body></body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("expected validation success, got %v", err)
+	}
+	if len(result.UnusedCSS) != 0 {
+		t.Fatalf("expected no unused css, got %#v", result.UnusedCSS)
+	}
+	for _, want := range []string{"css/pages/login.css", "css/pages/signup.css", "css/pages/_shared/appshell.css"} {
+		if !containsString(result.UsedCSS, want) {
+			t.Fatalf("expected %q marked used, got %#v", want, result.UsedCSS)
+		}
+	}
+}
+
+func TestValidate_SymlinkedStylesheetForUnrenderedPage_SharedFileStillFlaggedUnused(t *testing.T) {
+	// Only "login" is rendered -- the real _shared/ file must still be
+	// flagged when NONE of its aliases are ever referenced, not treated as
+	// perpetually used just because it happens to be symlink-aliased.
+	assetsRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(assetsRoot, "css", "pages", "_shared", "appshell.css"), `.appshell{}`)
+	mustSymlink(t, filepath.Join("_shared", "appshell.css"), filepath.Join(assetsRoot, "css", "pages", "signup.css"))
+
+	_, err := Validate(assetsRoot, map[string]string{
+		"login": `<!doctype html><html><head></head><body></body></html>`,
+	})
+	if err == nil {
+		t.Fatal("expected unused asset validation failure")
+	}
+	if !strings.Contains(err.Error(), "unused local css asset: css/pages/_shared/appshell.css") {
+		t.Fatalf("expected the real shared file flagged unused, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "unused local css asset: css/pages/signup.css") {
+		t.Fatalf("expected the unreferenced symlink alias flagged unused, got %v", err)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
