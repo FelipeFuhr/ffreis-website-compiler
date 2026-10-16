@@ -748,3 +748,104 @@ func TestWriteHashedAssets_WritesCorrectContent(t *testing.T) {
 		t.Errorf("expected original content in hashed file, got %q", written)
 	}
 }
+
+// ── deferred body stylesheets (the 404 bug) ──────────────────────────────────
+
+// TestFingerprintLocalAssets_FingerprintsStylesheetHref covers the documented
+// "move a stylesheet <link> into <body> to defer it" convention. The deferred
+// link stays external, so its href names a file — and only fingerprinted
+// copies are written to the output (copyStaticAssets deliberately does not
+// copy css/ wholesale), which meant the deferred path shipped a 404 with a
+// green build.
+func TestFingerprintLocalAssets_FingerprintsStylesheetHref(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{
+		"css/widget.css": ".widget{color:red}",
+	})
+	html := `<html><body>` +
+		`<link rel="stylesheet" href="/css/widget.css" media="print" onload="this.media='all'">` +
+		`</body></html>`
+
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(got, `href="/css/widget.css"`) {
+		t.Error("deferred stylesheet href was left un-fingerprinted — it will 404 in production")
+	}
+	want := assetContentHash([]byte(".widget{color:red}"))
+	if !strings.Contains(got, want) {
+		t.Errorf("expected content hash %q in the rewritten href, got: %s", want, got)
+	}
+	if len(toCopy) == 0 {
+		t.Fatal("stylesheet was not registered for copying — the file would never be written to dist")
+	}
+	// The media/onload attributes are what make the deferred pattern work;
+	// rewriting the href must not disturb them.
+	if !strings.Contains(got, `media="print"`) || !strings.Contains(got, `onload="this.media='all'"`) {
+		t.Errorf("deferred-loading attributes lost during fingerprinting: %s", got)
+	}
+}
+
+// TestFingerprintLocalAssets_FingerprintsNoscriptStylesheetTwin guards the
+// other half of the deferred pattern: deferLocalStylesheets emits a <noscript>
+// copy of the original tag, and a dead href there breaks exactly the
+// JS-disabled visitors the fallback exists for.
+func TestFingerprintLocalAssets_FingerprintsNoscriptStylesheetTwin(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{
+		"css/widget.css": ".widget{color:red}",
+	})
+	html := `<html><body>` +
+		`<link rel="stylesheet" href="/css/widget.css" media="print" onload="this.media='all'">` +
+		"\n<noscript>" + `<link rel="stylesheet" href="/css/widget.css">` + `</noscript>` +
+		`</body></html>`
+
+	got, _, err := fingerprintLocalAssets(html, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(got, `href="/css/widget.css"`) {
+		t.Errorf("an un-fingerprinted stylesheet href survived (noscript twin): %s", got)
+	}
+	hash := assetContentHash([]byte(".widget{color:red}"))
+	if n := strings.Count(got, hash); n != 2 {
+		t.Errorf("expected both the deferred link and its noscript twin rewritten (2 hashed hrefs), got %d: %s", n, got)
+	}
+}
+
+// TestFingerprintLocalAssets_StylesheetHrefRespectsBasePath checks the
+// language-prefix case: a root-absolute href must gain the base path, the same
+// way every other root-absolute asset reference does.
+func TestFingerprintLocalAssets_StylesheetHrefRespectsBasePath(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{
+		"css/widget.css": ".widget{color:red}",
+	})
+	html := `<html><body><link rel="stylesheet" href="/css/widget.css" media="print"></body></html>`
+
+	got, _, err := fingerprintLocalAssets(html, dir, "/en")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `href="/en/css/widget.`) {
+		t.Errorf("expected the base path prepended to the rewritten stylesheet href, got: %s", got)
+	}
+}
+
+// TestFingerprintLocalAssets_LeavesExternalStylesheetAlone keeps CDN
+// stylesheets (e.g. a Google Fonts href) untouched.
+func TestFingerprintLocalAssets_LeavesExternalStylesheetAlone(t *testing.T) {
+	dir := newFingerprintDir(t, map[string]string{})
+	html := `<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter"></head></html>`
+
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `href="https://fonts.googleapis.com/css2?family=Inter"`) {
+		t.Errorf("external stylesheet href must be left unchanged, got: %s", got)
+	}
+	if len(toCopy) != 0 {
+		t.Errorf("external stylesheet must not be registered for copying, got %v", toCopy)
+	}
+}

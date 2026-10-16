@@ -182,7 +182,19 @@ func fingerprintLocalAssets(html, assetsDir, basePath string) (string, map[strin
 		return "", nil, fmt.Errorf("fingerprinting data-src: %w", err)
 	}
 
-	// <link rel="preload" href="...">, <link rel="icon" href="...">, <link rel="manifest" href="...">
+	// <link rel="preload" href="...">, <link rel="icon" href="...">,
+	// <link rel="manifest" href="...">, <link rel="stylesheet" href="...">
+	//
+	// The stylesheet case covers the deferred body-CSS path: a <head> stylesheet
+	// is inlined as a <style> block before this runs and has no href left to
+	// rewrite, but deferLocalStylesheets keeps a body stylesheet external as
+	// `media="print" onload="this.media='all'"` plus a <noscript> twin, and both
+	// of those still name a file. Without this step the href kept its original
+	// path while only fingerprinted copies get written to the output (see
+	// copyStaticAssets, which deliberately does not copy css/ wholesale) — so
+	// the documented "move the link to <body> to defer it" convention produced
+	// a 404 in production, with a green build, because nothing checks that a
+	// <link href> resolves in the output tree.
 	for _, step := range []struct {
 		re  *regexp.Regexp
 		ctx string
@@ -190,6 +202,7 @@ func fingerprintLocalAssets(html, assetsDir, basePath string) (string, map[strin
 		{preloadTagRE, "fingerprinting preload href"},
 		{iconTagRE, "fingerprinting icon href"},
 		{manifestTagRE, "fingerprinting manifest href"},
+		{stylesheetTagRE, "fingerprinting stylesheet href"},
 	} {
 		if html, err = fp.fingerprintHrefTags(html, step.re); err != nil {
 			return "", nil, fmt.Errorf("%s: %w", step.ctx, err)

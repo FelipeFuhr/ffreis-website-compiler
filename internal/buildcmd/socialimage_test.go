@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +68,11 @@ func TestInjectSocialImage_NoOpWithoutImageFile(t *testing.T) {
 	}
 }
 
+// An authored og:image always suppresses the site-wide og-image.* default.
+// Here the authored reference names a file this build does not produce, so
+// there is additionally nothing to fingerprint and the html is returned
+// byte-identical — see TestInjectSocialImage_FingerprintsAuthoredAbsoluteOGImage
+// for the case where the authored file does exist and is rewritten.
 func TestInjectSocialImage_NoOpWhenTemplateAlreadyDeclaresOGImage(t *testing.T) {
 	assetsDir := t.TempDir()
 	writeTestPNG(t, filepath.Join(assetsDir, "img", "og-image.png"), 1200, 630)
@@ -163,5 +169,181 @@ func TestInjectSocialImage_BasePathPrefixesTheURL(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(got), []byte(`content="https://example.com/pt/img/og-image.`)) {
 		t.Errorf("expected base_url + basePath prefix in the image URL, got:\n%s", got)
+	}
+}
+
+// ── template-authored social images (the un-fingerprinted 404 bug) ───────────
+
+// TestInjectSocialImage_FingerprintsAuthoredAbsoluteOGImage covers the shape a
+// correctly-written template actually produces: Open Graph requires an absolute
+// URL, so a head partial builds base_url + base_path + path (ffreis-arcade does
+// exactly this). The generic fingerprinting pass treats any http(s):// value as
+// external and skips it, so before this fix the authored tag named a file the
+// build never wrote — a 404 social preview after every deploy, with a green
+// build.
+func TestInjectSocialImage_FingerprintsAuthoredAbsoluteOGImage(t *testing.T) {
+	dir := t.TempDir()
+	writeTestPNG(t, filepath.Join(dir, "assets", "social", "og-image.png"), 1200, 630)
+
+	siteData := map[string]any{"base_url": "https://arcade.example.com"}
+	html := `<html><head>` +
+		`<meta property="og:image" content="https://arcade.example.com/assets/social/og-image.png">` +
+		`</head></html>`
+
+	got, toCopy, err := injectSocialImage(html, siteData, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(got, `content="https://arcade.example.com/assets/social/og-image.png"`) {
+		t.Error("authored og:image was left un-fingerprinted — the file is never copied, so the URL 404s")
+	}
+	if !strings.Contains(got, "https://arcade.example.com/assets/social/og-image.") {
+		t.Errorf("rewritten og:image must stay an absolute same-origin URL, got: %s", got)
+	}
+	if len(toCopy) != 1 {
+		t.Fatalf("expected exactly one copy instruction for the authored image, got %v", toCopy)
+	}
+	for hashed, original := range toCopy {
+		if original != "assets/social/og-image.png" {
+			t.Errorf("copy source = %q, want the authored image path", original)
+		}
+		if !strings.Contains(got, hashed) {
+			t.Errorf("the hashed path %q registered for copying does not appear in the output: %s", hashed, got)
+		}
+	}
+}
+
+// TestInjectSocialImage_AuthoredOGImageDoesNotDoublePrefixBasePath guards the
+// trap in reassembling these URLs: an authored absolute URL already contains
+// the base path, and the fingerprinter prepends the base path again for
+// root-absolute refs, so a naive implementation yields /en/en/assets/...
+func TestInjectSocialImage_AuthoredOGImageDoesNotDoublePrefixBasePath(t *testing.T) {
+	dir := t.TempDir()
+	writeTestPNG(t, filepath.Join(dir, "assets", "social", "og-image.png"), 1200, 630)
+
+	siteData := map[string]any{"base_url": "https://arcade.example.com"}
+	html := `<html><head>` +
+		`<meta property="og:image" content="https://arcade.example.com/en/assets/social/og-image.png">` +
+		`</head></html>`
+
+	got, _, err := injectSocialImage(html, siteData, dir, "/en")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(got, "/en/en/") {
+		t.Errorf("base path was prepended twice: %s", got)
+	}
+	if !strings.Contains(got, "https://arcade.example.com/en/assets/social/og-image.") {
+		t.Errorf("expected one base-path prefix preserved in the absolute URL, got: %s", got)
+	}
+}
+
+// TestInjectSocialImage_FingerprintsAuthoredRootRelativeOGImage covers the
+// other authored shape — a site-relative path rather than an absolute URL.
+func TestInjectSocialImage_FingerprintsAuthoredRootRelativeOGImage(t *testing.T) {
+	dir := t.TempDir()
+	writeTestPNG(t, filepath.Join(dir, "img", "card.png"), 800, 418)
+
+	siteData := map[string]any{"base_url": "https://site.example.com"}
+	html := `<html><head><meta property="og:image" content="/img/card.png"></head></html>`
+
+	got, toCopy, err := injectSocialImage(html, siteData, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, `content="/img/card.png"`) {
+		t.Errorf("authored root-relative og:image was not fingerprinted: %s", got)
+	}
+	if len(toCopy) != 1 {
+		t.Errorf("expected the authored image registered for copying, got %v", toCopy)
+	}
+}
+
+// TestInjectSocialImage_LeavesExternallyHostedOGImageAlone keeps a genuinely
+// third-party (CDN-hosted) preview image untouched — it is not ours to
+// fingerprint and the file does not exist locally.
+func TestInjectSocialImage_LeavesExternallyHostedOGImageAlone(t *testing.T) {
+	dir := t.TempDir()
+	siteData := map[string]any{"base_url": "https://site.example.com"}
+	html := `<html><head><meta property="og:image" content="https://cdn.other.com/promo.png"></head></html>`
+
+	got, toCopy, err := injectSocialImage(html, siteData, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `content="https://cdn.other.com/promo.png"`) {
+		t.Errorf("externally hosted og:image must be left unchanged, got: %s", got)
+	}
+	if len(toCopy) != 0 {
+		t.Errorf("externally hosted og:image must not be registered for copying, got %v", toCopy)
+	}
+}
+
+// TestInjectSocialImage_FingerprintsAuthoredTwitterImage covers the
+// name="twitter:image" spelling, which uses `name` rather than `property` and
+// so needs attribute-order-independent parsing.
+func TestInjectSocialImage_FingerprintsAuthoredTwitterImage(t *testing.T) {
+	dir := t.TempDir()
+	writeTestPNG(t, filepath.Join(dir, "img", "card.png"), 800, 418)
+
+	siteData := map[string]any{"base_url": "https://site.example.com"}
+	// content before name, to prove order independence.
+	html := `<html><head><meta content="/img/card.png" name="twitter:image"></head></html>`
+
+	got, toCopy, err := injectSocialImage(html, siteData, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, `content="/img/card.png"`) {
+		t.Errorf("authored twitter:image was not fingerprinted regardless of attribute order: %s", got)
+	}
+	if len(toCopy) != 1 {
+		t.Errorf("expected the authored twitter:image registered for copying, got %v", toCopy)
+	}
+}
+
+// TestInjectSocialImage_AuthoredTagForMissingFileIsLeftAlone keeps the build
+// non-fatal for a tag naming a file that does not exist: the reference is
+// already broken and rewriting it to a hashed name nothing wrote would only
+// obscure that.
+func TestInjectSocialImage_AuthoredTagForMissingFileIsLeftAlone(t *testing.T) {
+	dir := t.TempDir()
+	siteData := map[string]any{"base_url": "https://site.example.com"}
+	html := `<html><head><meta property="og:image" content="/img/absent.png"></head></html>`
+
+	got, toCopy, err := injectSocialImage(html, siteData, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `content="/img/absent.png"`) {
+		t.Errorf("a tag naming a missing file should be left as-is, got: %s", got)
+	}
+	if len(toCopy) != 0 {
+		t.Errorf("nothing to copy for a missing file, got %v", toCopy)
+	}
+}
+
+// TestInjectSocialImage_AuthoredTagSuppressesTheSiteWideDefault locks the
+// precedence this function has always had: template-authored content wins, so
+// the og-image.* convention must not also inject a second, competing tag.
+func TestInjectSocialImage_AuthoredTagSuppressesTheSiteWideDefault(t *testing.T) {
+	dir := t.TempDir()
+	writeTestPNG(t, filepath.Join(dir, "img", "og-image.png"), 1200, 630)
+	writeTestPNG(t, filepath.Join(dir, "img", "card.png"), 800, 418)
+
+	siteData := map[string]any{"base_url": "https://site.example.com"}
+	html := `<html><head><meta property="og:image" content="/img/card.png"></head></html>`
+
+	got, _, err := injectSocialImage(html, siteData, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n := strings.Count(got, "og:image\""); n > 1 {
+		t.Errorf("expected the authored og:image to remain the only one, found %d: %s", n, got)
+	}
+	if strings.Contains(got, "img/og-image.") {
+		t.Errorf("site-wide default was injected despite an authored tag: %s", got)
 	}
 }

@@ -54,3 +54,6 @@ scripts/bootstrap_lefthook.sh
 
 # Static analysis / scanner artifacts
 .scannerwork/
+
+# Local build/tool artifacts
+.bin/
