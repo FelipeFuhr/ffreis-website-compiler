@@ -11,6 +11,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Every job here targets GitHub-hosted runners, not the homelab pool: the
+# self-hosted fleet registers at org scope to ffreis-org, and this repo is owned
+# by the separate FelipeFuhr personal account. A runner binds to exactly one
+# owner, so '["self-hosted","local"]' is structurally unservable here regardless
+# of labels — the job queues for GitHub's 24h maximum and is then auto-cancelled
+# with runnerName: null. That is why release-please had never cut a release
+# despite being correctly configured in every other respect.
 jobs:
   scorecard:
     if: vars.SCORECARD_ENABLED == 'true' && github.event_name != 'pull_request'
@@ -25,7 +32,7 @@ jobs:
     uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-scorecard.yml@82097e621b8f630f2be2f759025529f7f5442796 # v1.9.0
     with:
       upload-sarif: true
-      runner: '["self-hosted","local"]'
+      runner: '["ubuntu-latest"]'
 
   stale:
     if: vars.STALE_ENABLED == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
@@ -36,7 +43,7 @@ jobs:
     uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-stale.yml@82097e621b8f630f2be2f759025529f7f5442796 # v1.9.0
     with:
       only: "both"
-      runner: '["self-hosted","local"]'
+      runner: '["ubuntu-latest"]'
 
   release-please:
     if: vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'push'
@@ -47,6 +54,6 @@ jobs:
     uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-release-please.yml@82097e621b8f630f2be2f759025529f7f5442796 # v1.9.0
     with:
       target-branch: "main"
-      runner: '["self-hosted","local"]'
+      runner: '["ubuntu-latest"]'
     secrets:
       RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}

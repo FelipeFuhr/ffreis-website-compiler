@@ -33,6 +33,7 @@ heading → file → byte-count mapping, and `scripts/check-instructions.sh`
 | Template functions | `.claude/rules/template-functions.md` | `internal/sitegen/**` |
 | Blog post processing (`-posts-dir` flag) | `.claude/rules/blog-post-processing.md` | `internal/posts/**`, `internal/rss/**`, `internal/buildcmd/posts.go` |
 | `check-lang-parity` command | `.claude/rules/check-lang-parity-command.md` | `internal/paritycmd/**`, `cmd/check-lang-parity/**` |
+| `version` command — the capability manifest | `.claude/rules/version-capability-manifest.md` | `internal/versioncmd/**`, `internal/cli/**` |
 
 **On-demand reference** (read by name when the task needs it):
 

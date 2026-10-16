@@ -14,6 +14,7 @@ import (
 	"ffreis-website-compiler/internal/validatecsscmd"
 	"ffreis-website-compiler/internal/validatedatacmd"
 	"ffreis-website-compiler/internal/validatesanitycmd"
+	"ffreis-website-compiler/internal/versioncmd"
 )
 
 func Run(programName string) {
@@ -47,6 +48,8 @@ func Run(programName string) {
 		err = paritycmd.Run(args, logger)
 	case "test-output":
 		err = outputtestcmd.Run(args, logger)
+	case "version":
+		err = versioncmd.Run(args, logger)
 	case "help", "-h", "--help":
 		printUsage(programName)
 		return
@@ -78,6 +81,7 @@ Commands:
   validate-sanity     Run a baseline set of sanity checks (site data contract + invariants + optional asset reachability)
   check-lang-parity   Check YAML key parity across multilingual data directories
   test-output         Run a website-owned manifest against compiled static output
+  version             Print the build version, or with --json the full capability manifest
 
 Examples:
   website-compiler build -out dist
@@ -88,5 +92,6 @@ Examples:
   website-compiler validate-css -website-root ../my-website
   website-compiler validate-sanity -website-root ../my-website
   website-compiler test-output -website-root ../my-website -out ../my-website/dist
+  website-compiler version --json
 `, programName)
 }

@@ -7,8 +7,24 @@
   does not edit `go.mod`). The `release-please` job in
   `.github/workflows/devops-automation.yml` runs on every push to `main` and
   opens/updates a release PR; merging that PR cuts the tag. Config:
-  `.release-please-config.json`; version state: `.release-please-manifest.json`
-  (starts at `0.1.0` — this repo had zero prior tags).
+  `.release-please-config.json`; version state: `.release-please-manifest.json`.
+- **The manifest records the last version that actually shipped, so it starts
+  at `0.0.0`.** It was originally seeded at `0.1.0` while the repo had zero
+  tags, which asserts a v0.1.0 release that never happened — release-please
+  then skips straight past it, making that tag permanently uncuttable. Only
+  reset a manifest like this while **no** tags exist; rewriting it over live
+  tags re-cuts them.
+- **Every job in `devops-automation.yml` must target GitHub-hosted runners**
+  (`runner: '["ubuntu-latest"]'`), not the homelab pool. The self-hosted fleet
+  registers at org scope to `ffreis-org` and this repo is owned by the separate
+  `FelipeFuhr` personal account; a runner binds to exactly one owner, so a
+  `'["self-hosted","local"]'` request here is structurally unservable whatever
+  the labels say. Such a job queues for GitHub's 24-hour maximum and is then
+  auto-cancelled with `runnerName: null`. That — not a missing token, config
+  file, trigger or permission — is why this repo had zero releases for its
+  first months despite release-please being correctly configured in every other
+  respect. **A cancelled automation run with no runner name is this bug, not a
+  flake; do not re-run it.**
 - **`stable` is the fleet-verified last-known-good pointer**, created once at
   a fixed commit. It moves **only** when a private consumer's
   `promote-compiler.yml` workflow confirms a green fleet-wide build against a

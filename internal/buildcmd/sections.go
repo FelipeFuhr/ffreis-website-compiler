@@ -69,6 +69,15 @@ var sectionTable = []section{
 	},
 }
 
+// SectionNames exposes sectionNames to other packages: every content section
+// this compiler build's section-gating mechanisms recognize, in table order.
+// Exported for the CLI's `version --json` capability manifest so consumer CI
+// can discover which sections a given compiler build knows about instead of
+// assuming a fixed, possibly-stale set.
+func SectionNames() []string {
+	return sectionNames()
+}
+
 // sectionNames returns every section name in the table, in table order —
 // used to build the -disable-sections flag's help text so it can't drift from
 // what pageSection/sectionForPath actually recognize.
