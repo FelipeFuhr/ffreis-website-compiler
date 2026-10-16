@@ -58,7 +58,7 @@ DIST_DIR ?= dist
 EXAMPLE_ROOT := examples/hello-world
 EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 
-.PHONY: mutation-test mutation fuzz help info install build build-all build-inline build-no-assets serve \
+.PHONY: mutation-test mutation fuzz help info install version build build-all build-inline build-no-assets serve \
 	example-build clean clean-example container-build docker-build ci-list \
 	fmt fmt-check lint lint-instructions check-toolchain test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
 	validate plan \
@@ -91,8 +91,19 @@ info: ## Print effective variables
 	@echo "WEBSITE_COMPILER_BUILDER_IMAGE=$(WEBSITE_COMPILER_BUILDER_IMAGE)"
 	@echo "WEBSITE_COMPILER_RUNTIME_IMAGE=$(WEBSITE_COMPILER_RUNTIME_IMAGE)"
 
-install: ## Install website-compiler in GOPATH/bin
-	go install ./cmd/website-compiler
+# VERSION stamps the binary's `version` output. `git describe` is used rather
+# than Go's own -buildvcs stamping because -buildvcs reports a stale commit when
+# built from a linked git worktree, while git describe stays correct there. The
+# fallback keeps `make install` working outside a tagged checkout (or outside git
+# entirely, e.g. a container build) instead of failing the target.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)
+VERSION_LDFLAGS := -X ffreis-website-compiler/internal/versioncmd.Version=$(VERSION)
+
+install: ## Install website-compiler in GOPATH/bin (version-stamped from git describe)
+	go install -ldflags "$(VERSION_LDFLAGS)" ./cmd/website-compiler
+
+version: ## Print the capability manifest this working tree would report
+	@go run -buildvcs=true -ldflags "$(VERSION_LDFLAGS)" ./cmd/website-compiler version --json
 
 # scan-fix(lefthook:release-tier): platform-standards' lefthook/go.yml release
 # tier requires `make build-all` unconditionally (no graceful skip). This repo

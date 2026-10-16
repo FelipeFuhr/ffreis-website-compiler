@@ -41,6 +41,41 @@ type SiteDataContractLoadResult struct {
 	DefaultPath string
 }
 
+// templateFuncMap is the single source of truth for every helper function
+// available to page templates. LoadPageTemplatesFromRoot parses templates with
+// it, and TemplateFunctionNames introspects it, so the `version --json`
+// capability manifest cannot drift from what is actually registered the way a
+// hand-maintained parallel list would.
+var templateFuncMap = template.FuncMap{
+	"dict":       dict,
+	"list":       list,
+	"safeHTML":   safeHTML,
+	"toJSON":     toJSON,
+	"dig":        dig,
+	"required":   required,
+	"trimSuffix": strings.TrimSuffix,
+	"trimPrefix": strings.TrimPrefix,
+	"has":        hasString,
+	"pageSlug":   pageSlugFunc,
+	"add":        add,
+	"sub":        sub,
+	"mul":        mul,
+	"div":        div,
+	"mod":        mod,
+}
+
+// TemplateFunctionNames returns the names of every template helper registered
+// in templateFuncMap, sorted alphabetically. A website's templates can only use
+// a helper if it appears here for the compiler build in use.
+func TemplateFunctionNames() []string {
+	names := make([]string, 0, len(templateFuncMap))
+	for name := range templateFuncMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // LoadPageTemplatesFromRoot parses the shared layout/partials plus each page template.
 // templatesRoot is expected to contain: layout/, partials/, pages/.
 func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
@@ -61,23 +96,7 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 		parseFiles = append(parseFiles, partials...)
 		parseFiles = append(parseFiles, pageFile)
 
-		tpl, err := template.New("layout").Funcs(template.FuncMap{
-			"dict":       dict,
-			"list":       list,
-			"safeHTML":   safeHTML,
-			"toJSON":     toJSON,
-			"dig":        dig,
-			"required":   required,
-			"trimSuffix": strings.TrimSuffix,
-			"trimPrefix": strings.TrimPrefix,
-			"has":        hasString,
-			"pageSlug":   pageSlugFunc,
-			"add":        add,
-			"sub":        sub,
-			"mul":        mul,
-			"div":        div,
-			"mod":        mod,
-		}).ParseFiles(parseFiles...)
+		tpl, err := template.New("layout").Funcs(templateFuncMap).ParseFiles(parseFiles...)
 		if err != nil {
 			return nil, err
 		}
