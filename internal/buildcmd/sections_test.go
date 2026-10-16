@@ -142,3 +142,38 @@ func TestPruneDisabledSectionData_LeavesListingsUntouchedWhenNotDisabled(t *test
 		t.Errorf("expected listings data to be untouched when listings is not disabled, got %v", sd["listings"])
 	}
 }
+
+// TestSectionNames_MatchesInternalRegistry locks the exported accessor the
+// `version --json` capability manifest reads to the same section table the
+// -disable-sections flag and pageSection/sectionForPath use. A consumer CI
+// script feature-detects against this list, so it going empty or drifting
+// from the real registry would be acted on as fact.
+func TestSectionNames_MatchesInternalRegistry(t *testing.T) {
+	got := SectionNames()
+
+	if len(got) == 0 {
+		t.Fatal("SectionNames() is empty — the capability manifest would advertise no sections")
+	}
+
+	want := sectionNames()
+	if len(got) != len(want) {
+		t.Fatalf("SectionNames() = %v, want the internal registry %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("SectionNames()[%d] = %q, want %q (table order must be preserved)", i, got[i], want[i])
+		}
+	}
+
+	// Spot-check a section that must exist for the manifest to be useful.
+	found := false
+	for _, name := range got {
+		if name == "blog" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("SectionNames() = %v, expected it to include \"blog\"", got)
+	}
+}

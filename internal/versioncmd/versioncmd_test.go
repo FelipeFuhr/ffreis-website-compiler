@@ -227,6 +227,54 @@ func TestRun_PlainText(t *testing.T) {
 	}
 }
 
+// TestRun_RejectsUnknownFlag proves the subcommand surfaces a flag error
+// instead of silently ignoring it and printing a version anyway — a consumer
+// CI script that misspells the flag should fail loudly, not act on output it
+// did not ask for.
+func TestRun_RejectsUnknownFlag(t *testing.T) {
+	// flag's ContinueOnError writes its own usage message to the FlagSet's
+	// output, which defaults to os.Stderr; silence it so the test's own
+	// output stays readable.
+	orig := os.Stderr
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("opening %s: %v", os.DevNull, err)
+	}
+	os.Stderr = devNull
+	t.Cleanup(func() {
+		os.Stderr = orig
+		_ = devNull.Close()
+	})
+
+	if err := Run([]string{"--manifest"}, nil); err == nil {
+		t.Error("Run with an unknown flag returned nil, want a parse error")
+	}
+}
+
+// TestRun_JSONIsStableAcrossCalls locks the manifest's byte-stability: a
+// consumer diffing two manifests to detect a capability change must not see
+// spurious diffs from map iteration order leaking into the output.
+func TestRun_JSONIsStableAcrossCalls(t *testing.T) {
+	origVersion := Version
+	t.Cleanup(func() { Version = origVersion })
+	Version = "1.0.0-stability-test"
+
+	first := captureStdout(t, func() {
+		if err := Run([]string{"--json"}, nil); err != nil {
+			t.Fatalf("Run(--json): %v", err)
+		}
+	})
+	second := captureStdout(t, func() {
+		if err := Run([]string{"--json"}, nil); err != nil {
+			t.Fatalf("Run(--json): %v", err)
+		}
+	})
+
+	if first != second {
+		t.Errorf("version --json output is not byte-stable across calls:\nfirst:  %s\nsecond: %s", first, second)
+	}
+}
+
 func assertContains(t *testing.T, list []string, want string) {
 	t.Helper()
 	for _, got := range list {
