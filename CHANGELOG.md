@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.0.0...v1.0.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **buildcmd:** fingerprint deferred stylesheets and authored og:image refs ([#139](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/139)) ([cc83cc2](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/cc83cc2b708b284f0743083c3d824a6f5833caeb))
+
 ## 1.0.0 (2026-10-16)
 
 
