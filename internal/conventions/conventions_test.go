@@ -397,3 +397,103 @@ func TestRun_ScansAnAbsoluteExtraRootOutsideTheSite(t *testing.T) {
 		t.Errorf("finding should name the file, got %q", res.Errors[0].File)
 	}
 }
+
+// ── no-css-grid ───────────────────────────────────────────────────────────
+
+func TestNoCSSGrid_FlagsGridPropertyDeclarations(t *testing.T) {
+	root := siteWith(t, map[string]string{
+		"src/assets/css/a.css": strings.Join([]string{
+			".a{display:grid}",
+			".b{display:inline-grid}",
+			".c{grid-template-columns:1fr 1fr}",
+			".d{grid-column:1 / 3}",
+			".e{grid-area:main}",
+			".f{grid-gap:1rem}",
+		}, "\n"),
+	})
+	res, err := Run(root, enabled("no-css-grid"), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 6 {
+		t.Fatalf("expected 6 grid declarations flagged, got %d: %v", len(res.Errors), res.Errors)
+	}
+}
+
+// TestNoCSSGrid_AllowsGridAsAName is carried over from the per-site test's own
+// sanity case, and it is the half that matters.
+//
+// `.product-grid` is a FLEXBOX container in ffreis-forma. A rule that grepped
+// for "grid" would flag it, and the natural response to that false positive is
+// to rename the class or weaken the pattern — which is how a rule stops meaning
+// anything.
+func TestNoCSSGrid_AllowsGridAsAName(t *testing.T) {
+	root := siteWith(t, map[string]string{
+		"src/assets/css/a.css": ".product-grid{display:flex}\n" +
+			".gallery-grid--wide{gap:1rem}\n" +
+			"/* the grid of products reflows below 48rem */\n",
+	})
+	res, err := Run(root, enabled("no-css-grid"), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Errorf("flagged \"grid\" used as a name or in prose: %v", res.Errors)
+	}
+}
+
+func TestNoCSSGrid_IgnoresNonCSSFiles(t *testing.T) {
+	// Unlike no-px-literals, this rule is CSS-only: "display: grid" inside a JS
+	// string is not a stylesheet declaration, and flagging it would push sites
+	// toward exceptions on behaviour files.
+	root := siteWith(t, map[string]string{
+		"src/assets/css/a.css": ".a{display:flex}",
+		"src/assets/js/a.js":   `el.style.display = "grid";`,
+	})
+	res, err := Run(root, enabled("no-css-grid"), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Errorf("expected CSS-only scanning, got: %v", res.Errors)
+	}
+}
+
+func TestNoCSSGrid_IsNotEnabledByDefault(t *testing.T) {
+	// The fleet default is Grid-for-2D / Flexbox-for-1D; this rule exists for
+	// sites with a recorded reason to be Grid-free. An empty config must enforce
+	// nothing at all.
+	root := siteWith(t, map[string]string{"src/assets/css/a.css": ".a{display:grid}"})
+	res, err := Run(root, Config{Rules: map[string]RuleConfig{}}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 0 || len(res.Warnings) != 0 {
+		t.Errorf("no rules enabled must enforce nothing, got %v / %v", res.Errors, res.Warnings)
+	}
+}
+
+// TestNoCSSGrid_CatchesFormsThePerSiteRegexMissed pins the two concrete gaps in
+// the hand-written rule this replaces, so absorbing it is a demonstrable
+// improvement rather than a lateral move.
+//
+// Their pattern used `display\s*:\s*grid\b` (no inline-grid) and
+// `grid-column\s*:` (no longhand). Both forms are live CSS Grid usage that
+// would have passed the per-site test.
+func TestNoCSSGrid_CatchesFormsThePerSiteRegexMissed(t *testing.T) {
+	for _, decl := range []string{
+		".a{display:inline-grid}",
+		".a{grid-column-start:2}",
+		".a{grid-column-end:4}",
+		".a{grid-row-start:1}",
+	} {
+		root := siteWith(t, map[string]string{"src/assets/css/a.css": decl})
+		res, err := Run(root, enabled("no-css-grid"), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res.Errors) == 0 {
+			t.Errorf("%s was not flagged — the per-site regex missed this form too", decl)
+		}
+	}
+}

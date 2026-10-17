@@ -2,12 +2,32 @@
 // compiler gates, replacing the hand-written per-site test files that had been
 // accumulating to enforce the same things one repo at a time.
 //
-// The problem it solves is not "we have no checks" — several sites had them.
-// It is that every site had its OWN, so each one drifted: ffreis-forma and
-// ffreis-editify both carried a `no-px-literals.test.js`, and forma's scanned
-// only `src/assets/css/styles.css` while the site had since grown 60+ files
-// under `css/pages/`, none of them checked. A rule that lives in the tool is
-// one implementation, applied to the whole tree, versioned with the compiler.
+// The problem it solves is not "we have no checks" — ffreis-forma and
+// ffreis-editify both carried hand-written `no-px-literals.test.js` and
+// `no-css-grid.test.js` files, and the versions on their default branches are
+// decent: they read the whole CSS tree. Four things are wrong with that
+// arrangement, and they are what this package is for:
+//
+//  1. Reach. Only two sites have the tests at all. The same rules applied to
+//     the rest of the fleet immediately find real violations:
+//     petlook-website 31 px literals in a single file (plus 21 in base.css,
+//     17 in ask.css), ffreis-website across 3 stylesheets, ffreis-urbs 8 in
+//     dev-toolbar.js. Those sites were never going to grow the test by
+//     themselves; that is the per-site-tweak pattern this replaces.
+//  2. Attribution. The per-site version concatenates every stylesheet into
+//     one string, so a failure reads `['8px'] !== []` — no file, no line.
+//     Here every finding is `file:line: px literal "8px"`.
+//  3. Demonstrable rule defects, duplicated by hand in each repo. Their
+//     `\b\d+(?:\.\d+)?px\b` reports ".5px" as "5px" (wrong column) and
+//     false-positives on `url(icon-20px.svg)` and `--step-2px`. Their
+//     `display\s*:\s*grid\b` misses `display:inline-grid`, and
+//     `grid-column\s*:` misses `grid-column-start:`. Each is fixed once here
+//     instead of twice there — and a third copy exists in another repo.
+//  4. No exception mechanism at all. A site that needs one px value has to
+//     weaken the regex or delete the test.
+//
+// A rule that lives in the tool is one implementation, applied to the whole
+// tree, versioned with the compiler.
 //
 // # Why a config file rather than always-on
 //

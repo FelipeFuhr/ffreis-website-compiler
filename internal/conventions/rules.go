@@ -29,6 +29,7 @@ type Rule struct {
 // the worst possible failure for a gate.
 var registry = map[string]Rule{
 	ruleNameNoPxLiterals: ruleNoPxLiterals,
+	ruleNameNoCSSGrid:    ruleNoCSSGrid,
 }
 
 // RuleNames returns every known rule name, sorted.
@@ -44,11 +45,12 @@ func RuleNames() []string {
 // RuleDoc returns a rule's documentation, or "" if unknown.
 func RuleDoc(name string) string { return registry[name].Doc }
 
-// pxLiteralRE finds a CSS px length. Written to catch the leading-dot form
-// (".5px") as well as "12px" and "0.5px", because a prior fleet regex of the
-// shape `\b\d+(?:\.\d+)?px\b` reported ".5px" as "5px" — it matched, but named
-// the wrong literal, which sends whoever reads the failure to the wrong column.
-// A subsequent hand-written variant in another repo missed the form entirely.
+// pxLiteralRE finds a CSS px length, including the leading-dot form (".5px").
+//
+// The per-site tests this replaces use `\b\d+(?:\.\d+)?px\b`, which matches
+// ".5px" but reports it as "5px" — sending whoever reads the failure to the
+// wrong column — and which false-positives on `url(icon-20px.svg)` and
+// `--step-2px`, where "px" is part of a name rather than a length.
 var pxLiteralRE = regexp.MustCompile(`(?i)[0-9]*\.?[0-9]+px\b`)
 
 // pxPrecededByIdentChar reports whether the byte before a match is part of an
@@ -89,6 +91,47 @@ var ruleNoPxLiterals = Rule{
 					File:   rel,
 					Line:   i + 1,
 					Detail: fmt.Sprintf("px literal %q — use a rem/em/%% value, or declare an exception with a reason", line[m[0]:m[1]]),
+				})
+			}
+		}
+		return findings
+	},
+}
+
+const ruleNameNoCSSGrid = "no-css-grid"
+
+// gridPropertyRE matches a CSS Grid PROPERTY declaration, never the substring
+// "grid".
+//
+// That distinction is the whole difficulty, and it is why this is worth having
+// in one place: "grid" is a perfectly ordinary word in a class name
+// (`.product-grid` is a Flexbox container in ffreis-forma) and in copy. A rule
+// that grepped for "grid" would flag both, and the natural fix for a false
+// positive is to rename a class or weaken the pattern -- which is how a rule
+// stops meaning anything.
+var gridPropertyRE = regexp.MustCompile(
+	`(?i)(?:display\s*:\s*(?:inline-)?grid\b|grid-template[a-z-]*\s*:|grid-column[a-z-]*\s*:|grid-row[a-z-]*\s*:|grid-auto-[a-z-]*\s*:|grid-area\s*:|grid-gap\s*:|\bgrid\s*:)`)
+
+var ruleNoCSSGrid = Rule{
+	Name: ruleNameNoCSSGrid,
+	Doc: "No CSS Grid property declarations: layout primitives stay Flexbox. This is " +
+		"OPT-IN per site and not a fleet default -- current guidance is Grid for 2D " +
+		"page structure and Flexbox for 1D components. Enable it only where a site " +
+		"has a recorded reason, as ffreis-forma does (AGENTS.md / VISUAL_REGRESSION.md: " +
+		"preserve the v7 wide-screen composition). The substring \"grid\" in a class " +
+		"name or copy is never flagged.",
+	Selects: func(rel string) bool {
+		return strings.EqualFold(filepath.Ext(rel), ".css")
+	},
+	Scan: func(rel, contents string) []Finding {
+		var findings []Finding
+		for i, line := range strings.Split(contents, "\n") {
+			for _, m := range gridPropertyRE.FindAllString(line, -1) {
+				findings = append(findings, Finding{
+					Rule:   ruleNameNoCSSGrid,
+					File:   rel,
+					Line:   i + 1,
+					Detail: fmt.Sprintf("CSS Grid declaration %q — use Flexbox, or declare an exception with a reason", strings.TrimSpace(m)),
 				})
 			}
 		}
