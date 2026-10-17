@@ -283,14 +283,20 @@ func injectScriptDefer(html string) (string, error) {
 		// scriptTagRE requires an immediately-following close tag with no
 		// body — so addOrReplaceAttr's generic "insert before the tag's
 		// last >" would land on </script>'s '>' instead of the opening
-		// tag's, producing invalid markup like "</script defer=\"defer\">".
+		// tag's, producing invalid markup like "</script defer>".
 		// Insert right after the OPENING tag's own '>' (the first one)
 		// explicitly instead.
 		idx := strings.Index(tag, ">")
 		if idx == -1 {
 			return tag, nil
 		}
-		return tag[:idx] + ` defer="defer"` + tag[idx:], nil
+		// Bare `defer`, not `defer="defer"`. Both are valid HTML, but the
+		// value form is the XHTML spelling and html-validate's default
+		// attribute-boolean-style ("omit") rejects it — so every consumer
+		// running the fleet's own markup gate sees one error per deferred
+		// script in output this compiler generated. Measured on ffreis-editify:
+		// 8 of its 35 html-validate errors were exactly this.
+		return tag[:idx] + ` defer` + tag[idx:], nil
 	})
 }
 
