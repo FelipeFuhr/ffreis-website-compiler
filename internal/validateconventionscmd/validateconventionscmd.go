@@ -50,7 +50,11 @@ func Run(args []string, logger *slog.Logger) error {
 	}
 	if opts.list {
 		for _, name := range conventions.RuleNames() {
-			fmt.Printf("%s\n  %s\n", name, conventions.RuleDoc(name))
+			where := "reads the site's source tree"
+			if conventions.RuleDomain(name) == conventions.DomainOutput {
+				where = "reads built pages — the run needs -dist"
+			}
+			fmt.Printf("%s  (%s)\n  %s\n", name, where, conventions.RuleDoc(name))
 		}
 		return nil
 	}
@@ -86,8 +90,8 @@ func Run(args []string, logger *slog.Logger) error {
 	for _, s := range res.StaleExceptions {
 		logger.Warn("stale conventions exception", "detail", s)
 	}
-	for _, f := range res.Warnings {
-		logger.Warn("conventions finding (warn)", "finding", f.String())
+	for _, g := range groupForOutput(res.Warnings) {
+		logger.Warn("conventions finding (warn)", "finding", g.String())
 	}
 
 	scanned := 0
@@ -105,12 +109,60 @@ func Run(args []string, logger *slog.Logger) error {
 	// error at a time turns adoption into a guessing loop.
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d conventions violation(s) across %d scanned file(s):\n", len(res.Errors), scanned)
-	for _, f := range res.Errors {
-		fmt.Fprintf(&b, "  %s\n", f.String())
+	for _, g := range groupForOutput(res.Errors) {
+		fmt.Fprintf(&b, "  %s\n", g.String())
 	}
 	b.WriteString("\nFix them, or declare an exception WITH A REASON in " + conventions.ConfigFileName +
 		".\nRun with -write-baseline to generate one exception per violating file as a starting point.")
 	return fmt.Errorf("%s", b.String())
+}
+
+// maxPlacesShown caps how many files one grouped finding lists before
+// summarising the rest.
+const maxPlacesShown = 6
+
+// findingGroup is one message and every place it was found.
+type findingGroup struct {
+	rule   string
+	detail string
+	places []string
+}
+
+func (g findingGroup) String() string {
+	shown := g.places
+	suffix := ""
+	if len(shown) > maxPlacesShown {
+		shown = shown[:maxPlacesShown]
+		suffix = fmt.Sprintf(" … and %d more", len(g.places)-maxPlacesShown)
+	}
+	return fmt.Sprintf("[%s] %s\n      %s%s", g.rule, g.detail, strings.Join(shown, ", "), suffix)
+}
+
+// groupForOutput collapses findings that share a rule and a message into one
+// block listing where they were found.
+//
+// Several of these rules describe a property of the whole site rather than of
+// one page: a missing reset, or a missing og:image, reports once per page, and
+// ffreis-forma has 56 of them. Fifty-six identical lines say nothing the first
+// one did not and bury the findings that ARE page-specific. The Result keeps
+// every finding — this only decides how they are printed.
+func groupForOutput(findings []conventions.Finding) []findingGroup {
+	var groups []findingGroup
+	index := map[string]int{}
+	for _, f := range findings {
+		key := f.Rule + "\x00" + f.Detail
+		place := f.File
+		if f.Line > 0 {
+			place = fmt.Sprintf("%s:%d", f.File, f.Line)
+		}
+		if i, ok := index[key]; ok {
+			groups[i].places = append(groups[i].places, place)
+			continue
+		}
+		index[key] = len(groups)
+		groups = append(groups, findingGroup{rule: f.Rule, detail: f.Detail, places: []string{place}})
+	}
+	return groups
 }
 
 // writeBaseline rewrites conventions.yaml adding one exception per violating
