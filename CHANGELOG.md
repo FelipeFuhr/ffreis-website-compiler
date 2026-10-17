@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.0.1...v1.1.0) (2026-10-17)
+
+
+### Features
+
+* **conventions:** enforce fleet style rules in the tool, not per-site tests ([#143](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/143)) ([54d3d25](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/54d3d2588c8cd5cb7f624b56cc0e09d14c075177))
+* **conventions:** landmark, form, LCP, reset and SEO gates ([#145](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/145)) ([37c0507](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/37c05075fe5af195fb5d20984c48c9624c40bc4e))
+
+
+### Bug Fixes
+
+* **buildcmd:** make generated HTML pass the fleet's own markup gate ([#142](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/142)) ([f5ccc6a](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/f5ccc6a47931b4f2f8c7c4907ae2d2d28dc24723))
+
 ## [1.0.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.0.0...v1.0.1) (2026-10-16)
 
 
