@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -100,6 +101,14 @@ func perPageStylesheetRelPath(pageName string) string {
 // injected tag flows through the SAME existing inline/fingerprint pipeline
 // as every other stylesheet link — no new CSS-handling code needed, this is
 // purely "decide whether to add one more <link> tag before head closes".
+// And it is skipped entirely when the template ALREADY links that stylesheet.
+// A site may hand-roll the convention to control where in the cascade the sheet
+// lands, and ffreis-urbs does exactly that: its head.gohtml links
+// css/pages/<page>.css and then css/responsive.css deliberately last, because a
+// media query adds no specificity, so a narrow-viewport override only wins if
+// it comes later in source order. Appending a second copy after responsive.css
+// silently defeated that — `.metric-grid` rendered four columns on a phone —
+// and the page shipped the same stylesheet twice.
 func injectPerPageStylesheet(html, assetsDir, pageName string) string {
 	relPath := perPageStylesheetRelPath(pageName)
 	if relPath == "" {
@@ -108,9 +117,38 @@ func injectPerPageStylesheet(html, assetsDir, pageName string) string {
 	if _, err := os.Stat(filepath.Join(assetsDir, relPath)); err != nil {
 		return html
 	}
+	if linksStylesheet(html, relPath) {
+		return html
+	}
 	inject := `<link rel="stylesheet" href="/` + relPath + `">`
 	return strings.Replace(html, "</head>", inject+headEndTag, 1)
 }
+
+// linksStylesheet reports whether the page already references relPath in a
+// stylesheet link, in any of the spellings a template may legitimately use:
+// root-absolute ("/css/pages/x.css"), document-relative ("css/pages/x.css") or
+// explicitly same-directory ("./css/pages/x.css"), with either quote style.
+func linksStylesheet(html, relPath string) bool {
+	for _, tag := range anyLinkTagRE.FindAllString(html, -1) {
+		// rel is read by name rather than captured positionally: attribute order
+		// is the template author's choice, and a regex that assumed one order
+		// would miss the other and inject a duplicate anyway.
+		if !strings.Contains(strings.ToLower(getTagAttr(tag, "rel")), "stylesheet") {
+			continue
+		}
+		href := strings.TrimSpace(getTagAttr(tag, "href"))
+		href = strings.SplitN(href, "?", 2)[0]
+		href = strings.TrimPrefix(href, "./")
+		href = strings.TrimPrefix(href, "/")
+		if href == relPath {
+			return true
+		}
+	}
+	return false
+}
+
+// anyLinkTagRE matches any <link> start tag; the rel value decides what it is.
+var anyLinkTagRE = regexp.MustCompile(`(?is)<link\s+[^>]*>`)
 
 func transformPage(html string, opts buildOptions, assetsDir, pageName string, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
 	html = injectPerPageStylesheet(html, assetsDir, pageName)
