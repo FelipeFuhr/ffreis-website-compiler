@@ -246,7 +246,31 @@ func applyPositionBasedTransforms(html string, opts buildOptions, assetsDir stri
 	// Preloads let the browser start fetching these scripts at HTML parse time instead
 	// of waiting to encounter the <script> tag later in the body.
 	html = injectCachedScriptPreloads(html)
+
+	// Last, after every injection that can leave one behind.
+	html = blankIndentedLines(html)
 	return html, nil
+}
+
+// blankIndentedLines empties lines that contain nothing but spaces and tabs.
+//
+// A Go template action on its own indented line ("  {{if .X}}\n") leaves the
+// indentation and the newline behind when the action renders nothing, so the
+// generated page carries whitespace-only lines the template author never wrote
+// — `grep -rE '^[ \t]+$' src/templates/` finds zero in the sites that get them.
+// html-validate's no-trailing-whitespace flags every one, and because the
+// source line is in a template that looks clean, there is nothing a site author
+// can fix. ffreis-editify carried 27 such errors across 9 generated pages, every
+// remaining markup error it had.
+//
+// Only all-whitespace lines are touched, never trailing whitespace after real
+// content: inside <pre> or <textarea> that would be a visible change, whereas a
+// whitespace-only line renders identically empty either way.
+func blankIndentedLines(html string) string {
+	if !whitespaceOnlyLineRE.MatchString(html) {
+		return html
+	}
+	return whitespaceOnlyLineRE.ReplaceAllString(html, "")
 }
 
 // injectScriptDefer adds `defer` to every local <script src="..."> tag that
@@ -283,14 +307,20 @@ func injectScriptDefer(html string) (string, error) {
 		// scriptTagRE requires an immediately-following close tag with no
 		// body — so addOrReplaceAttr's generic "insert before the tag's
 		// last >" would land on </script>'s '>' instead of the opening
-		// tag's, producing invalid markup like "</script defer=\"defer\">".
+		// tag's, producing invalid markup like "</script defer>".
 		// Insert right after the OPENING tag's own '>' (the first one)
 		// explicitly instead.
 		idx := strings.Index(tag, ">")
 		if idx == -1 {
 			return tag, nil
 		}
-		return tag[:idx] + ` defer="defer"` + tag[idx:], nil
+		// Bare `defer`, not `defer="defer"`. Both are valid HTML, but the
+		// value form is the XHTML spelling and html-validate's default
+		// attribute-boolean-style ("omit") rejects it — so every consumer
+		// running the fleet's own markup gate sees one error per deferred
+		// script in output this compiler generated. Measured on ffreis-editify:
+		// 8 of its 35 html-validate errors were exactly this.
+		return tag[:idx] + ` defer` + tag[idx:], nil
 	})
 }
 

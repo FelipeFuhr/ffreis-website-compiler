@@ -846,12 +846,44 @@ func TestInjectScriptDefer_AddsDeferToLocalScript(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Exact-shape check, not just substring presence: a regression here once
-	// inserted defer="defer" into the CLOSING tag ("</script defer=\"defer\">"),
-	// which still contains the substring `defer="defer"` and so passed a
-	// looser Contains-only check despite being invalid HTML.
-	want := `<body><script src="/app.js" defer="defer"></script></body>`
+	// inserted the attribute into the CLOSING tag ("</script defer>"), which
+	// still contains the substring ` defer` and so passed a looser
+	// Contains-only check despite being invalid HTML.
+	//
+	// The attribute is BARE, not `defer="defer"`: html-validate's default
+	// attribute-boolean-style ("omit") rejects the value form, so the XHTML
+	// spelling put one markup error in every consumer's output per deferred
+	// script.
+	want := `<body><script src="/app.js" defer></script></body>`
 	if got != want {
 		t.Errorf("expected defer on the opening tag, got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestInjectScriptDefer_UsesBareBooleanAttribute pins the SPELLING, not just
+// the presence, of the injected attribute.
+//
+// `defer="defer"` and a bare `defer` are both valid HTML5, so no amount of
+// "is it deferred?" testing distinguishes them -- which is why the XHTML form
+// survived here. It is not cosmetic: html-validate's default
+// attribute-boolean-style is "omit", so every consumer running the fleet's
+// markup gate got one error per deferred script in output THIS compiler
+// generated. Measured on ffreis-editify at v1.0.1: 8 of its 35 html-validate
+// errors were exactly this, in 9 generated pages.
+//
+// Asserting the absence of the value form is the half that matters; a presence
+// check alone passes for both spellings.
+func TestInjectScriptDefer_UsesBareBooleanAttribute(t *testing.T) {
+	html := `<body><script src="/app.js"></script><script src="/vendor/lib.js"></script></body>`
+	got, err := injectScriptDefer(html)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, `defer="defer"`) {
+		t.Errorf("injected the XHTML value form, which html-validate's attribute-boolean-style rejects; got: %s", got)
+	}
+	if strings.Count(got, " defer>") != 2 {
+		t.Errorf("expected a bare `defer` on both local scripts, got: %s", got)
 	}
 }
 
@@ -907,7 +939,7 @@ func TestInjectScriptDefer_DoesNotMatchDeferSubstringInSrcPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(got, `defer="defer"`) {
+	if !strings.Contains(got, `<script src="/deferred-utils/app.js" defer>`) {
 		t.Errorf("expected defer added despite 'defer' substring in src path, got: %s", got)
 	}
 }
@@ -918,7 +950,7 @@ func TestInjectScriptDefer_MultipleScriptsAllDeferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := `<body><script src="/a.js" defer="defer"></script><script src="/b.js" defer="defer"></script><script src="/c.js" defer="defer"></script></body>`
+	want := `<body><script src="/a.js" defer></script><script src="/b.js" defer></script><script src="/c.js" defer></script></body>`
 	if got != want {
 		t.Errorf("expected all three local scripts deferred on their opening tags in order, got: %s\nwant: %s", got, want)
 	}
@@ -1068,5 +1100,50 @@ func TestRun_HoistsExternalFontImportThroughFullPipeline(t *testing.T) {
 	}
 	if !strings.Contains(html, `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>`) {
 		t.Fatalf("expected bonus preconnect to fonts.gstatic.com in rendered page, got: %s", html)
+	}
+}
+
+// ── blankIndentedLines ─────────────────────────────────────────────────────
+
+func TestBlankIndentedLines_EmptiesWhitespaceOnlyLines(t *testing.T) {
+	// The shape a Go template leaves behind when an action on its own indented
+	// line renders nothing: the indentation and the newline survive.
+	html := "<head>\n  <meta charset=\"utf-8\">\n  \n\t\n  <title>x</title>\n</head>"
+	got := blankIndentedLines(html)
+	want := "<head>\n  <meta charset=\"utf-8\">\n\n\n  <title>x</title>\n</head>"
+	if got != want {
+		t.Errorf("whitespace-only lines not emptied\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestBlankIndentedLines_PreservesLineCount(t *testing.T) {
+	// Emptying, not deleting: every other line keeps its number, so a
+	// validator's reported line numbers still point at the right source line.
+	html := "a\n  \nb\n   \nc"
+	got := blankIndentedLines(html)
+	if gotN, wantN := strings.Count(got, "\n"), strings.Count(html, "\n"); gotN != wantN {
+		t.Errorf("line count changed: got %d newlines, want %d (%q)", gotN, wantN, got)
+	}
+}
+
+func TestBlankIndentedLines_LeavesTrailingWhitespaceAfterContent(t *testing.T) {
+	// Deliberately narrow: trailing whitespace AFTER real content is left
+	// alone, because inside <pre>/<textarea> removing it is a visible change.
+	// A whitespace-only line renders identically empty either way, which is
+	// why only that case is safe to normalise.
+	html := "<pre>\nkeep me   \n  \n</pre>"
+	got := blankIndentedLines(html)
+	if !strings.Contains(got, "keep me   \n") {
+		t.Errorf("trailing whitespace after content was stripped: %q", got)
+	}
+	if !strings.Contains(got, "\n\n</pre>") {
+		t.Errorf("whitespace-only line inside <pre> was not emptied: %q", got)
+	}
+}
+
+func TestBlankIndentedLines_NoOpWhenAlreadyClean(t *testing.T) {
+	html := "<head>\n  <title>x</title>\n\n</head>"
+	if got := blankIndentedLines(html); got != html {
+		t.Errorf("modified already-clean HTML\ngot:  %q\nwant: %q", got, html)
 	}
 }
