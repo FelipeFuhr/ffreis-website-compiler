@@ -116,3 +116,41 @@ func TestRun_ListPrintsEveryRuleWithItsDoc(t *testing.T) {
 		t.Fatalf("-list should not fail: %v", err)
 	}
 }
+
+func TestGroupForOutput_CollapsesTheSameMessageAcrossManyPages(t *testing.T) {
+	// A site-wide problem (no reset, no og:image) reports once per page. Printing
+	// it once per page is what makes a gate's output something people stop
+	// reading, and the page-specific finding underneath it is the one that gets
+	// missed.
+	var findings []conventions.Finding
+	for _, f := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
+		findings = append(findings, conventions.Finding{
+			Rule: "social-preview-image", File: "dist/" + f + ".html", Detail: "no og:image",
+		})
+	}
+	findings = append(findings, conventions.Finding{
+		Rule: "no-px-literals", File: "src/assets/css/a.css", Line: 12, Detail: `px literal "8px"`,
+	})
+
+	groups := groupForOutput(findings)
+	if len(groups) != 2 {
+		t.Fatalf("expected the 8 identical findings collapsed into one group plus the distinct one, got %d", len(groups))
+	}
+	if len(groups[0].places) != 8 {
+		t.Errorf("the group must keep every place it was found, got %d", len(groups[0].places))
+	}
+
+	out := groups[0].String()
+	if !strings.Contains(out, "and 2 more") {
+		t.Errorf("expected the tail summarised rather than printed, got: %s", out)
+	}
+	if strings.Count(out, "dist/") != maxPlacesShown {
+		t.Errorf("expected exactly %d places listed, got: %s", maxPlacesShown, out)
+	}
+
+	// A finding with a line number must keep it: file:line is what makes it
+	// navigable from a build log.
+	if got := groups[1].String(); !strings.Contains(got, "src/assets/css/a.css:12") {
+		t.Errorf("expected file:line preserved, got: %s", got)
+	}
+}

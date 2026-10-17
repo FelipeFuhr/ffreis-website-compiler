@@ -23,6 +23,7 @@ import (
 	"runtime/debug"
 
 	"ffreis-website-compiler/internal/buildcmd"
+	"ffreis-website-compiler/internal/conventions"
 	"ffreis-website-compiler/internal/sitegen"
 )
 
@@ -87,6 +88,13 @@ type Manifest struct {
 	// in a given compiler build. See internal/buildcmd/options.go for the
 	// flags these correspond to.
 	Capabilities []string `json:"capabilities"`
+	// ConventionRules lists the rule names validate-conventions knows, derived
+	// from the rule registry rather than hand-maintained. A site's
+	// conventions.yaml naming a rule this build does not have is already a loud
+	// config error, so this is not needed to avoid a silent failure — it is here
+	// so a fleet-wide audit can ask "which sites could adopt rule X" from the
+	// manifest alone, without building each ref and parsing -list output.
+	ConventionRules []string `json:"convention_rules"`
 	// Sections lists the content sections the -disable-sections flag
 	// currently recognizes (buildcmd.SectionNames()).
 	Sections []string `json:"sections"`
@@ -190,6 +198,11 @@ var capabilities = []string{
 	"external-css-import-hoisting",
 	"fragment-pages",
 	"internal-pages",
+	// Before this, the default lazy-loading transform lazied EVERY unmarked
+	// <img>, the page's first one included. A site built against a ref without
+	// it gets a green build whose Largest Contentful Paint waits on a request
+	// the browser could have started immediately — wrong output, no error.
+	"lcp-image-priority",
 	"listings-detail-pages",
 	"output-tests",
 	"passthrough-files",
@@ -212,6 +225,7 @@ func NewManifest() Manifest {
 		Version:           resolvedVersion(),
 		Commands:          commands,
 		Capabilities:      capabilities,
+		ConventionRules:   conventions.RuleNames(),
 		Sections:          buildcmd.SectionNames(),
 		TemplateFunctions: sitegen.TemplateFunctionNames(),
 	}

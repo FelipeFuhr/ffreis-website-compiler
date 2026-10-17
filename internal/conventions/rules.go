@@ -4,11 +4,44 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+// Domain is the kind of tree a rule is valid against.
+//
+// The split exists because the structural rules must see a whole page. A
+// template partial legitimately has no <main> and no <title>, so running a
+// landmark rule over src/ would report a violation for every correctly-built
+// site; and a px literal in generated dist/ CSS is the same literal already
+// reported from its source file, so running a style rule over dist/ would
+// double every finding.
+type Domain int
+
+const (
+	// DomainSource is the hand-written tree (src/assets/css, src/assets/js).
+	DomainSource Domain = iota
+	// DomainOutput is a built site, passed with -dist.
+	DomainOutput
+)
+
+func (d Domain) String() string {
+	if d == DomainOutput {
+		return "output"
+	}
+	return "source"
+}
+
+// Tree reads a file from the same scan root as the file being scanned, by a
+// path relative to that root. It is how a rule follows a reference out of the
+// file it was given — the CSS reset lives in whatever stylesheet the page loads
+// first, which the page itself only names.
+type Tree interface {
+	ReadFile(relToRoot string) (string, bool)
+}
 
 // Rule is one checkable convention.
 type Rule struct {
@@ -16,11 +49,23 @@ type Rule struct {
 	// Doc is shown in `validate-conventions -list` and in the error a site sees,
 	// so the fix is readable without opening the compiler source.
 	Doc string
+	// Domain restricts the rule to source or built-output trees.
+	Domain Domain
 	// Scan returns findings for one file's contents. rel is website-root-relative
-	// and slash-separated.
+	// and slash-separated. Exactly one of Scan and ScanTree is set.
 	Scan func(rel, contents string) []Finding
+	// ScanTree is Scan for rules that must also read sibling files.
+	ScanTree func(rel, contents string, tree Tree) []Finding
 	// Selects reports whether this rule looks at a given file at all.
 	Selects func(rel string) bool
+}
+
+// scan dispatches to whichever of the two scan functions this rule defines.
+func (r Rule) scan(rel, contents string, tree Tree) []Finding {
+	if r.ScanTree != nil {
+		return r.ScanTree(rel, contents, tree)
+	}
+	return r.Scan(rel, contents)
 }
 
 // registry is the single source of truth for which rules exist. A
@@ -28,8 +73,18 @@ type Rule struct {
 // silently ignored key — a typo'd rule name that quietly disables the rule is
 // the worst possible failure for a gate.
 var registry = map[string]Rule{
-	ruleNameNoPxLiterals: ruleNoPxLiterals,
-	ruleNameNoCSSGrid:    ruleNoCSSGrid,
+	ruleNameNoPxLiterals:        ruleNoPxLiterals,
+	ruleNameNoCSSGrid:           ruleNoCSSGrid,
+	ruleNameSingleMainLandmark:  ruleSingleMainLandmark,
+	ruleNameChromeLandmarks:     ruleChromeLandmarks,
+	ruleNameLabeledFormControls: ruleLabeledFormControls,
+	ruleNameFormAutocomplete:    ruleFormAutocomplete,
+	ruleNameFormErrorWiring:     ruleFormErrorWiring,
+	ruleNameLCPImageNotLazy:     ruleLCPImageNotLazy,
+	ruleNameCSSResetPresent:     ruleCSSResetPresent,
+	ruleNameFontFamilyDeclared:  ruleFontFamilyDeclared,
+	ruleNameSEOMetaPresent:      ruleSEOMetaPresent,
+	ruleNameSocialPreviewImage:  ruleSocialPreviewImage,
 }
 
 // RuleNames returns every known rule name, sorted.
@@ -44,6 +99,10 @@ func RuleNames() []string {
 
 // RuleDoc returns a rule's documentation, or "" if unknown.
 func RuleDoc(name string) string { return registry[name].Doc }
+
+// RuleDomain reports which tree a rule reads: source files, or a built site
+// that the caller must pass with -dist.
+func RuleDomain(name string) Domain { return registry[name].Domain }
 
 // pxLiteralRE finds a CSS px length, including the leading-dot form (".5px").
 //
@@ -68,7 +127,8 @@ func pxPrecededByIdentChar(s string, start int) bool {
 const ruleNameNoPxLiterals = "no-px-literals"
 
 var ruleNoPxLiterals = Rule{
-	Name: ruleNameNoPxLiterals,
+	Name:   ruleNameNoPxLiterals,
+	Domain: DomainSource,
 	Doc: "Lengths are rem/em/%/ch/vw/vh, never px, so the whole layout scales with the " +
 		"user's root font size. Declare token and reset files as exceptions if they " +
 		"legitimately need a px value (a hairline border, a 1px rule).",
@@ -113,7 +173,8 @@ var gridPropertyRE = regexp.MustCompile(
 	`(?i)(?:display\s*:\s*(?:inline-)?grid\b|grid-template[a-z-]*\s*:|grid-column[a-z-]*\s*:|grid-row[a-z-]*\s*:|grid-auto-[a-z-]*\s*:|grid-area\s*:|grid-gap\s*:|\bgrid\s*:)`)
 
 var ruleNoCSSGrid = Rule{
-	Name: ruleNameNoCSSGrid,
+	Name:   ruleNameNoCSSGrid,
+	Domain: DomainSource,
 	Doc: "No CSS Grid property declarations: layout primitives stay Flexbox. This is " +
 		"OPT-IN per site and not a fleet default -- current guidance is Grid for 2D " +
 		"page structure and Flexbox for 1D components. Enable it only where a site " +
@@ -148,9 +209,15 @@ var ScanRoots = []string{
 	filepath.Join("src", "assets", "js"),
 }
 
-// Run applies every enabled rule across the site and any extra directories
-// (e.g. a built dist/ tree) given in extraRoots.
-func Run(websiteRoot string, cfg Config, extraRoots []string) (Result, error) {
+// scanTarget is one directory to walk, and which rules may look at it.
+type scanTarget struct {
+	path   string
+	domain Domain
+}
+
+// Run applies every enabled rule across the site's source tree and any built
+// output directories given in outputRoots (the -dist flag).
+func Run(websiteRoot string, cfg Config, outputRoots []string) (Result, error) {
 	res := Result{ScannedFiles: map[string]int{}}
 
 	enabled := make([]string, 0, len(cfg.Rules))
@@ -168,24 +235,31 @@ func Run(websiteRoot string, cfg Config, extraRoots []string) (Result, error) {
 	// so stale ones can be reported (package doc, property 3).
 	exceptionHits := map[string]bool{}
 
-	roots := append(append([]string{}, ScanRoots...), extraRoots...)
-	for _, root := range roots {
-		abs := root
+	var targets []scanTarget
+	for _, r := range ScanRoots {
+		targets = append(targets, scanTarget{path: r, domain: DomainSource})
+	}
+	for _, r := range outputRoots {
+		targets = append(targets, scanTarget{path: r, domain: DomainOutput})
+	}
+
+	for _, t := range targets {
+		abs := t.path
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(websiteRoot, root)
+			abs = filepath.Join(websiteRoot, t.path)
 		}
 		if _, err := os.Stat(abs); err != nil {
 			continue // a site need not have every scan root
 		}
 		// relPrefix is how paths under this root are reported, so a finding
 		// names the file the way the repo does.
-		relPrefix := root
-		if filepath.IsAbs(root) {
-			if r, err := filepath.Rel(websiteRoot, root); err == nil && !strings.HasPrefix(r, "..") {
+		relPrefix := t.path
+		if filepath.IsAbs(t.path) {
+			if r, err := filepath.Rel(websiteRoot, t.path); err == nil && !strings.HasPrefix(r, "..") {
 				relPrefix = r
 			}
 		}
-		if err := scanRoot(abs, relPrefix, enabled, cfg, &res, exceptionHits); err != nil {
+		if err := scanRoot(abs, relPrefix, t.domain, enabled, cfg, &res, exceptionHits); err != nil {
 			return Result{}, err
 		}
 	}
@@ -196,11 +270,9 @@ func Run(websiteRoot string, cfg Config, extraRoots []string) (Result, error) {
 	for _, name := range enabled {
 		if res.ScannedFiles[name] == 0 {
 			res.Errors = append(res.Errors, Finding{
-				Rule: name,
-				File: ConfigFileName,
-				Detail: "rule is enabled but matched no files — it is reporting a pass while checking " +
-					"nothing. Check the site actually has " + strings.Join(ScanRoots, " / ") +
-					", and that an exception is not swallowing the whole tree",
+				Rule:   name,
+				File:   ConfigFileName,
+				Detail: noFilesScannedDetail(name),
 			})
 		}
 	}
@@ -218,9 +290,26 @@ func Run(websiteRoot string, cfg Config, extraRoots []string) (Result, error) {
 		}
 	}
 	sort.Strings(res.StaleExceptions)
-	sortFindings(res.Errors)
-	sortFindings(res.Warnings)
+	res.Errors = sortAndDedupe(res.Errors)
+	res.Warnings = sortAndDedupe(res.Warnings)
 	return res, nil
+}
+
+// noFilesScannedDetail explains property 2's error in terms of the rule's own
+// domain, because the two cases have completely different fixes: a source rule
+// that scanned nothing means the site's CSS is somewhere unexpected, while an
+// output rule that scanned nothing almost always means the caller forgot
+// -dist — and a gate reporting "pass" because nobody built the site first is
+// the exact failure this fleet keeps rediscovering.
+func noFilesScannedDetail(name string) string {
+	if registry[name].Domain == DomainOutput {
+		return "rule is enabled but matched no files — it is reporting a pass while checking " +
+			"nothing. It inspects built pages, so the run needs -dist pointing at a built site " +
+			"(build first); check too that an exception is not swallowing the whole tree"
+	}
+	return "rule is enabled but matched no files — it is reporting a pass while checking " +
+		"nothing. Check the site actually has " + strings.Join(ScanRoots, " / ") +
+		", and that an exception is not swallowing the whole tree"
 }
 
 func exceptionFor(rc RuleConfig, rel string) (Exception, bool) {
@@ -234,7 +323,15 @@ func exceptionFor(rc RuleConfig, rel string) (Exception, bool) {
 
 func exceptionKey(rule string, ex Exception) string { return rule + "\x00" + ex.Path }
 
-func sortFindings(f []Finding) {
+// sortAndDedupe orders findings by file then line, and collapses exact
+// duplicates — the same file reachable through two scan roots (a -dist nested
+// inside the source tree, or the same root passed twice).
+//
+// It deliberately does NOT collapse the same problem reported across many
+// pages: a missing reset really does affect each of ffreis-forma's 56 pages,
+// and the Result should say so. Making that readable is the command's job, not
+// a thing to lose here (see groupForOutput in validateconventionscmd).
+func sortAndDedupe(f []Finding) []Finding {
 	sort.Slice(f, func(i, j int) bool {
 		if f[i].File != f[j].File {
 			return f[i].File < f[j].File
@@ -242,8 +339,21 @@ func sortFindings(f []Finding) {
 		if f[i].Line != f[j].Line {
 			return f[i].Line < f[j].Line
 		}
+		if f[i].Rule != f[j].Rule {
+			return f[i].Rule < f[j].Rule
+		}
 		return f[i].Detail < f[j].Detail
 	})
+	out := f[:0]
+	var prev Finding
+	for i, cur := range f {
+		if i > 0 && cur == prev {
+			continue
+		}
+		out = append(out, cur)
+		prev = cur
+	}
+	return out
 }
 
 // scanRoot walks one directory and applies every enabled rule to the files in
@@ -257,12 +367,16 @@ func sortFindings(f []Finding) {
 // ffreis-forma aliases shared per-page stylesheets as symlinks into
 // css/pages/_shared/, and a scanner that skipped them would silently stop
 // checking exactly the files the per-site test it replaces never checked either.
-func scanRoot(abs, relPrefix string, enabled []string, cfg Config, res *Result, exceptionHits map[string]bool) error {
+func scanRoot(
+	abs, relPrefix string, domain Domain,
+	enabled []string, cfg Config, res *Result, exceptionHits map[string]bool,
+) error {
 	root, err := os.OpenRoot(abs)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", abs, err)
 	}
 	defer func() { _ = root.Close() }()
+	tree := rootTree{root: root}
 
 	return fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -275,7 +389,7 @@ func scanRoot(abs, relPrefix string, enabled []string, cfg Config, res *Result, 
 
 		for _, name := range enabled {
 			rule := registry[name]
-			if !rule.Selects(rel) {
+			if rule.Domain != domain || !rule.Selects(rel) {
 				continue
 			}
 			rc := cfg.Rules[name]
@@ -288,7 +402,7 @@ func scanRoot(abs, relPrefix string, enabled []string, cfg Config, res *Result, 
 				return fmt.Errorf("reading %s: %w", rel, readErr)
 			}
 			res.ScannedFiles[name]++
-			found := rule.Scan(rel, string(contents))
+			found := rule.scan(rel, string(contents), tree.relativeTo(p))
 			if severityOf(rc) == SeverityWarn {
 				res.Warnings = append(res.Warnings, found...)
 			} else {
@@ -297,4 +411,47 @@ func scanRoot(abs, relPrefix string, enabled []string, cfg Config, res *Result, 
 		}
 		return nil
 	})
+}
+
+// rootTree is a Tree over one scan root. Reads stay inside the root handle for
+// the same reason the walk does (see scanRoot's scan-fix note).
+type rootTree struct {
+	root *os.Root
+	// dir is the directory the scanned file sits in, so a rule can resolve a
+	// document-relative href ("css/app.css") the way a browser would.
+	dir string
+}
+
+func (t rootTree) relativeTo(filePath string) rootTree {
+	t.dir = path.Dir(filePath)
+	return t
+}
+
+// ReadFile resolves rel against the scanned file's directory, or against the
+// root when rel is root-absolute ("/css/app.css", as emitted for a site
+// deployed at its domain root).
+func (t rootTree) ReadFile(rel string) (string, bool) {
+	rel = strings.SplitN(rel, "?", 2)[0]
+	rel = strings.SplitN(rel, "#", 2)[0]
+	if rel == "" {
+		return "", false
+	}
+
+	var target string
+	if strings.HasPrefix(rel, "/") {
+		target = path.Clean(strings.TrimPrefix(rel, "/"))
+	} else {
+		target = path.Clean(path.Join(t.dir, rel))
+	}
+	if !fs.ValidPath(target) {
+		// Escapes the root (a "../.." href, or an absolute href under a deploy
+		// base path we are not holding). Not readable, not an error: the rule
+		// reports what it could not check.
+		return "", false
+	}
+	b, err := fs.ReadFile(t.root.FS(), target)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
 }

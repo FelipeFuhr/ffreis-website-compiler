@@ -457,13 +457,51 @@ func inlineLocalSVGs(doc, assetsDir string) (string, error) {
 // already declare a loading attribute (eager, lazy, or otherwise) — see the
 // call site in transformPage for why this runs unconditionally and where it
 // sits relative to SVG inlining and LQIP.
+//
+// The page's FIRST image is deliberately exempt, and instead gets
+// fetchpriority="high" and decoding="async". Lazy-loading it was this
+// transform's own anti-pattern: the first image is the Largest Contentful Paint
+// candidate on a typical page, and loading="lazy" means the browser will not
+// even request it until layout has run — so the default turned the one image
+// that should have been prioritised into the one that measured slowest. The
+// `lcp-image-not-lazy` convention gate catches the hand-written case this
+// cannot: an explicit loading="lazy" in a template, which is respected here
+// rather than silently overridden.
+//
+// No loading attribute is written for the first image. Absent means eager to
+// every browser, and writing loading="eager" would opt it into LQIP
+// placeholder generation (lqip.go keys off exactly that value) — a separate
+// behaviour change that has nothing to do with priority.
 func injectDefaultLazyLoading(html string) (string, error) {
+	first := true
 	return replaceTagWith(html, imgTagRE, func(tag string, _ []string) (string, error) {
-		if getTagAttr(tag, "loading") != "" {
+		isFirst := first
+		first = false
+
+		explicit := getTagAttr(tag, "loading")
+		if isFirst {
+			if strings.EqualFold(explicit, "lazy") {
+				return tag, nil // hand-written: respected here, reported by the gate
+			}
+			return addPriorityHints(tag), nil
+		}
+		if explicit != "" {
 			return tag, nil // explicit loading attribute present — respect it
 		}
 		return addOrReplaceAttr(tag, "loading", "lazy"), nil
 	})
+}
+
+// addPriorityHints marks an image as the one to fetch first. Both attributes
+// are only added when absent, so an author who set them keeps their values.
+func addPriorityHints(tag string) string {
+	if getTagAttr(tag, "fetchpriority") == "" {
+		tag = addOrReplaceAttr(tag, "fetchpriority", "high")
+	}
+	if getTagAttr(tag, "decoding") == "" {
+		tag = addOrReplaceAttr(tag, "decoding", "async")
+	}
+	return tag
 }
 
 // svgFromImgTag prepares raw SVG bytes for inline HTML embedding:

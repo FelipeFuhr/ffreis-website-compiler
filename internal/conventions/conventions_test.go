@@ -119,19 +119,56 @@ func TestNoPxLiterals_ScansTheWholeTreeNotOneFile(t *testing.T) {
 	}
 }
 
-func TestRun_ScansAnExtraDistRoot(t *testing.T) {
-	// The per-site test also checked compiled HTML for inline styles, so the
-	// replacement must be able to as well.
+func TestRun_ScansTheDistRootForOutputRules(t *testing.T) {
 	root := siteWith(t, map[string]string{
 		"src/assets/css/a.css": ".a{margin:1rem}",
-		"dist/index.html":      `<div style="width:300px"></div>`,
+		"dist/index.html":      `<html><body><p>no main here</p></body></html>`,
 	})
-	res, err := Run(root, enabled("no-px-literals"), []string{"dist"})
+	res, err := Run(root, enabled("single-main-landmark"), []string{"dist"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(res.Errors) != 1 || res.Errors[0].File != "dist/index.html" {
 		t.Fatalf("expected one finding in dist/index.html, got: %v", res.Errors)
+	}
+}
+
+func TestRun_SourceRulesDoNotRescanBuiltOutput(t *testing.T) {
+	// A px literal in dist/ is the same literal already reported from the source
+	// file it was compiled from, and reporting it twice — once at a path nobody
+	// can edit — is how a gate's output becomes something people skim past.
+	root := siteWith(t, map[string]string{
+		"src/assets/css/a.css": ".a{margin:1rem}",
+		"dist/index.html":      `<div style="width:300px"></div>`,
+		"dist/app.css":         ".b{top:9px}",
+	})
+	res, err := Run(root, enabled("no-px-literals"), []string{"dist"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("source rule reached into the built tree: %v", res.Errors)
+	}
+}
+
+func TestRun_OutputRulesDoNotScanSourceTemplates(t *testing.T) {
+	// A partial has no <main> and no <title> by design. An output rule that read
+	// src/ would fail every correctly built site, so the domain split is the
+	// thing being asserted here, not an implementation detail.
+	root := siteWith(t, map[string]string{
+		"src/assets/css/a.css":         ".a{margin:1rem}",
+		"src/assets/css/fragment.html": `<p>a partial, no landmarks</p>`,
+		"dist/index.html":              `<html><body><main>ok</main></body></html>`,
+	})
+	res, err := Run(root, enabled("single-main-landmark"), []string{"dist"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("output rule scanned source: %v", res.Errors)
+	}
+	if res.ScannedFiles["single-main-landmark"] != 1 {
+		t.Errorf("expected exactly the one built page scanned, got %d", res.ScannedFiles["single-main-landmark"])
 	}
 }
 
@@ -384,9 +421,9 @@ func TestRun_ScansAnAbsoluteExtraRootOutsideTheSite(t *testing.T) {
 	// `-dist` may point anywhere (CI builds into a temp dir), and the reported
 	// path must still be readable rather than an empty prefix.
 	root := siteWith(t, map[string]string{"src/assets/css/a.css": ".a{margin:1rem}"})
-	outside := siteWith(t, map[string]string{"index.html": `<p style="top:9px">x</p>`})
+	outside := siteWith(t, map[string]string{"index.html": `<html><body><p>no main</p></body></html>`})
 
-	res, err := Run(root, enabled("no-px-literals"), []string{outside})
+	res, err := Run(root, enabled("single-main-landmark"), []string{outside})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
