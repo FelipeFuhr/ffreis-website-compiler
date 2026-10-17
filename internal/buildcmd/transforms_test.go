@@ -1102,3 +1102,48 @@ func TestRun_HoistsExternalFontImportThroughFullPipeline(t *testing.T) {
 		t.Fatalf("expected bonus preconnect to fonts.gstatic.com in rendered page, got: %s", html)
 	}
 }
+
+// ── blankIndentedLines ─────────────────────────────────────────────────────
+
+func TestBlankIndentedLines_EmptiesWhitespaceOnlyLines(t *testing.T) {
+	// The shape a Go template leaves behind when an action on its own indented
+	// line renders nothing: the indentation and the newline survive.
+	html := "<head>\n  <meta charset=\"utf-8\">\n  \n\t\n  <title>x</title>\n</head>"
+	got := blankIndentedLines(html)
+	want := "<head>\n  <meta charset=\"utf-8\">\n\n\n  <title>x</title>\n</head>"
+	if got != want {
+		t.Errorf("whitespace-only lines not emptied\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestBlankIndentedLines_PreservesLineCount(t *testing.T) {
+	// Emptying, not deleting: every other line keeps its number, so a
+	// validator's reported line numbers still point at the right source line.
+	html := "a\n  \nb\n   \nc"
+	got := blankIndentedLines(html)
+	if gotN, wantN := strings.Count(got, "\n"), strings.Count(html, "\n"); gotN != wantN {
+		t.Errorf("line count changed: got %d newlines, want %d (%q)", gotN, wantN, got)
+	}
+}
+
+func TestBlankIndentedLines_LeavesTrailingWhitespaceAfterContent(t *testing.T) {
+	// Deliberately narrow: trailing whitespace AFTER real content is left
+	// alone, because inside <pre>/<textarea> removing it is a visible change.
+	// A whitespace-only line renders identically empty either way, which is
+	// why only that case is safe to normalise.
+	html := "<pre>\nkeep me   \n  \n</pre>"
+	got := blankIndentedLines(html)
+	if !strings.Contains(got, "keep me   \n") {
+		t.Errorf("trailing whitespace after content was stripped: %q", got)
+	}
+	if !strings.Contains(got, "\n\n</pre>") {
+		t.Errorf("whitespace-only line inside <pre> was not emptied: %q", got)
+	}
+}
+
+func TestBlankIndentedLines_NoOpWhenAlreadyClean(t *testing.T) {
+	html := "<head>\n  <title>x</title>\n\n</head>"
+	if got := blankIndentedLines(html); got != html {
+		t.Errorf("modified already-clean HTML\ngot:  %q\nwant: %q", got, html)
+	}
+}

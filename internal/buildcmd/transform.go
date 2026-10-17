@@ -246,7 +246,31 @@ func applyPositionBasedTransforms(html string, opts buildOptions, assetsDir stri
 	// Preloads let the browser start fetching these scripts at HTML parse time instead
 	// of waiting to encounter the <script> tag later in the body.
 	html = injectCachedScriptPreloads(html)
+
+	// Last, after every injection that can leave one behind.
+	html = blankIndentedLines(html)
 	return html, nil
+}
+
+// blankIndentedLines empties lines that contain nothing but spaces and tabs.
+//
+// A Go template action on its own indented line ("  {{if .X}}\n") leaves the
+// indentation and the newline behind when the action renders nothing, so the
+// generated page carries whitespace-only lines the template author never wrote
+// — `grep -rE '^[ \t]+$' src/templates/` finds zero in the sites that get them.
+// html-validate's no-trailing-whitespace flags every one, and because the
+// source line is in a template that looks clean, there is nothing a site author
+// can fix. ffreis-editify carried 27 such errors across 9 generated pages, every
+// remaining markup error it had.
+//
+// Only all-whitespace lines are touched, never trailing whitespace after real
+// content: inside <pre> or <textarea> that would be a visible change, whereas a
+// whitespace-only line renders identically empty either way.
+func blankIndentedLines(html string) string {
+	if !whitespaceOnlyLineRE.MatchString(html) {
+		return html
+	}
+	return whitespaceOnlyLineRE.ReplaceAllString(html, "")
 }
 
 // injectScriptDefer adds `defer` to every local <script src="..."> tag that

@@ -78,6 +78,11 @@ var (
 	// by whitespace at that position).
 	scriptDeferOrAsyncRE = regexp.MustCompile(`(?i)\s(?:defer|async)\b`)
 
+	// whitespaceOnlyLineRE matches a line consisting only of spaces and tabs,
+	// without consuming its newline — so replacing with "" empties the line
+	// rather than deleting it, keeping every other line's number intact.
+	whitespaceOnlyLineRE = regexp.MustCompile(`(?m)^[ \t]+$`)
+
 	// baseHrefTagRE extracts the href value from a <base href="..."> tag.
 	baseHrefTagRE = regexp.MustCompile(`(?is)<base\s+[^>]*href=["']([^"']+)["'][^>]*>`)
 
