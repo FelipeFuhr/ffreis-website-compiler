@@ -184,6 +184,22 @@ existing `loading` value (`eager`, `lazy`, or otherwise) is left untouched.
 Runs unconditionally (no flag) — like script preload injection, this is
 always beneficial and never load-order breaking.
 
+**The page's first `<img>` is exempt** (capability `lcp-image-priority`). It
+gets `fetchpriority="high"` and `decoding="async"`, and **no** `loading`
+attribute at all. Lazy-loading it was this transform's own anti-pattern: the
+first image is the typical Largest-Contentful-Paint candidate, and
+`loading="lazy"` means the browser does not request it until layout has run, so
+the default made the one image that should have been prioritised the one that
+measured slowest. ffreis-editify, which declares `loading=` in no template at
+all, shipped `loading="lazy"` on its hero purely because of this default.
+
+No `loading` value is written for it on purpose: absent is eager to every
+browser, while writing `loading="eager"` would opt the image into LQIP
+placeholder generation below — a separate behaviour change. An authored
+`loading="lazy"` on the first image is still respected here; the
+`lcp-image-not-lazy` convention gate reports it, so the decision is made in
+review rather than by a transform.
+
 ### 5. LQIP — blur-up placeholders for above-fold images (`lqip.go`)
 
 For every `<img loading="eager" src="local.file">` (raster only — SVGs skipped):
