@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.1.0...v1.1.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **buildcmd:** don't inject a per-page stylesheet the template already links ([#147](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/147)) ([bd36f03](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/bd36f03c81cd9d87bef0bb12fe3eb51c1116ef69))
+
 ## [1.1.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.0.1...v1.1.0) (2026-10-17)
 
 
