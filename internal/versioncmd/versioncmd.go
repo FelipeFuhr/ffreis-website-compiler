@@ -110,6 +110,7 @@ var commands = []string{
 	"serve",
 	"test-output",
 	"validate-assets",
+	"validate-conventions",
 	"validate-css",
 	"validate-sanity",
 	"validate-site-data",
@@ -175,6 +176,10 @@ var commands = []string{
 //     -tracker-site-id, -tracker-endpoint, -tracker-cdn-base)
 var capabilities = []string{
 	"asset-inlining",
+	// A consumer that deletes its hand-written convention tests and relies on
+	// `validate-conventions` instead would, against a compiler without it, get a
+	// GREEN build enforcing nothing at all.
+	"conventions-gates",
 	"blog-posts",
 	"clean-urls",
 	"content-source-dev",
