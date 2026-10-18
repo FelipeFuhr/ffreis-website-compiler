@@ -1008,3 +1008,63 @@ func samePage(self, target string, rootAbsolute bool) bool {
 	}
 	return self == target || strings.HasSuffix(self, "/"+target)
 }
+
+// ──────────────────────────────── one document, one authentication state ──
+
+const ruleNameNoMixedAuthStates = "no-mixed-auth-states"
+
+// authStateAttrs are the attributes this fleet uses to mark a region as
+// belonging to one authentication state. Declared here rather than guessed:
+// a rule that inferred "this looks like a signed-in area" from class names
+// would be wrong often enough to be switched off.
+var authStateAttrs = []string{"data-auth-state", "data-account-state"}
+
+// exclusiveAuthStates are the two values that cannot both be true. Other
+// values on the same attributes (`created`, `verified`, `empty`, `items`) are
+// sub-states WITHIN one session and are deliberately not paired.
+var exclusiveAuthStates = [2]string{"signed-in", "signed-out"}
+
+var ruleNoMixedAuthStates = Rule{
+	Name:   ruleNameNoMixedAuthStates,
+	Domain: DomainOutput,
+	Doc: "A built document carries regions for ONE authentication state, not both. Shipping " +
+		"the signed-in markup inside the page an anonymous visitor receives makes correctness " +
+		"depend on CSS and JS behaving — and when they do not, the viewer sees a signed-in " +
+		"dashboard they have no session for.\n" +
+		"OPT-IN, because for a purely client-side prototype one document with both states is " +
+		"a legitimate and common shape. Enable it where the privileged half contains anything " +
+		"an anonymous viewer should not receive, and serve that half separately — the " +
+		"compiler's `fragment: true` page mode emits exactly that artefact.\n" +
+		"Worth being precise about what this buys: on a static host every file is equally " +
+		"fetchable, so splitting removes the markup from the anonymous RESPONSE but creates " +
+		"no authorisation boundary. It is a disclosure control, and becomes a security " +
+		"control only when the separate artefact is itself access-controlled.",
+	Selects: selectsHTML,
+	Scan: func(rel, contents string) []Finding {
+		present := map[string][]htmlTag{}
+		for _, t := range tokenizeHTML(contents) {
+			if t.Closing {
+				continue
+			}
+			for _, attr := range authStateAttrs {
+				v := strings.ToLower(t.AttrValue(attr))
+				if v == exclusiveAuthStates[0] || v == exclusiveAuthStates[1] {
+					present[v] = append(present[v], t)
+				}
+			}
+		}
+		in, out := present[exclusiveAuthStates[0]], present[exclusiveAuthStates[1]]
+		if len(in) == 0 || len(out) == 0 {
+			return nil
+		}
+		return []Finding{{
+			Rule: ruleNameNoMixedAuthStates, File: rel, Line: in[0].Line,
+			Detail: fmt.Sprintf("this document carries BOTH authentication states — %d region(s) "+
+				"marked %q and %d marked %q. An anonymous visitor receives the privileged markup "+
+				"and only CSS and JS keep it off the screen. Serve the states as separate "+
+				"artefacts (see the compiler's `fragment: true` page mode); if one document is "+
+				"deliberate for this site, declare the exception with that reason",
+				len(in), exclusiveAuthStates[0], len(out), exclusiveAuthStates[1]),
+		}}
+	},
+}

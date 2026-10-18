@@ -684,3 +684,81 @@ func TestNoSelfReferentialLinks_ReportsEachDistinctHrefOnce(t *testing.T) {
 		t.Fatalf("expected one finding per distinct href, got %d: %v", len(got), got)
 	}
 }
+
+// ── no-mixed-auth-states ──────────────────────────────────────────────────
+
+func TestNoMixedAuthStates_FlagsADocumentCarryingBoth(t *testing.T) {
+	// forma's account.html: the "Sign in to see your account" callout and the
+	// full signed-in dashboard, in one document an anonymous visitor receives.
+	got := builtSite(t, "no-mixed-auth-states", map[string]string{
+		"dist/account.html": page(
+			`<div data-account-state="signed-out"><h3>Sign in to see your account.</h3></div>` +
+				`<a data-account-state="signed-in" hidden href="library.html">Library</a>` +
+				`<a data-account-state="signed-in" hidden href="brand-kit.html">Brand Kit</a>`),
+	})
+	f := wantOneFinding(t, got, "BOTH authentication states")
+	if !strings.Contains(f.Detail, `2 region(s) marked "signed-in"`) {
+		t.Errorf("expected each side counted, got: %s", f.Detail)
+	}
+}
+
+func TestNoMixedAuthStates_OneStateAloneIsFine(t *testing.T) {
+	// The whole point: a page that ships only the state its viewer is entitled
+	// to is the shape this rule is steering towards, and must not be flagged.
+	for _, state := range []string{"signed-in", "signed-out"} {
+		got := builtSite(t, "no-mixed-auth-states", map[string]string{
+			"dist/account.html": page(`<div data-auth-state="` + state + `">only this state</div>`),
+		})
+		if len(got) != 0 {
+			t.Errorf("a %s-only document must pass, got: %v", state, got)
+		}
+	}
+}
+
+func TestNoMixedAuthStates_SubStatesWithinOneSessionAreNotPaired(t *testing.T) {
+	// `created`, `verified`, `empty` and `items` are steps inside ONE session,
+	// not mutually exclusive authentication states. Pairing them would fire on
+	// every form with a success panel.
+	wantNoFindings(t, builtSite(t, "no-mixed-auth-states", map[string]string{
+		"dist/register.html": page(`<form data-auth-state="signed-out">f</form>` +
+			`<p data-auth-state="created" hidden>Account created</p>` +
+			`<p data-auth-state="verified" hidden>Verified</p>`),
+	}))
+}
+
+func TestNoMixedAuthStates_RecognisesBothDeclaredAttributes(t *testing.T) {
+	// forma uses data-auth-state on auth pages and data-account-state on the
+	// dashboard; a rule that knew only one of them would miss half the fleet.
+	got := builtSite(t, "no-mixed-auth-states", map[string]string{
+		"dist/x.html": page(`<div data-auth-state="signed-out">a</div>` +
+			`<div data-account-state="signed-in" hidden>b</div>`),
+	})
+	wantOneFinding(t, got, "BOTH authentication states")
+}
+
+func TestNoMixedAuthStates_CanBeExceptedWithAReason(t *testing.T) {
+	// A client-side prototype may legitimately keep one document. The exception
+	// is how that decision gets recorded instead of the rule being switched off.
+	root := siteWith(t, map[string]string{
+		"src/assets/css/a.css": ".a{margin:1rem}",
+		"dist/login.html":      page(`<div data-auth-state="signed-out">a</div><div data-auth-state="signed-in" hidden>b</div>`),
+		"dist/about.html":      page(`<p>no auth states here</p>`),
+	})
+	cfg := Config{Rules: map[string]RuleConfig{"no-mixed-auth-states": {
+		Enabled: true,
+		Exceptions: []Exception{{
+			Path:   "dist/login.html",
+			Reason: "client-side mock session; the signed-in half holds no user data, only links already in the nav",
+		}},
+	}}}
+	res, err := Run(root, cfg, []string{"dist"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected the exception to cover it, got: %v", res.Errors)
+	}
+	if len(res.StaleExceptions) != 0 {
+		t.Errorf("exception matched a real file but was reported stale: %v", res.StaleExceptions)
+	}
+}
