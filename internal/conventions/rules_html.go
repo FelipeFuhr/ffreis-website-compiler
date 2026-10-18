@@ -450,25 +450,47 @@ var ruleLCPImageNotLazy = Rule{
 	},
 }
 
-// --------------------------------------------------------- R6/R8 first CSS
+// ------------------------------------------------------- R6/R8 the page's CSS
 
-// firstPageCSS returns the first stylesheet a page loads: the content of its
-// first <style> block, or the first local <link rel="stylesheet">, whichever
-// comes first in document order. The second return value names the source for
-// the finding; the third is false when the page loads no local CSS at all.
+// pageLocalCSS returns EVERY local stylesheet the page loads, concatenated in
+// document order: each inline <style> block's content and each local
+// <link rel="stylesheet"> read from the tree. The second return value names the
+// first source, for a finding that needs somewhere to point; the third is false
+// when the page loads no local CSS at all.
+//
+// All of it, not just the first source — and that correction matters more than
+// it sounds. The compiler's own position-based transform splits head CSS into a
+// small critical <style> block plus the rest, which is the fleet default. On
+// ffreis-website the first block is 297 bytes: it carries
+// `*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}` and the body
+// font, while the media and form-control resets live one block later. Reading
+// only the first source reported three missing reset pieces that were all
+// present, on essentially every compiler-built site — a gate that cries wolf
+// fleet-wide, which is how a gate gets deleted instead of fixed.
+//
+// "Is the reset here at all" is the question these rules actually answer, and
+// it is the one the rule doc claims ("Presence only"). Whether a declaration
+// wins the cascade on a given element needs computed styles, i.e. the rendered
+// tier — see cssscan.go.
 //
 // External stylesheets (a Google Fonts href) are skipped rather than failed:
 // they are not where a reset lives, and we cannot read them.
-func firstPageCSS(contents string, tree Tree) (css string, source string, ok bool) {
+func pageLocalCSS(contents string, tree Tree) (css string, firstSource string, ok bool) {
 	tags := tokenizeHTML(contents)
+	var parts []string
 	for i, t := range tags {
 		if t.Closing {
 			continue
 		}
 		switch t.Name {
 		case "style":
-			if body, found := rawTextBetween(contents, tags, i); found && strings.TrimSpace(body) != "" {
-				return body, "the page's first inline <style> block", true
+			body, found := rawTextBetween(contents, tags, i)
+			if !found || strings.TrimSpace(body) == "" {
+				continue
+			}
+			parts = append(parts, body)
+			if firstSource == "" {
+				firstSource = "the page's inline <style> blocks"
 			}
 		case "link":
 			if !strings.Contains(strings.ToLower(t.AttrValue("rel")), "stylesheet") {
@@ -478,12 +500,20 @@ func firstPageCSS(contents string, tree Tree) (css string, source string, ok boo
 			if href == "" || isExternalHref(href) {
 				continue
 			}
-			if body, found := tree.ReadFile(href); found {
-				return body, href, true
+			body, found := tree.ReadFile(href)
+			if !found {
+				continue
+			}
+			parts = append(parts, body)
+			if firstSource == "" {
+				firstSource = href
 			}
 		}
 	}
-	return "", "", false
+	if len(parts) == 0 {
+		return "", "", false
+	}
+	return strings.Join(parts, "\n"), firstSource, true
 }
 
 // rawTextBetween returns the text between tags[i] (a start tag) and its end
@@ -512,6 +542,41 @@ func isExternalHref(href string) bool {
 		strings.HasPrefix(h, "//") || strings.HasPrefix(h, "data:")
 }
 
+// selectorIsUniversal reports whether a selector list is a universal reset
+// (`*`, `*,*::before,*::after`, `:where(*)`). Such a rule reaches body and
+// every form control, so it satisfies the resets that name them.
+func selectorIsUniversal(selector string) bool {
+	for _, part := range strings.Split(selector, ",") {
+		part = strings.TrimSpace(part)
+		part = strings.TrimSuffix(part, "::before")
+		part = strings.TrimSuffix(part, "::after")
+		part = strings.TrimSuffix(part, ":before")
+		part = strings.TrimSuffix(part, ":after")
+		part = strings.TrimPrefix(part, ":where(")
+		part = strings.TrimSuffix(part, ")")
+		if strings.TrimSpace(part) == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// mediaRuleDeclares reports whether ANY rule selecting a replaced element
+// carries the given normalised declaration. Each media default is looked for
+// independently, because a site may legitimately set max-width in one rule and
+// display in another.
+func mediaRuleDeclares(rules []cssRule, decl string) bool {
+	for _, r := range rules {
+		if !selectorMentions(r.Selector, "img", "picture", "video", "canvas", "svg") {
+			continue
+		}
+		if r.declaresAny(decl) {
+			return true
+		}
+	}
+	return false
+}
+
 const ruleNameCSSResetPresent = "css-reset-present"
 
 // resetRequirements are the four reset rules the fleet's baseline calls core.
@@ -535,41 +600,50 @@ var resetRequirements = []struct {
 			"to every declared width and no layout arithmetic in the sheet is reliable",
 	},
 	{
-		what: "a body margin reset",
+		// A universal reset counts, and is in fact stronger than a body-only one.
+		// `*,*::before,*::after{margin:0}` is the modern idiom and is what
+		// ffreis-website, petlook-website and flemming-website all use; an
+		// earlier version of this check demanded a `body` selector specifically
+		// and reported every one of them as missing a reset they had.
+		what: "a margin reset reaching body",
 		check: func(rules []cssRule) bool {
 			for _, r := range rules {
-				if selectorMentions(r.Selector, "body", "html") &&
-					r.declaresAny("margin:0", "margin-block:0", "margin:0;") {
-					return true
-				}
-			}
-			return false
-		},
-		fix: "body { margin: 0 } — the user-agent's 8px body margin is the one px value " +
-			"no amount of rem sizing removes",
-	},
-	{
-		what: "responsive media defaults",
-		check: func(rules []cssRule) bool {
-			for _, r := range rules {
-				if !selectorMentions(r.Selector, "img", "picture", "video", "canvas", "svg") {
+				if !selectorMentions(r.Selector, "body", "html") && !selectorIsUniversal(r.Selector) {
 					continue
 				}
-				if r.declaresAny("max-width:100%") && r.declaresAny("display:block") {
+				if r.declaresAny("margin:0", "margin-block:0") {
 					return true
 				}
 			}
 			return false
 		},
+		fix: "body { margin: 0 }, or a universal `*{margin:0}` reset — the user-agent's 8px " +
+			"body margin is the one px value no amount of rem sizing removes",
+	},
+	{
+		// Each declaration is looked for independently. Requiring both in the
+		// SAME rule reported ffreis-forma's `img,svg,video,canvas{max-width:100%}`
+		// as having no media reset at all, when what it actually lacked was
+		// display:block — a true finding described wrongly, which sends whoever
+		// reads it looking for the wrong thing.
+		what: "responsive media defaults",
+		check: func(rules []cssRule) bool {
+			return mediaRuleDeclares(rules, "max-width:100%") &&
+				mediaRuleDeclares(rules, "display:block")
+		},
 		fix: "img, picture, video { display: block; max-width: 100% } — an image wider than " +
-			"its container is the most common source of horizontal scroll on a phone",
+			"its container is the most common source of horizontal scroll on a phone, and " +
+			"display:block removes the inline descender gap under it",
 	},
 	{
 		what: "form controls inheriting typography",
 		check: func(rules []cssRule) bool {
 			for _, r := range rules {
-				if selectorMentions(r.Selector, "input", "button", "select", "textarea") &&
-					r.declaresAny("font:inherit", "font-family:inherit") {
+				if !selectorMentions(r.Selector, "input", "button", "select", "textarea") &&
+					!selectorIsUniversal(r.Selector) {
+					continue
+				}
+				if r.declaresAny("font:inherit", "font-family:inherit") {
 					return true
 				}
 			}
@@ -590,7 +664,7 @@ var ruleCSSResetPresent = Rule{
 		"on src/, since that is the only place the real load order is visible.",
 	Selects: selectsHTML,
 	ScanTree: func(rel, contents string, tree Tree) []Finding {
-		css, source, ok := firstPageCSS(contents, tree)
+		css, source, ok := pageLocalCSS(contents, tree)
 		if !ok {
 			return []Finding{{
 				Rule: ruleNameCSSResetPresent, File: rel,
@@ -625,7 +699,7 @@ var ruleFontFamilyDeclared = Rule{
 		"rendered tier, not this one.",
 	Selects: selectsHTML,
 	ScanTree: func(rel, contents string, tree Tree) []Finding {
-		css, source, ok := firstPageCSS(contents, tree)
+		css, source, ok := pageLocalCSS(contents, tree)
 		if !ok {
 			return nil // css-reset-present already reports a page with no local CSS
 		}
