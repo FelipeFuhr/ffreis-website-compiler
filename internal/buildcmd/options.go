@@ -283,6 +283,9 @@ func maybeCopyAssets(opts buildOptions, assetsDir string) error {
 	if err := checkRobotsTxtSafety(assetsDir, opts); err != nil {
 		return err
 	}
+	if err := checkSitemapBasePath(assetsDir, opts); err != nil {
+		return err
+	}
 	if err := copyStaticAssets(assetsDir, opts.outDir, opts.passthroughFiles); err != nil {
 		return fmt.Errorf("copying assets: %w", err)
 	}

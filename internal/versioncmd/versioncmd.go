@@ -198,6 +198,11 @@ var capabilities = []string{
 	"external-css-import-hoisting",
 	"fragment-pages",
 	"internal-pages",
+	// A committed sitemap.xml whose <loc> entries ignore the build's base path
+	// now FAILS the build. Against a ref without this check the same site builds
+	// green and ships a sitemap pointing at URLs the deployment does not serve —
+	// wrong output, no error, which is this list's inclusion criterion.
+	"sitemap-base-path-check",
 	// Before this, the default lazy-loading transform lazied EVERY unmarked
 	// <img>, the page's first one included. A site built against a ref without
 	// it gets a green build whose Largest Contentful Paint waits on a request
