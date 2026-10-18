@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.1.1...v1.1.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **conventions:** css-reset-present read only the first stylesheet, and cried wolf ([#149](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/149)) ([649a0f1](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/649a0f1eab2022077c837bdf17abde1788b9df78))
+
 ## [1.1.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.1.0...v1.1.1) (2026-10-17)
 
 
