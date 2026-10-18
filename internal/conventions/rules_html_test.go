@@ -469,3 +469,82 @@ func TestCollectControls_SkipsAnUnrenderedControl(t *testing.T) {
 		"dist/index.html": page(`<input type="text" name="x" hidden>`),
 	}))
 }
+
+// ── css-reset-present: corrections forced by running it on the real fleet ──
+
+func TestCSSResetPresent_ScansEveryStyleBlockNotJustTheFirst(t *testing.T) {
+	// The compiler's own position-based transform splits head CSS into a small
+	// critical <style> block plus the rest, which is the fleet default. On
+	// ffreis-website the first block is 297 bytes — box-sizing, margin and the
+	// body font — while the media and form-control resets live one block later.
+	// Reading only the first source reported three missing pieces that were all
+	// present, on essentially every compiler-built site.
+	critical := `*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:"Inter",sans-serif}`
+	rest := `img,picture,video{display:block;max-width:100%}input,button,select,textarea{font:inherit}`
+	wantNoFindings(t, builtSite(t, "css-reset-present", map[string]string{
+		"dist/index.html": `<html><head><style>` + critical + `</style>` +
+			`<style>` + rest + `</style></head><body>x</body></html>`,
+	}))
+}
+
+func TestCSSResetPresent_AcceptsAUniversalMarginReset(t *testing.T) {
+	// `*,*::before,*::after{margin:0}` is the modern idiom and is STRONGER than a
+	// body-only reset. Demanding a `body` selector specifically reported
+	// ffreis-website, petlook-website and flemming-website as missing a reset
+	// they all have.
+	css := `*,*::before,*::after{box-sizing:border-box;margin:0}` +
+		`img,picture,video{display:block;max-width:100%}input,button,select,textarea{font:inherit}`
+	wantNoFindings(t, builtSite(t, "css-reset-present", map[string]string{
+		"dist/index.html": `<html><head><style>` + css + `</style></head><body>x</body></html>`,
+	}))
+}
+
+func TestCSSResetPresent_MediaDefaultsMayLiveInSeparateRules(t *testing.T) {
+	// Requiring both declarations in the SAME rule reported ffreis-forma's
+	// `img,svg,video,canvas{max-width:100%}` as having no media reset at all,
+	// when what it actually lacked was display:block — a true finding described
+	// wrongly, which sends the reader looking for the wrong thing.
+	css := `*{box-sizing:border-box;margin:0}` +
+		`img,svg,video,canvas{max-width:100%}` +
+		`img,picture,video{display:block}` +
+		`input,button,select,textarea{font:inherit}`
+	wantNoFindings(t, builtSite(t, "css-reset-present", map[string]string{
+		"dist/index.html": `<html><head><style>` + css + `</style></head><body>x</body></html>`,
+	}))
+}
+
+func TestCSSResetPresent_StillCatchesTheMeyerResetsRealGaps(t *testing.T) {
+	// Loosening must not make the rule vacuous. flemming-website's Eric Meyer
+	// reset sets `font: inherit` on a long element list that includes img and
+	// video but NOT input/button/select/textarea, and sets no max-width or
+	// display on media. Both gaps are real and must still be reported.
+	meyer := `html,body,div,span,em,img,ins,kbd,q,s,samp,small,strike,strong,video` +
+		`{margin:0;padding:0;border:0;font:inherit;vertical-align:baseline}` +
+		`*{box-sizing:border-box}`
+	got := builtSite(t, "css-reset-present", map[string]string{
+		"dist/index.html": `<html><head><style>` + meyer + `</style></head><body>x</body></html>`,
+	})
+	if len(got) != 2 {
+		t.Fatalf("expected the media and form-control gaps still reported, got: %v", got)
+	}
+	joined := got[0].Detail + got[1].Detail
+	for _, want := range []string{"responsive media defaults", "form controls inheriting typography"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected %q still reported, got: %v", want, got)
+		}
+	}
+}
+
+func TestCSSResetPresent_AUniversalFontResetCountsForFormControls(t *testing.T) {
+	css := `*{box-sizing:border-box;margin:0;font:inherit}img,picture,video{display:block;max-width:100%}`
+	wantNoFindings(t, builtSite(t, "css-reset-present", map[string]string{
+		"dist/index.html": `<html><head><style>` + css + `</style></head><body>x</body></html>`,
+	}))
+}
+
+func TestFontFamilyDeclared_ScansEveryStyleBlock(t *testing.T) {
+	wantNoFindings(t, builtSite(t, "font-family-declared", map[string]string{
+		"dist/index.html": `<html><head><style>*{box-sizing:border-box}</style>` +
+			`<style>body{font-family:"Inter",sans-serif}</style></head><body>x</body></html>`,
+	}))
+}
