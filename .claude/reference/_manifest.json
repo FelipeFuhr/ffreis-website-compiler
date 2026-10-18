@@ -3,7 +3,7 @@
     "preamble_bytes": 863,
     "sections": [
       {
-        "heading": "Versioning & the stable pointer",
+        "heading": "Versioning (and why the `stable` pointer is retired)",
         "file": ".claude/reference/versioning-stable-pointer.md",
         "bytes": 2815
       },

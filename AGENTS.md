@@ -40,7 +40,7 @@ heading → file → byte-count mapping, and `scripts/check-instructions.sh`
 
 | Heading | Reference file |
 | --- | --- |
-| Versioning & the stable pointer | `.claude/reference/versioning-stable-pointer.md` |
+| Versioning (the `stable` pointer is retired) | `.claude/reference/versioning-stable-pointer.md` |
 | Public repo — private-repo hygiene | `.claude/reference/public-repo-hygiene.md` |
 | Content-level language routing (`available_languages`) | `.claude/reference/language-routing-available-languages.md` |
 | Hreflang alternate injection | `.claude/reference/hreflang-alternate-injection.md` |
