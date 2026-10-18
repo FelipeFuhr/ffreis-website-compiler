@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.1.2...v1.2.0) (2026-10-18)
+
+
+### Features
+
+* **conventions:** four gates for defects found live on forma.ffreis.com ([#152](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/152)) ([1531f01](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/1531f01e92c09a207071bd505020773264fcbdf4))
+
 ## [1.1.2](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.1.1...v1.1.2) (2026-10-18)
 
 
