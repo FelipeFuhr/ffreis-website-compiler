@@ -2,6 +2,7 @@ package conventions
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -821,4 +822,249 @@ func linkHref(tags []htmlTag, rel string) string {
 		}
 	}
 	return ""
+}
+
+// ───────────────────────────────── the hidden attribute actually hiding ──
+
+const ruleNameHiddenIsEffective = "hidden-attribute-is-effective"
+
+var ruleHiddenIsEffective = Rule{
+	Name:   ruleNameHiddenIsEffective,
+	Domain: DomainOutput,
+	Doc: "If a page hides anything with the `hidden` attribute, its CSS must make that " +
+		"attribute authoritative: an author-origin `[hidden] { display: none !important }`. " +
+		"The browser's own `[hidden]{display:none}` lives in the USER-AGENT origin, so ANY " +
+		"author rule setting display beats it — `.button{display:inline-flex}` is enough. " +
+		"The element then stays visible while the markup, the DOM and every review of it say " +
+		"it is hidden, which is the whole difficulty: nothing about the HTML looks wrong.",
+	Selects: selectsHTML,
+	ScanTree: func(rel, contents string, tree Tree) []Finding {
+		tags := tokenizeHTML(contents)
+
+		// Only elements that ALSO carry a class can be outranked: a bare
+		// <p hidden> has no author rule targeting it, so the UA default holds.
+		var atRisk []htmlTag
+		for _, t := range tags {
+			if t.Closing || !t.HasAttr("hidden") {
+				continue
+			}
+			if t.AttrValue("class") != "" {
+				atRisk = append(atRisk, t)
+			}
+		}
+		if len(atRisk) == 0 {
+			return nil
+		}
+
+		css, source, ok := pageLocalCSS(contents, tree)
+		if !ok {
+			return nil // css-reset-present reports a page with no local CSS
+		}
+		if hiddenIsAuthoritative(parseCSSRules(css)) {
+			return nil
+		}
+
+		// Name the first few offenders: the fix is one CSS rule, but knowing
+		// what is currently leaking onto the page is what makes it urgent.
+		leaking := make([]string, 0, 3)
+		for _, t := range atRisk {
+			if len(leaking) == 3 {
+				break
+			}
+			leaking = append(leaking, fmt.Sprintf("<%s class=%q>", t.Name, t.AttrValue("class")))
+		}
+		more := ""
+		if len(atRisk) > len(leaking) {
+			more = fmt.Sprintf(" (and %d more)", len(atRisk)-len(leaking))
+		}
+		return []Finding{{
+			Rule: ruleNameHiddenIsEffective, File: rel, Line: atRisk[0].Line,
+			Detail: fmt.Sprintf("%d element(s) rely on the `hidden` attribute, but %s declares no "+
+				"author-origin `[hidden] { display: none !important }` — so any class rule that "+
+				"sets display leaves them VISIBLE. Affected here: %s%s. Add the rule to the "+
+				"reset; it is one line and fixes every page at once",
+				len(atRisk), source, strings.Join(leaking, ", "), more),
+		}}
+	},
+}
+
+// hiddenIsAuthoritative reports whether the stylesheet re-asserts `hidden` in
+// the author origin strongly enough that a later class rule cannot defeat it.
+//
+// `!important` is required rather than merely preferred. A plain
+// `[hidden]{display:none}` has specificity (0,1,0) — identical to `.button` —
+// so whether it wins depends on source order, and with per-page stylesheets
+// appended after the shared reset that order is not something a site controls.
+func hiddenIsAuthoritative(rules []cssRule) bool {
+	for _, r := range rules {
+		if !selectorHasBareHidden(r.Selector) {
+			continue
+		}
+		if strings.Contains(r.Decls, "display:none!important") {
+			return true
+		}
+	}
+	return false
+}
+
+// selectorHasBareHidden reports whether a selector list contains an
+// unqualified `[hidden]`. `.dev-panel[hidden]` does NOT count: it protects one
+// component, not the attribute.
+func selectorHasBareHidden(selector string) bool {
+	for _, part := range strings.Split(selector, ",") {
+		if strings.TrimSpace(part) == "[hidden]" {
+			return true
+		}
+	}
+	return false
+}
+
+// ────────────────────────────────────────── links that point at this page ──
+
+const ruleNameNoSelfReferentialLinks = "no-self-referential-links"
+
+var ruleNoSelfReferentialLinks = Rule{
+	Name:   ruleNameNoSelfReferentialLinks,
+	Domain: DomainOutput,
+	Doc: "A link to the page it is already on is marked `aria-current=\"page\"`. Without it " +
+		"the control is a dead end: it looks actionable, does nothing, and a screen reader " +
+		"announces no difference between it and the links that do go somewhere — so " +
+		"\"where am I\" has no answer. Marking it is also what lets CSS style the current " +
+		"item without a per-page class. Pages are compared after resolving directory " +
+		"indexes, so `/about/` and `/about/index.html` count as the same page.",
+	Selects: selectsHTML,
+	Scan: func(rel, contents string) []Finding {
+		self := canonicalPagePath(rel)
+		dir := path.Dir(rel)
+
+		var findings []Finding
+		seen := map[string]bool{}
+		for _, t := range tokenizeHTML(contents) {
+			if t.Closing || t.Name != "a" {
+				continue
+			}
+			if t.AttrValue("aria-current") != "" {
+				continue // correctly marked
+			}
+			href := t.AttrValue("href")
+			target, rootAbsolute, ok := resolveSameTreeHref(href, dir)
+			if !ok || !samePage(self, canonicalPagePath(target), rootAbsolute) {
+				continue
+			}
+			if seen[href] {
+				continue
+			}
+			seen[href] = true
+			findings = append(findings, Finding{
+				Rule: ruleNameNoSelfReferentialLinks, File: rel, Line: t.Line,
+				Detail: fmt.Sprintf("<a href=%q> points at this page — add aria-current=\"page\", "+
+					"or render it as text instead of a link", href),
+			})
+		}
+		return findings
+	},
+}
+
+// canonicalPagePath collapses a page path to one identity, so that
+// "x/index.html", "x/" and "x" all compare equal.
+func canonicalPagePath(p string) string {
+	p = strings.TrimSuffix(p, "/")
+	p = strings.TrimSuffix(p, "/index.html")
+	return strings.TrimSuffix(p, ".html")
+}
+
+// resolveSameTreeHref resolves a document-relative or root-absolute href to a
+// path comparable with the scanned file's, and reports which of the two it was.
+// It returns false for anything that leaves the page: another origin, a
+// fragment, a non-http scheme, or a query (a link to this page carrying a query
+// is a different view of it, not a dead end).
+func resolveSameTreeHref(href, dir string) (target string, rootAbsolute, ok bool) {
+	if href == "" || strings.HasPrefix(href, "#") || isExternalHref(href) {
+		return "", false, false
+	}
+	if strings.ContainsAny(href, "?#") {
+		return "", false, false
+	}
+	if strings.Contains(href, ":") {
+		return "", false, false // mailto:, tel:, and friends
+	}
+	if strings.HasPrefix(href, "/") {
+		return strings.TrimPrefix(href, "/"), true, true
+	}
+	return path.Clean(path.Join(dir, href)), false, true
+}
+
+// samePage compares a resolved href against the scanned page.
+//
+// A root-absolute href is matched by SUFFIX. The scanned path carries whatever
+// scan-root prefix the run used ("dist/login.html"), and a deployment adds its
+// own base path on top ("/en/login.html"), while the href in the page is
+// written against neither. Comparing the tail is the only comparison that is
+// true in all three framings; an exact match would simply never fire, which is
+// a rule that silently checks nothing.
+func samePage(self, target string, rootAbsolute bool) bool {
+	if !rootAbsolute {
+		return self == target
+	}
+	return self == target || strings.HasSuffix(self, "/"+target)
+}
+
+// ──────────────────────────────── one document, one authentication state ──
+
+const ruleNameNoMixedAuthStates = "no-mixed-auth-states"
+
+// authStateAttrs are the attributes this fleet uses to mark a region as
+// belonging to one authentication state. Declared here rather than guessed:
+// a rule that inferred "this looks like a signed-in area" from class names
+// would be wrong often enough to be switched off.
+var authStateAttrs = []string{"data-auth-state", "data-account-state"}
+
+// exclusiveAuthStates are the two values that cannot both be true. Other
+// values on the same attributes (`created`, `verified`, `empty`, `items`) are
+// sub-states WITHIN one session and are deliberately not paired.
+var exclusiveAuthStates = [2]string{"signed-in", "signed-out"}
+
+var ruleNoMixedAuthStates = Rule{
+	Name:   ruleNameNoMixedAuthStates,
+	Domain: DomainOutput,
+	Doc: "A built document carries regions for ONE authentication state, not both. Shipping " +
+		"the signed-in markup inside the page an anonymous visitor receives makes correctness " +
+		"depend on CSS and JS behaving — and when they do not, the viewer sees a signed-in " +
+		"dashboard they have no session for.\n" +
+		"OPT-IN, because for a purely client-side prototype one document with both states is " +
+		"a legitimate and common shape. Enable it where the privileged half contains anything " +
+		"an anonymous viewer should not receive, and serve that half separately — the " +
+		"compiler's `fragment: true` page mode emits exactly that artefact.\n" +
+		"Worth being precise about what this buys: on a static host every file is equally " +
+		"fetchable, so splitting removes the markup from the anonymous RESPONSE but creates " +
+		"no authorisation boundary. It is a disclosure control, and becomes a security " +
+		"control only when the separate artefact is itself access-controlled.",
+	Selects: selectsHTML,
+	Scan: func(rel, contents string) []Finding {
+		present := map[string][]htmlTag{}
+		for _, t := range tokenizeHTML(contents) {
+			if t.Closing {
+				continue
+			}
+			for _, attr := range authStateAttrs {
+				v := strings.ToLower(t.AttrValue(attr))
+				if v == exclusiveAuthStates[0] || v == exclusiveAuthStates[1] {
+					present[v] = append(present[v], t)
+				}
+			}
+		}
+		in, out := present[exclusiveAuthStates[0]], present[exclusiveAuthStates[1]]
+		if len(in) == 0 || len(out) == 0 {
+			return nil
+		}
+		return []Finding{{
+			Rule: ruleNameNoMixedAuthStates, File: rel, Line: in[0].Line,
+			Detail: fmt.Sprintf("this document carries BOTH authentication states — %d region(s) "+
+				"marked %q and %d marked %q. An anonymous visitor receives the privileged markup "+
+				"and only CSS and JS keep it off the screen. Serve the states as separate "+
+				"artefacts (see the compiler's `fragment: true` page mode); if one document is "+
+				"deliberate for this site, declare the exception with that reason",
+				len(in), exclusiveAuthStates[0], len(out), exclusiveAuthStates[1]),
+		}}
+	},
 }

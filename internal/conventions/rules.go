@@ -73,18 +73,21 @@ func (r Rule) scan(rel, contents string, tree Tree) []Finding {
 // silently ignored key — a typo'd rule name that quietly disables the rule is
 // the worst possible failure for a gate.
 var registry = map[string]Rule{
-	ruleNameNoPxLiterals:        ruleNoPxLiterals,
-	ruleNameNoCSSGrid:           ruleNoCSSGrid,
-	ruleNameSingleMainLandmark:  ruleSingleMainLandmark,
-	ruleNameChromeLandmarks:     ruleChromeLandmarks,
-	ruleNameLabeledFormControls: ruleLabeledFormControls,
-	ruleNameFormAutocomplete:    ruleFormAutocomplete,
-	ruleNameFormErrorWiring:     ruleFormErrorWiring,
-	ruleNameLCPImageNotLazy:     ruleLCPImageNotLazy,
-	ruleNameCSSResetPresent:     ruleCSSResetPresent,
-	ruleNameFontFamilyDeclared:  ruleFontFamilyDeclared,
-	ruleNameSEOMetaPresent:      ruleSEOMetaPresent,
-	ruleNameSocialPreviewImage:  ruleSocialPreviewImage,
+	ruleNameNoPxLiterals:           ruleNoPxLiterals,
+	ruleNameNoCSSGrid:              ruleNoCSSGrid,
+	ruleNameSingleMainLandmark:     ruleSingleMainLandmark,
+	ruleNameChromeLandmarks:        ruleChromeLandmarks,
+	ruleNameLabeledFormControls:    ruleLabeledFormControls,
+	ruleNameFormAutocomplete:       ruleFormAutocomplete,
+	ruleNameFormErrorWiring:        ruleFormErrorWiring,
+	ruleNameLCPImageNotLazy:        ruleLCPImageNotLazy,
+	ruleNameCSSResetPresent:        ruleCSSResetPresent,
+	ruleNameFontFamilyDeclared:     ruleFontFamilyDeclared,
+	ruleNameSEOMetaPresent:         ruleSEOMetaPresent,
+	ruleNameSocialPreviewImage:     ruleSocialPreviewImage,
+	ruleNameHiddenIsEffective:      ruleHiddenIsEffective,
+	ruleNameNoSelfReferentialLinks: ruleNoSelfReferentialLinks,
+	ruleNameNoMixedAuthStates:      ruleNoMixedAuthStates,
 }
 
 // RuleNames returns every known rule name, sorted.

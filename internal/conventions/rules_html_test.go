@@ -548,3 +548,217 @@ func TestFontFamilyDeclared_ScansEveryStyleBlock(t *testing.T) {
 			`<style>body{font-family:"Inter",sans-serif}</style></head><body>x</body></html>`,
 	}))
 }
+
+// ── hidden-attribute-is-effective ─────────────────────────────────────────
+
+// TestHiddenIsEffective_CatchesTheLiveFormaBug reproduces the defect this rule
+// was written for, from the markup forma.ffreis.com actually served.
+//
+// forma's login page marks its signed-in controls `hidden` and toggles them
+// with JS. They were VISIBLE in production: a "Go to account" button and a
+// "Sign out" button sitting under the sign-in form, on a signed-out page.
+// Nothing about the HTML looks wrong — which is the whole difficulty. The
+// browser's `[hidden]{display:none}` is USER-AGENT origin, so the author rule
+// `.button{display:inline-flex}` beats it, and forma's CSS had no author-origin
+// `[hidden]` rule at all (only `.dev-panel[hidden]`).
+func TestHiddenIsEffective_CatchesTheLiveFormaBug(t *testing.T) {
+	css := `.button{display:inline-flex;align-items:center}.dev-panel[hidden]{display:none}`
+	got := builtSite(t, "hidden-attribute-is-effective", map[string]string{
+		"dist/login.html": `<html><head><style>` + css + `</style></head><body>` +
+			`<form><input name="email"><button type="submit" class="button">Continue</button>` +
+			`<a data-auth-state="signed-in" hidden class="button button-primary button-full" href="account.html">Go to account</a>` +
+			`<button data-auth-state="signed-in" hidden class="button button-ghost button-full">Sign out</button>` +
+			`</form></body></html>`,
+	})
+	f := wantOneFinding(t, got, "display: none !important")
+	if !strings.Contains(f.Detail, "2 element(s)") {
+		t.Errorf("expected both leaking elements counted, got: %s", f.Detail)
+	}
+	if !strings.Contains(f.Detail, "button-primary") {
+		t.Errorf("the finding must name what is leaking, got: %s", f.Detail)
+	}
+}
+
+func TestHiddenIsEffective_SatisfiedByTheAuthorRule(t *testing.T) {
+	// koe-website already carries exactly this, with a comment explaining the
+	// cascade. It is the one-line fix.
+	css := `.button{display:inline-flex}[hidden]{display:none!important}`
+	wantNoFindings(t, builtSite(t, "hidden-attribute-is-effective", map[string]string{
+		"dist/login.html": `<html><head><style>` + css + `</style></head><body>` +
+			`<a hidden class="button">Go to account</a></body></html>`,
+	}))
+}
+
+func TestHiddenIsEffective_PlainHiddenRuleIsNotEnough(t *testing.T) {
+	// `[hidden]{display:none}` has specificity (0,1,0) — identical to `.button`
+	// — so which wins depends on source order, and with per-page stylesheets
+	// appended after the shared reset that order is not something a site
+	// controls. !important is required, not preferred.
+	css := `[hidden]{display:none}.button{display:inline-flex}`
+	wantOneFinding(t, builtSite(t, "hidden-attribute-is-effective", map[string]string{
+		"dist/login.html": `<html><head><style>` + css + `</style></head><body>` +
+			`<a hidden class="button">x</a></body></html>`,
+	}), "display: none !important")
+}
+
+func TestHiddenIsEffective_ComponentScopedRuleDoesNotCount(t *testing.T) {
+	// `.dev-panel[hidden]` protects one component, not the attribute — which is
+	// precisely what forma had, and why it looked covered.
+	css := `.dev-panel[hidden]{display:none!important}.button{display:inline-flex}`
+	wantOneFinding(t, builtSite(t, "hidden-attribute-is-effective", map[string]string{
+		"dist/login.html": `<html><head><style>` + css + `</style></head><body>` +
+			`<a hidden class="button">x</a></body></html>`,
+	}), "author-origin")
+}
+
+func TestHiddenIsEffective_BareElementWithNoClassIsNotAtRisk(t *testing.T) {
+	// A <p hidden> with no class has no author rule targeting it, so the UA
+	// default holds and there is nothing to report. Flagging it would make the
+	// rule fire on nearly every page and get it switched off.
+	wantNoFindings(t, builtSite(t, "hidden-attribute-is-effective", map[string]string{
+		"dist/login.html": `<html><head><style>.button{display:inline-flex}</style></head>` +
+			`<body><p hidden>status</p></body></html>`,
+	}))
+}
+
+func TestHiddenIsEffective_PageWithoutHiddenIsNotReported(t *testing.T) {
+	wantNoFindings(t, builtSite(t, "hidden-attribute-is-effective", map[string]string{
+		"dist/login.html": `<html><head><style>.button{display:inline-flex}</style></head>` +
+			`<body><a class="button">x</a></body></html>`,
+	}))
+}
+
+// ── no-self-referential-links ─────────────────────────────────────────────
+
+func TestNoSelfReferentialLinks_CatchesTheLiveFormaHeaderLink(t *testing.T) {
+	// forma's header renders "Sign in" and "Register" on every page, including
+	// login.html and register.html themselves — so on each of those one of the
+	// two is a control that looks actionable and does nothing.
+	got := builtSite(t, "no-self-referential-links", map[string]string{
+		"dist/login.html": page(`<nav><a class="header-link" href="login.html">Sign in</a>` +
+			`<a href="register.html">Register</a></nav>`),
+	})
+	wantOneFinding(t, got, `href="login.html"`)
+}
+
+func TestNoSelfReferentialLinks_AriaCurrentSatisfiesIt(t *testing.T) {
+	wantNoFindings(t, builtSite(t, "no-self-referential-links", map[string]string{
+		"dist/login.html": page(`<nav><a aria-current="page" href="login.html">Sign in</a></nav>`),
+	}))
+}
+
+func TestNoSelfReferentialLinks_ResolvesDirectoryIndexes(t *testing.T) {
+	// A clean-URL build serves about/index.html at /about/. A link to "./" or
+	// "index.html" from inside it is the same dead end.
+	got := builtSite(t, "no-self-referential-links", map[string]string{
+		"dist/about/index.html": page(`<nav><a href="index.html">About</a></nav>`),
+	})
+	wantOneFinding(t, got, "points at this page")
+}
+
+func TestNoSelfReferentialLinks_RootAbsoluteSelfLink(t *testing.T) {
+	got := builtSite(t, "no-self-referential-links", map[string]string{
+		"dist/login.html": page(`<a href="/login.html">Sign in</a>`),
+	})
+	wantOneFinding(t, got, `href="/login.html"`)
+}
+
+func TestNoSelfReferentialLinks_LeavesRealDestinationsAlone(t *testing.T) {
+	wantNoFindings(t, builtSite(t, "no-self-referential-links", map[string]string{
+		"dist/login.html": page(`<a href="register.html">Register</a>` +
+			`<a href="https://example.com/login.html">External</a>` +
+			`<a href="#main">Skip to content</a>` +
+			`<a href="mailto:a@b.c">Mail</a>` +
+			`<a href="login.html?next=account.html">Sign in and return</a>`),
+	}))
+}
+
+func TestNoSelfReferentialLinks_ReportsEachDistinctHrefOnce(t *testing.T) {
+	// A header and a footer both linking the current page is one defect to fix,
+	// not two lines of noise — but two DIFFERENT spellings are two fixes.
+	got := builtSite(t, "no-self-referential-links", map[string]string{
+		"dist/login.html": page(`<a href="login.html">a</a><a href="login.html">b</a>` +
+			`<a href="/login.html">c</a>`),
+	})
+	if len(got) != 2 {
+		t.Fatalf("expected one finding per distinct href, got %d: %v", len(got), got)
+	}
+}
+
+// ── no-mixed-auth-states ──────────────────────────────────────────────────
+
+func TestNoMixedAuthStates_FlagsADocumentCarryingBoth(t *testing.T) {
+	// forma's account.html: the "Sign in to see your account" callout and the
+	// full signed-in dashboard, in one document an anonymous visitor receives.
+	got := builtSite(t, "no-mixed-auth-states", map[string]string{
+		"dist/account.html": page(
+			`<div data-account-state="signed-out"><h3>Sign in to see your account.</h3></div>` +
+				`<a data-account-state="signed-in" hidden href="library.html">Library</a>` +
+				`<a data-account-state="signed-in" hidden href="brand-kit.html">Brand Kit</a>`),
+	})
+	f := wantOneFinding(t, got, "BOTH authentication states")
+	if !strings.Contains(f.Detail, `2 region(s) marked "signed-in"`) {
+		t.Errorf("expected each side counted, got: %s", f.Detail)
+	}
+}
+
+func TestNoMixedAuthStates_OneStateAloneIsFine(t *testing.T) {
+	// The whole point: a page that ships only the state its viewer is entitled
+	// to is the shape this rule is steering towards, and must not be flagged.
+	for _, state := range []string{"signed-in", "signed-out"} {
+		got := builtSite(t, "no-mixed-auth-states", map[string]string{
+			"dist/account.html": page(`<div data-auth-state="` + state + `">only this state</div>`),
+		})
+		if len(got) != 0 {
+			t.Errorf("a %s-only document must pass, got: %v", state, got)
+		}
+	}
+}
+
+func TestNoMixedAuthStates_SubStatesWithinOneSessionAreNotPaired(t *testing.T) {
+	// `created`, `verified`, `empty` and `items` are steps inside ONE session,
+	// not mutually exclusive authentication states. Pairing them would fire on
+	// every form with a success panel.
+	wantNoFindings(t, builtSite(t, "no-mixed-auth-states", map[string]string{
+		"dist/register.html": page(`<form data-auth-state="signed-out">f</form>` +
+			`<p data-auth-state="created" hidden>Account created</p>` +
+			`<p data-auth-state="verified" hidden>Verified</p>`),
+	}))
+}
+
+func TestNoMixedAuthStates_RecognisesBothDeclaredAttributes(t *testing.T) {
+	// forma uses data-auth-state on auth pages and data-account-state on the
+	// dashboard; a rule that knew only one of them would miss half the fleet.
+	got := builtSite(t, "no-mixed-auth-states", map[string]string{
+		"dist/x.html": page(`<div data-auth-state="signed-out">a</div>` +
+			`<div data-account-state="signed-in" hidden>b</div>`),
+	})
+	wantOneFinding(t, got, "BOTH authentication states")
+}
+
+func TestNoMixedAuthStates_CanBeExceptedWithAReason(t *testing.T) {
+	// A client-side prototype may legitimately keep one document. The exception
+	// is how that decision gets recorded instead of the rule being switched off.
+	root := siteWith(t, map[string]string{
+		"src/assets/css/a.css": ".a{margin:1rem}",
+		"dist/login.html":      page(`<div data-auth-state="signed-out">a</div><div data-auth-state="signed-in" hidden>b</div>`),
+		"dist/about.html":      page(`<p>no auth states here</p>`),
+	})
+	cfg := Config{Rules: map[string]RuleConfig{"no-mixed-auth-states": {
+		Enabled: true,
+		Exceptions: []Exception{{
+			Path:   "dist/login.html",
+			Reason: "client-side mock session; the signed-in half holds no user data, only links already in the nav",
+		}},
+	}}}
+	res, err := Run(root, cfg, []string{"dist"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected the exception to cover it, got: %v", res.Errors)
+	}
+	if len(res.StaleExceptions) != 0 {
+		t.Errorf("exception matched a real file but was reported stale: %v", res.StaleExceptions)
+	}
+}
