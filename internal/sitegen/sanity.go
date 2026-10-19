@@ -10,6 +10,25 @@ import (
 
 const dateLayout = "2006-01-02"
 
+// sessionDateLayouts are every spelling a cronograma session date can actually
+// reach this checker in, most specific first.
+//
+// A bare YAML scalar (`date: 2026-09-03`) resolves to the !!timestamp tag and
+// is decoded as a time.Time, which the loader's normalizeYAMLValue then
+// rewrites to RFC3339 ("2026-09-03T00:00:00Z") before any validation runs. So
+// RFC3339 -- not dateLayout -- is the form real consumer site data arrives in;
+// dateLayout only survives when the author quoted the value. Accepting one
+// form and silently skipping the other is what made this gate vacuous, so
+// accept every form that can occur and reject anything else loudly.
+var sessionDateLayouts = []string{
+	dateLayout,
+	time.RFC3339,
+	time.RFC3339Nano,
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+	"2006-01-02 15:04:05 -0700 MST",
+}
+
 type SanityConfig struct {
 	CourseStartMatchesFirstSession         bool
 	CourseDurationHoursMatchesSessionHours bool
@@ -72,16 +91,20 @@ func validateVariantSanity(courseID, variantID string, variant map[string]any, c
 		return nil
 	}
 
-	firstSessionDate, ok := firstCronogramaSessionDate(sessions)
-	if !ok {
-		return nil
-	}
-
 	basePath := fmt.Sprintf("courses.%s.variants.%s", courseID, variantID)
 	var errs []error
 
 	if config.CourseStartMatchesFirstSession {
-		errs = append(errs, validateCourseStartText(basePath, variant, firstSessionDate)...)
+		// A date this checker cannot read is a hard failure, never a skip.
+		// Returning nil here used to disable every rule below it for the whole
+		// variant, which is how the gate passed for every input that had
+		// sessions at all.
+		firstSessionDate, err := firstCronogramaSessionDate(sessions)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s.%w", basePath, err))
+		} else {
+			errs = append(errs, validateCourseStartText(basePath, variant, firstSessionDate)...)
+		}
 	}
 	if config.CourseDurationHoursMatchesSessionHours {
 		errs = append(errs, validateCourseDurationHours(basePath, variant, sessions)...)
@@ -119,9 +142,9 @@ func validateCourseDurationHours(basePath string, variant map[string]any, sessio
 		return []error{fmt.Errorf("%s.duration_hours is missing/invalid but cronograma.sessions is present", basePath)}
 	}
 
-	totalHours, ok := sumCronogramaSessionHours(sessions)
-	if !ok {
-		return []error{fmt.Errorf("%s.cronograma.sessions hours is missing/invalid", basePath)}
+	totalHours, err := sumCronogramaSessionHours(sessions)
+	if err != nil {
+		return []error{fmt.Errorf("%s.%w", basePath, err)}
 	}
 	if durationHours == totalHours {
 		return nil
@@ -145,37 +168,60 @@ func digSlice(parent map[string]any, key string) ([]any, bool) {
 	return value, ok
 }
 
-func firstCronogramaSessionDate(sessions []any) (time.Time, bool) {
+func firstCronogramaSessionDate(sessions []any) (time.Time, error) {
 	first, ok := sessions[0].(map[string]any)
 	if !ok {
-		return time.Time{}, false
+		return time.Time{}, fmt.Errorf("cronograma.sessions[0] must be a mapping, got %T", sessions[0])
 	}
-	dateStr, ok := first["date"].(string)
-	if !ok {
-		return time.Time{}, false
-	}
-	parsed, err := time.Parse(dateLayout, strings.TrimSpace(dateStr))
-	if err != nil {
-		return time.Time{}, false
-	}
-	return parsed, true
+	return parseSessionDate(first["date"])
 }
 
-func sumCronogramaSessionHours(sessions []any) (int, bool) {
+func parseSessionDate(raw any) (time.Time, error) {
+	switch typed := raw.(type) {
+	case time.Time:
+		// Site data that reached the checker without passing through
+		// normalizeYAMLValue still carries a !!timestamp as a time.Time.
+		return typed, nil
+	case nil:
+		return time.Time{}, errors.New("cronograma.sessions[0].date is missing")
+	case string:
+		return parseSessionDateString(typed)
+	default:
+		return time.Time{}, fmt.Errorf("cronograma.sessions[0].date must be a date, got %T (%v)", raw, raw)
+	}
+}
+
+func parseSessionDateString(raw string) (time.Time, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return time.Time{}, errors.New("cronograma.sessions[0].date is empty")
+	}
+	for _, layout := range sessionDateLayouts {
+		if parsed, err := time.Parse(layout, trimmed); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf(
+		"cronograma.sessions[0].date %q is not a recognised date (want %s or RFC3339)",
+		trimmed,
+		dateLayout,
+	)
+}
+
+func sumCronogramaSessionHours(sessions []any) (int, error) {
 	total := 0
 	for idx, entry := range sessions {
 		session, ok := entry.(map[string]any)
 		if !ok {
-			return 0, false
+			return 0, fmt.Errorf("cronograma.sessions[%d] must be a mapping, got %T", idx, entry)
 		}
 		hours, ok := coerceInt(session["hours"])
 		if !ok {
-			_ = idx
-			return 0, false
+			return 0, fmt.Errorf("cronograma.sessions[%d].hours must be a whole number, got %v", idx, session["hours"])
 		}
 		total += hours
 	}
-	return total, true
+	return total, nil
 }
 
 func coerceInt(value any) (int, bool) {
@@ -213,9 +259,13 @@ func parseStartTextToDate(startText string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 
-	// ISO date.
-	if parsed, err := time.Parse(dateLayout, startText); err == nil {
-		return parsed, true
+	// ISO date, or any timestamp form the loader may have normalized it into
+	// (an unquoted `start_text: 2026-09-03` becomes RFC3339 just like a
+	// session date does).
+	for _, layout := range sessionDateLayouts {
+		if parsed, err := time.Parse(layout, startText); err == nil {
+			return parsed, true
+		}
 	}
 
 	// Numeric Brazilian-ish format: dd/mm/yyyy
