@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.2.0...v1.2.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **sanity:** course sanity gate passed for every input with sessions ([#154](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/154)) ([afd89af](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/afd89afa3d0b17dd8e1e8e376f1945f56b9c9e6c))
+
 ## [1.2.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.1.2...v1.2.0) (2026-10-18)
 
 
