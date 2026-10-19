@@ -35,6 +35,7 @@ heading → file → byte-count mapping, and `scripts/check-instructions.sh`
 | `check-lang-parity` command | `.claude/rules/check-lang-parity-command.md` | `internal/paritycmd/**`, `cmd/check-lang-parity/**` |
 | `version` command — the capability manifest | `.claude/rules/version-capability-manifest.md` | `internal/versioncmd/**`, `internal/cli/**` |
 | `validate-conventions` — the fleet's shared rules | `.claude/rules/conventions-gates.md` | `internal/conventions/**`, `internal/validateconventionscmd/**` |
+| Site sanity invariants (and why the gate was once vacuous) | `.claude/rules/site-sanity-invariants.md` | `internal/sitegen/sanity*.go`, `internal/validatesanitycmd/**` |
 
 **On-demand reference** (read by name when the task needs it):
 
