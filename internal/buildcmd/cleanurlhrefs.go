@@ -8,22 +8,24 @@ import (
 
 // Clean-URL normalisation for navigational hrefs authored with a .html suffix.
 //
-// Under -clean-urls a page named `login` is written to `login/index.html` and
+// A page named `login` is written to `login/index.html` and
 // served at `/login`. An href typed as `login.html` then points at a file that
 // no longer exists — and a RELATIVE href breaks twice over, because the page's
 // own URL gained a directory level: from a page now at `/en/404/`, the href
 // `account.html` resolves to `/en/404/account.html`, not to the sibling page it
 // meant.
 //
-// Measured on ffreis-forma at v1.2.1: building with -clean-urls and without this
-// transform produces 2629 broken internal links from 163 distinct authored href
-// values (108 relative, 55 root-absolute). linkcheck catches every one, so the
-// build failed loudly rather than shipping them — but that is precisely what made
-// clean URLs un-adoptable for any site whose authors wrote the flat form, and the
-// fleet carried a per-site `clean_urls: false` opt-out to work around it instead.
+// Measured on ffreis-forma at v1.2.1, before this transform existed: building it
+// with extension-free output produced 2629 broken internal links from 163
+// distinct authored href values (108 relative, 55 root-absolute). linkcheck
+// caught every one, so the build failed loudly rather than shipping them — but
+// that is precisely what made extension-free URLs un-adoptable for a site whose
+// authors wrote the flat form, and the fleet carried a per-site
+// `clean_urls: false` opt-out to work around it instead. Both the opt-out and the
+// flag that backed it are now gone; this is what made removing them possible.
 //
-// Resolution is deterministic rather than a guess about intent. Without
-// -clean-urls a page named `<name>` is emitted at `<basePath>/<name>.html`, so a
+// Resolution is deterministic rather than a guess about intent. Under the old
+// flat output a page named `<name>` was emitted at `<basePath>/<name>.html`, so a
 // relative href on that page always resolved against `<basePath>/`. That is the
 // base used here, which reproduces exactly what the author's link meant before
 // the switch — it infers nothing from the link's text or position.
@@ -52,11 +54,8 @@ var skippedHrefPrefixes = []string{
 }
 
 // normaliseCleanURLHrefs rewrites navigational hrefs ending in .html to the
-// extension-free form that -clean-urls actually serves, resolving relative
+// extension-free form the build actually serves, resolving relative
 // hrefs against the deployment root first.
-//
-// It is a no-op unless the build emits directory-style pages: with flat output
-// `login.html` is the correct and only working form.
 //
 // Sibling deployments are deliberately NOT skipped here, unlike in
 // normaliseAuthoredHrefs. That function must skip them because PREFIXING
@@ -65,10 +64,7 @@ var skippedHrefPrefixes = []string{
 // compiler and is therefore equally extension-free, so `/pt/about.html` →
 // `/pt/about` is correct. Skipping them would leave every language-switcher
 // link pointing at a file that does not exist.
-func normaliseCleanURLHrefs(html, basePath string, cleanURLs bool) string {
-	if !cleanURLs {
-		return html
-	}
+func normaliseCleanURLHrefs(html, basePath string) string {
 	base := "/" + strings.Trim(basePath, "/")
 
 	return navHrefTagRE.ReplaceAllStringFunc(html, func(tag string) string {
@@ -119,7 +115,7 @@ func cleanURLHref(href, base string) string {
 	abs = path.Clean(abs)
 
 	// `index.html` is not rewritten to an extension-free sibling: resolvePageTarget
-	// keeps the index page at `<dir>/index.html` even under -clean-urls, so the
+	// keeps the index page at `<dir>/index.html`, so the
 	// directory is its canonical URL and is what linkcheck registers.
 	if path.Base(abs) == "index.html" {
 		dir := path.Dir(abs)

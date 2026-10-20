@@ -20,7 +20,7 @@ func TestCleanURLHref(t *testing.T) {
 		{"relative resolves against root not page dir", "account.html", "/en", "/en/account"},
 
 		// index.html keeps its directory form — resolvePageTarget leaves the
-		// index page at <dir>/index.html even under -clean-urls.
+		// index page at <dir>/index.html — the directory IS its URL.
 		{"index at root", "index.html", "/en", "/en/"},
 		{"index absolute at deployment root", "/en/index.html", "/en", "/en/"},
 		{"index at site root with empty base", "/index.html", "", "/"},
@@ -80,13 +80,6 @@ func trimSlashesForTest(s string) string {
 	return s
 }
 
-func TestNormaliseCleanURLHrefsIsNoOpWithoutCleanURLs(t *testing.T) {
-	html := `<a href="login.html">in</a>`
-	if got := normaliseCleanURLHrefs(html, "/en", false); got != html {
-		t.Fatalf("flat output must be untouched: got %q", got)
-	}
-}
-
 func TestNormaliseCleanURLHrefsRewritesOnlyNavTags(t *testing.T) {
 	// An asset reference must survive even though it is a <link> with an href.
 	// fingerprintLocalAssets owns those; rewriting here would corrupt them.
@@ -96,7 +89,7 @@ func TestNormaliseCleanURLHrefsRewritesOnlyNavTags(t *testing.T) {
 		`<form action="subscribe.html" method="post"></form>` +
 		`<img src="a.html">`
 
-	got := normaliseCleanURLHrefs(html, "/en", true)
+	got := normaliseCleanURLHrefs(html, "/en")
 
 	for _, want := range []string{
 		`<link rel="stylesheet" href="/css/app.html">`, // untouched asset
@@ -113,7 +106,7 @@ func TestNormaliseCleanURLHrefsRewritesOnlyNavTags(t *testing.T) {
 
 func TestNormaliseCleanURLHrefsPreservesOtherAttributes(t *testing.T) {
 	html := `<a class="nav" href="products.html" aria-current="page" data-x="1">P</a>`
-	got := normaliseCleanURLHrefs(html, "/en", true)
+	got := normaliseCleanURLHrefs(html, "/en")
 	want := `<a class="nav" href="/en/products" aria-current="page" data-x="1">P</a>`
 	if got != want {
 		t.Fatalf("attributes must survive:\n got %s\nwant %s", got, want)
@@ -124,8 +117,8 @@ func TestNormaliseCleanURLHrefsIsIdempotent(t *testing.T) {
 	html := `<a href="login.html">a</a><a href="/pt/about.html#x">b</a>` +
 		`<a href="index.html">c</a><a href="search.html?q=1">d</a>`
 
-	once := normaliseCleanURLHrefs(html, "/en", true)
-	twice := normaliseCleanURLHrefs(once, "/en", true)
+	once := normaliseCleanURLHrefs(html, "/en")
+	twice := normaliseCleanURLHrefs(once, "/en")
 	if once != twice {
 		t.Fatalf("transform must be idempotent:\n once: %s\ntwice: %s", once, twice)
 	}
@@ -138,7 +131,7 @@ func TestNormaliseCleanURLHrefsHandlesSingleQuotedAndUppercaseTags(t *testing.T)
 	// emit double quotes. Documented here so the limit is a decision, not a
 	// surprise.
 	html := `<A   HREF="login.html">x</A><a href='login.html'>y</a>`
-	got := normaliseCleanURLHrefs(html, "/en", true)
+	got := normaliseCleanURLHrefs(html, "/en")
 	if !contains(got, `HREF="/en/login"`) {
 		t.Fatalf("uppercase tag/attr must be rewritten, got: %s", got)
 	}
