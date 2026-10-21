@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.2.1...v2.0.0) (2026-10-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **buildcmd:** the -clean-urls flag no longer selects behaviour. Extension-free output is unconditional and flat <name>.html output is no longer available; -clean-urls=false is rejected with an error.
+
+### Features
+
+* **buildcmd:** extension-free URLs are the only mode ([#157](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/157)) ([4cec1fb](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/4cec1fbbddc1998572818a072234c36687da0a40))
+
 ## [1.2.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.2.0...v1.2.1) (2026-10-19)
 
 
