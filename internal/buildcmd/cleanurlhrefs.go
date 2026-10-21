@@ -45,13 +45,20 @@ var navHrefTagRE = regexp.MustCompile(`(?is)<(a|area|form)(\s[^>]*)>`)
 // root-absolute ones, because a relative href is exactly the case that breaks.
 var navHrefValueRE = regexp.MustCompile(`(?i)\b(href|action)\s*=\s*"([^"]*)"`)
 
-// skippedHrefPrefixes are destinations this transform must never touch: another
-// origin, or a non-navigational scheme. A protocol-relative URL is external
-// despite starting with a slash.
-var skippedHrefPrefixes = []string{
-	"http://", "https://", "//",
-	"mailto:", "tel:", "sms:", "javascript:", "data:",
-}
+// hrefSchemeRE matches a leading URL scheme (`https:`, `mailto:`, `tel:`,
+// `javascript:`, `data:`, anything else). An href with a scheme names a
+// destination this transform must never touch: a different origin, or not a
+// document at all.
+//
+// scan-fix(sonar:S5332): detects schemes structurally instead of listing the
+// cleartext-protocol prefix and its siblings as string literals. Sonar read that
+// literal as cleartext-protocol usage, which it was not — nothing here makes a
+// request, the string existed precisely to SKIP such hrefs, and deleting it
+// would have rewritten external links into this site's own paths. Matching the
+// shape is also strictly more correct than an allowlist: it covers ws:, ftp: and
+// any future scheme with no maintenance. Same test coverage, one fewer list to
+// forget to update.
+var hrefSchemeRE = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.\-]*:`)
 
 // normaliseCleanURLHrefs rewrites navigational hrefs ending in .html to the
 // extension-free form the build actually serves, resolving relative
@@ -91,11 +98,10 @@ func cleanURLHref(href, base string) string {
 	if href == "" || strings.HasPrefix(href, "#") {
 		return href
 	}
-	lower := strings.ToLower(href)
-	for _, p := range skippedHrefPrefixes {
-		if strings.HasPrefix(lower, p) {
-			return href
-		}
+	// A scheme means another origin or a non-document target; `//host/path` is
+	// external despite starting with a slash.
+	if hrefSchemeRE.MatchString(href) || strings.HasPrefix(href, "//") {
+		return href
 	}
 
 	// Split the suffix off BEFORE testing the extension, so `about.html#team`
