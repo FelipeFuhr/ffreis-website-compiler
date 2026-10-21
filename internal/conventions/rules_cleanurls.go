@@ -113,9 +113,15 @@ var sitemapLocRE = regexp.MustCompile(`(?is)<loc>\s*([^<\s]+)\s*</loc>`)
 // Found live on ffreis-forma: the compiler generates an extension-free sitemap,
 // but forma ships a COMMITTED src/assets/sitemap.xml, and the well-known-asset
 // copy puts that over the generated one byte for byte. So the build was green,
-// the pages were extension-free, and the sitemap still advertised 60 .html URLs
+// the pages were extension-free, and the sitemap still advertised 25 .html URLs
 // — a hand-maintained file that had silently become wrong. Nothing else in the
 // pipeline looks at it.
+//
+// The fix is to EDIT such a file, not delete it. forma's is committed on purpose:
+// its Makefile records that the generated sitemap has no robots:noindex
+// awareness, so falling back on generation would publish account, cart, checkout
+// and login URLs. An earlier version of this rule advised deleting it, which
+// would have traded a redirect for an indexing leak.
 func scanSitemapForHTMLExtensions(rel, contents string) []Finding {
 	var findings []Finding
 	for _, m := range sitemapLocRE.FindAllStringSubmatchIndex(contents, -1) {
@@ -134,9 +140,11 @@ func scanSitemapForHTMLExtensions(rel, contents string) []Finding {
 			Line: 1 + strings.Count(contents[:m[0]], "\n"),
 			Detail: "<loc>" + loc + "</loc> advertises a .html URL. Pages are served " +
 				"extension-free and the CDN 301-redirects the extension form, so every " +
-				"crawler following this spends a redirect to reach the same page. If this " +
-				"sitemap is committed rather than generated, delete it and let the build " +
-				"emit one",
+				"crawler following this spends a redirect to reach the same page. Drop the " +
+				"extension. If the sitemap is committed rather than generated, edit it in " +
+				"place -- do NOT delete it to fall back on generation, which has no " +
+				"robots:noindex awareness and would publish account, cart, checkout and " +
+				"login URLs",
 		})
 	}
 	return findings
