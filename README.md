@@ -53,7 +53,6 @@ Common flags (defaults in parentheses):
 | `-site-data` | Site-data source override (file/URL/directory of YAML layers) |
 | `-copy-assets` (`true`) | Copy static assets into the output |
 | `-inline-assets` (`false`) | Inline CSS/JS/images into each page for self-contained output |
-| `-clean-urls` (`false`) | Emit `<name>/index.html` for extension-free URLs |
 | `-js-inline-threshold` (`8192`) | Inline local `<script src>` below N bytes (0 disables) |
 | `-raster-inline-threshold` (`0`) | Inline local raster `<img>` below N bytes (0 disables) |
 | `-embed-fonts` (`false`) | Embed fonts in inlined CSS as base64 data URIs |
@@ -65,6 +64,25 @@ Common flags (defaults in parentheses):
 | `-run-output-tests` (`false`) | Run the website-owned `tests/output.yaml` manifest after compiling |
 | `-output-test-manifest` | Override the default output-test manifest path |
 | `-tracker-enabled` (`false`) | Inject the tracker SDK + `Tracker.init(...)`; needs `-tracker-sdk-version`, `-tracker-site-id`, `-tracker-endpoint` |
+
+#### URLs are extension-free, and there is no flag for it
+
+Every page but the index is written to `<name>/index.html` and served at
+`/<name>`. The index stays at `index.html`, because the directory *is* its URL.
+The sitemap advertises the same extension-free form.
+
+There is no `-clean-urls` flag. It existed, defaulted to **off**, and the
+deployer passed it for every site — so a local `make build` and the deployed
+artefact had different URL shapes, and one site carried a permanent
+`clean_urls: false` opt-out in the fleet inventory. The flag is gone and the
+behaviour is unconditional.
+
+Authored `.html` hrefs are rewritten for you: `<a href="login.html">` becomes
+`/<base>/login`, relative hrefs resolving against the deployment root. A `.html`
+left in a **query value** (`/login?next=account.html`) is *not* rewritten —
+that would mean guessing what the parameter means — and the
+`no-html-extension-urls` convention rule reports it, along with any `.html` URL
+in a committed `sitemap.xml`.
 
 #### Per-page CSS scoping
 

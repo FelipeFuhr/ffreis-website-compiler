@@ -362,20 +362,13 @@ func TestResolveCSSAssetRef_RootCSSFile(t *testing.T) {
 
 // ── resolvePageTarget ─────────────────────────────────────────────────────────
 
-func TestResolvePageTarget_NormalURL(t *testing.T) {
+// Extension-free output is the only mode: there is no flag and no flat variant,
+// so the old TestResolvePageTarget_NormalURL (asserting `about.html`) is gone
+// rather than inverted — a test whose name says "normal" and asserts the shape
+// the compiler no longer produces is worse than no test.
+func TestResolvePageTarget_PageBecomesDirectoryIndex(t *testing.T) {
 	outDir := t.TempDir()
 	path, err := resolvePageTarget(outDir, "about", false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.HasSuffix(path, "about.html") {
-		t.Errorf("expected about.html, got %q", path)
-	}
-}
-
-func TestResolvePageTarget_CleanURLs(t *testing.T) {
-	outDir := t.TempDir()
-	path, err := resolvePageTarget(outDir, "about", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -384,14 +377,36 @@ func TestResolvePageTarget_CleanURLs(t *testing.T) {
 	}
 }
 
-func TestResolvePageTarget_IndexPageCleanURLs(t *testing.T) {
+// A fragment stays FLAT: it is fetched by the site's own JS at a literal URL
+// (forma's `data-signed-in-fragment="fragment-x.html"`), so a directory index
+// would 404 that fetch with no link for linkcheck to catch.
+func TestResolvePageTarget_FragmentStaysFlat(t *testing.T) {
 	outDir := t.TempDir()
-	path, err := resolvePageTarget(outDir, "index", true)
+	path, err := resolvePageTarget(outDir, "fragment-account-billing", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasSuffix(path, "fragment-account-billing.html") {
+		t.Errorf("expected fragment-account-billing.html, got %q", path)
+	}
+	if strings.Contains(path, filepath.Join("fragment-account-billing", "index.html")) {
+		t.Errorf("a fragment must not become a directory index, got %q", path)
+	}
+}
+
+// The index page is the one exception, and not an exception to the convention:
+// `<dir>/index.html` IS its extension-free form, because the directory is the URL.
+func TestResolvePageTarget_IndexStaysAtRoot(t *testing.T) {
+	outDir := t.TempDir()
+	path, err := resolvePageTarget(outDir, "index", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.HasSuffix(path, "index.html") {
 		t.Errorf("expected index.html, got %q", path)
+	}
+	if strings.HasSuffix(path, filepath.Join("index", "index.html")) {
+		t.Errorf("index must not be nested into its own directory, got %q", path)
 	}
 }
 
@@ -454,7 +469,7 @@ func TestInlineLocalAssets_InlinesImage(t *testing.T) {
 
 // ── clean URLs integration ────────────────────────────────────────────────────
 
-func TestRun_CleanURLsProducesIndexHTML(t *testing.T) {
+func TestRun_PagesAreEmittedAsDirectoryIndexes(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
@@ -466,20 +481,20 @@ func TestRun_CleanURLsProducesIndexHTML(t *testing.T) {
 	args := []string{
 		flagWebsiteRoot, websiteRoot,
 		flagOut, outDir,
-		"-clean-urls",
 	}
 	if err := Run(args, testutil.DiscardLogger()); err != nil {
 		t.Fatalf(buildRunFailed, err)
 	}
 
-	// agenda page must be at agenda/index.html, not agenda.html.
+	// No flag: extension-free output is the only mode. agenda must be at
+	// agenda/index.html, never agenda.html.
 	agendaIndexPath := filepath.Join(outDir, "agenda", "index.html")
 	if _, err := os.Stat(agendaIndexPath); err != nil {
 		t.Fatalf("expected %s to exist: %v", agendaIndexPath, err)
 	}
 	// The old .html path must not exist.
 	if _, err := os.Stat(filepath.Join(outDir, "agenda.html")); !os.IsNotExist(err) {
-		t.Fatalf("expected agenda.html absent with clean-urls, got err=%v", err)
+		t.Fatalf("expected agenda.html absent, got err=%v", err)
 	}
 }
 
@@ -709,9 +724,12 @@ func TestRun_CopyAssetsFalseSkipsAllAssets(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
+	// The agenda page is a DIRECTORY (agenda/index.html), not a file, because
+	// every page but the index is emitted as a directory index. The assertion is
+	// still "nothing but the page and the sitemap" — only the page's shape changed.
 	for _, name := range names {
-		if name != "agenda.html" && name != "sitemap.xml" {
-			t.Errorf("unexpected file in dist with copy-assets=false: %s", name)
+		if name != "agenda" && name != "sitemap.xml" {
+			t.Errorf("unexpected entry in dist with copy-assets=false: %s", name)
 		}
 	}
 }
@@ -750,7 +768,7 @@ func TestRun_SameAssetFingerprintedConsistentlyAcrossPages(t *testing.T) {
 	}
 
 	indexHTML := string(mustReadFile(t, filepath.Join(outDir, "index.html")))
-	agendaHTML := string(mustReadFile(t, filepath.Join(outDir, "agenda.html")))
+	agendaHTML := string(mustReadFile(t, filepath.Join(outDir, "agenda", "index.html")))
 	srcIndex := extractImgSrc(indexHTML)
 	srcAgenda := extractImgSrc(agendaHTML)
 

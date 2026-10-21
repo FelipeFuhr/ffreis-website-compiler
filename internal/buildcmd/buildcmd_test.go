@@ -22,7 +22,6 @@ const (
 	fileSiteContractYAML = "site.contract.yaml"
 	fileSiteYAML         = "site.yaml"
 	fileAgendaGoHTML     = "agenda.gohtml"
-	fileAgendaHTML       = "agenda.html"
 	fileIndexHTML        = "index.html"
 
 	mainCSSContent   = "body { color: #000; }\n"
@@ -33,6 +32,13 @@ const (
 	stdLayoutTmpl = `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>{{template "page" .}}</body></html>{{end}}`
 	stdHeadTmpl   = `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`
 )
+
+// fileAgendaHTML is where the `agenda` page is WRITTEN — a directory index, not
+// `agenda.html`. Every page but the index is emitted this way, so a test reading
+// a page's output joins this rather than a bare filename. A var rather than a
+// const because the separator comes from filepath.Join; `fileAgendaGoHTML` above
+// is the separate INPUT template name and is unaffected.
+var fileAgendaHTML = filepath.Join("agenda", "index.html")
 
 func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
 	websiteRoot, err := filepath.Abs(filepath.Join("..", "..", "examples", "hello-world"))
@@ -122,7 +128,7 @@ listings:
 
 	// The internal "listing" template itself must not produce a standalone
 	// /listing.html page.
-	if _, err := os.Stat(filepath.Join(outDir, "listing.html")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(outDir, "listing", "index.html")); !os.IsNotExist(err) {
 		t.Fatalf("expected internal listing template to be excluded from direct output, got err=%v", err)
 	}
 
@@ -218,7 +224,7 @@ func TestRun_ListingsSectionEnabled_KeepsHubPageSitemapEntryAndCarouselData(t *t
 		t.Fatalf(buildRunFailed, err)
 	}
 
-	mustStat(t, filepath.Join(outDir, "listings.html"))
+	mustStat(t, filepath.Join(outDir, "listings", "index.html"))
 
 	index := mustReadFile(t, filepath.Join(outDir, fileIndexHTML))
 	if !strings.Contains(string(index), `data-count="2"`) {
@@ -253,7 +259,7 @@ func TestRun_DisablingListingsSection_RemovesHubPageSitemapEntryAndCarouselData(
 	}
 
 	// (a) the listings hub page itself must not be generated.
-	if _, err := os.Stat(filepath.Join(outDir, "listings.html")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(outDir, "listings", "index.html")); !os.IsNotExist(err) {
 		t.Errorf("expected listings hub page to be dropped when the section is disabled, got err=%v", err)
 	}
 

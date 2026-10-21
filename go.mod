@@ -2,7 +2,7 @@ module ffreis-website-compiler
 
 go 1.25.8
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require gopkg.in/yaml.v3 v3.0.1
 

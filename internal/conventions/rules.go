@@ -88,6 +88,7 @@ var registry = map[string]Rule{
 	ruleNameHiddenIsEffective:      ruleHiddenIsEffective,
 	ruleNameNoSelfReferentialLinks: ruleNoSelfReferentialLinks,
 	ruleNameNoMixedAuthStates:      ruleNoMixedAuthStates,
+	ruleNameNoHTMLExtensionURLs:    ruleNoHTMLExtensionURLs,
 }
 
 // RuleNames returns every known rule name, sorted.

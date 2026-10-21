@@ -156,6 +156,15 @@ func transformPage(html string, opts buildOptions, assetsDir, pageName string, m
 	html = injectTracker(html, opts)
 	html = injectDevData(html, opts)
 
+	// Authored `<a href="login.html">` becomes `/en/login`: pages are emitted as
+	// `<name>/index.html`, so the flat file an href names does not exist. Runs
+	// here, before any asset handling, for two reasons: it must see the hrefs
+	// exactly as the template and site data wrote them, and it must not see
+	// fingerprinted asset URLs (it only matches <a>/<area>/<form>, so it would
+	// skip them anyway — ordering makes that structural rather than incidental).
+	// See cleanurlhrefs.go.
+	html = normaliseCleanURLHrefs(html, opts.basePath)
+
 	if opts.inlineAssets {
 		// Full asset inlining (CSS + JS + images). Converts url() to data URIs so the
 		// page is fully self-contained. Does not fingerprint (data URIs need no cache key).

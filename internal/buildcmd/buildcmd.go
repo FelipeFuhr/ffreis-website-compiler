@@ -440,7 +440,7 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 
 	for _, page := range pages {
 		slug := resolvePageSlug(siteData, page.Name)
-		target, err := resolvePageTarget(opts.outDir, slug, opts.cleanURLs)
+		target, err := resolvePageTarget(opts.outDir, slug, sitegen.IsPageFragment(siteData, page.Name))
 		if err != nil {
 			return err
 		}
@@ -462,8 +462,8 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		if err != nil {
 			return fmt.Errorf("injecting social image for %s: %w", target, err)
 		}
-		htmlOut = injectHreflangAlternates(htmlOut, siteData, page.Name, opts.cleanURLs)
-		htmlOut = injectLangSwitcherHrefs(htmlOut, siteData, page.Name, opts.cleanURLs)
+		htmlOut = injectHreflangAlternates(htmlOut, siteData, page.Name)
+		htmlOut = injectLangSwitcherHrefs(htmlOut, siteData, page.Name)
 		for k, v := range pageCopy {
 			allToCopy[k] = v
 		}
@@ -510,15 +510,38 @@ func writeHashedAssets(outDir, assetsDir string, assets map[string]string) error
 	return nil
 }
 
-func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) {
-	if cleanURLs && pageName != "index" {
-		dir := filepath.Join(outDir, pageName)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", fmt.Errorf("creating directory for %s: %w", pageName, err)
-		}
-		return filepath.Join(dir, "index.html"), nil
+// resolvePageTarget returns the file a page is written to. Every page except the
+// index becomes `<name>/index.html`, so it is served extension-free.
+//
+// This used to be conditional on a -clean-urls flag defaulting to OFF, which made
+// flat `<name>.html` output the compiler's default while the deployer passed the
+// flag for every site — so a local `make build` and the deployed artefact had
+// different URL shapes, and one site carried a permanent `clean_urls: false`
+// opt-out. There is now no alternative to remove the divergence from: see
+// cleanurlhrefs.go for the transform that made the flat form unnecessary, and the
+// `no-html-extension-urls` convention rule that keeps it from coming back.
+//
+// The index page stays at `<dir>/index.html` because that IS its extension-free
+// form — the directory is the URL.
+//
+// A FRAGMENT page also stays flat, and that exception is load-bearing rather
+// than cosmetic. A fragment (`pages.<name>.fragment: true`) is not a navigable
+// page: it is an HTML snippet fetched by the site's own JS at a literal URL —
+// ffreis-forma's account pages carry
+// `data-signed-in-fragment="fragment-account-billing.html"` and `fetch()` that
+// string. Moving it to `fragment-account-billing/index.html` 404s the fetch,
+// silently, with no link for linkcheck to catch because the URL lives in a JS
+// attribute. Nothing about a fragment benefits from an extension-free URL: it is
+// never in the address bar, never in a sitemap, and never crawled.
+func resolvePageTarget(outDir, pageName string, isFragment bool) (string, error) {
+	if pageName == "index" || isFragment {
+		return filepath.Join(outDir, pageName+".html"), nil
 	}
-	return filepath.Join(outDir, pageName+".html"), nil
+	dir := filepath.Join(outDir, pageName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("creating directory for %s: %w", pageName, err)
+	}
+	return filepath.Join(dir, "index.html"), nil
 }
 
 // validatePageBaseHref checks that the <base href> in the rendered HTML matches
@@ -625,7 +648,7 @@ func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir s
 	if baseURL == "" {
 		return nil
 	}
-	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir, opts.cleanURLs, extraURLs); err != nil {
+	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir, extraURLs); err != nil {
 		return err
 	}
 	logger.Info("generated sitemap from pages", "base_url", baseURL, "target", filepath.Join(opts.outDir, sitemapXML))
@@ -802,7 +825,7 @@ func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs
 	return nil
 }
 
-func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.PageTemplate, outDir string, cleanURLs bool, extraURLs []sitemap.URLItem) error {
+func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.PageTemplate, outDir string, extraURLs []sitemap.URLItem) error {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
 		return fmt.Errorf("sitemap base URL cannot be empty")
@@ -810,13 +833,12 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 
 	urls := make([]sitemap.URLItem, 0, len(pages)+len(extraURLs))
 	for _, page := range pages {
-		var path string
+		// Extension-free, matching resolvePageTarget. A sitemap advertising the
+		// .html form would hand crawlers the URL the CDN 301s away from, which
+		// spends the site's crawl budget on redirects.
+		path := "/" + page.Name
 		if page.Name == "index" {
 			path = "/"
-		} else if cleanURLs {
-			path = "/" + page.Name
-		} else {
-			path = "/" + page.Name + ".html"
 		}
 
 		item := sitemap.URLItem{Path: path}

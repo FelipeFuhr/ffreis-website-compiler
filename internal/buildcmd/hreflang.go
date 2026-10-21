@@ -19,12 +19,11 @@ type langVariant struct {
 //
 // The alternate URLs are constructed as:
 //
-//	base_url + variant.path + "/" + slug + "/"  (clean URLs)
-//	base_url + variant.path + "/" + slug + ".html"  (non-clean URLs)
+//	base_url + variant.path + "/" + slug + "/"
 //
 // Where slug is looked up from lang_links[].slug_map for that hreflang (falls
 // back to pageName). For the index page the page segment is omitted.
-func injectHreflangAlternates(html string, siteData map[string]any, pageName string, cleanURLs bool) string {
+func injectHreflangAlternates(html string, siteData map[string]any, pageName string) string {
 	baseURL, _ := siteData["base_url"].(string)
 	if baseURL == "" {
 		return html
@@ -44,7 +43,7 @@ func injectHreflangAlternates(html string, siteData map[string]any, pageName str
 	for _, v := range variants {
 		slug := variantSlug(v.hreflang, htmlLang, currentSlug, slugMaps, pageName)
 		fmt.Fprintf(&links, `<link rel="alternate" hreflang="%s" href="%s">`,
-			v.hreflang, buildAlternateURL(baseURL, v.path, slug, cleanURLs))
+			v.hreflang, buildAlternateURL(baseURL, v.path, slug))
 		links.WriteByte('\n')
 	}
 	if defaultHreflang != "" {
@@ -57,7 +56,6 @@ func injectHreflangAlternates(html string, siteData map[string]any, pageName str
 			slugMaps:        slugMaps,
 			pageName:        pageName,
 			baseURL:         baseURL,
-			cleanURLs:       cleanURLs,
 		})
 	}
 
@@ -85,7 +83,6 @@ type xDefaultLinkContext struct {
 	slugMaps        map[string]map[string]string
 	pageName        string
 	baseURL         string
-	cleanURLs       bool
 }
 
 // appendXDefaultLink writes an x-default hreflang link to ctx.sb for the
@@ -97,7 +94,7 @@ func appendXDefaultLink(ctx xDefaultLinkContext) {
 		}
 		slug := variantSlug(v.hreflang, ctx.htmlLang, ctx.currentSlug, ctx.slugMaps, ctx.pageName)
 		fmt.Fprintf(ctx.sb, `<link rel="alternate" hreflang="x-default" href="%s">`,
-			buildAlternateURL(ctx.baseURL, v.path, slug, ctx.cleanURLs))
+			buildAlternateURL(ctx.baseURL, v.path, slug))
 		ctx.sb.WriteByte('\n')
 		break
 	}
@@ -107,7 +104,7 @@ func appendXDefaultLink(ctx xDefaultLinkContext) {
 // lang-flag anchor with a per-page href pointing to the parallel page in the
 // sibling language. It reads slug_map from each lang_links entry to translate
 // the page key to the sibling language's slug.
-func injectLangSwitcherHrefs(html string, siteData map[string]any, pageName string, cleanURLs bool) string {
+func injectLangSwitcherHrefs(html string, siteData map[string]any, pageName string) string {
 	ui, _ := siteData["ui"].(map[string]any)
 	nav, _ := ui["nav"].(map[string]any)
 	langLinks, _ := nav["lang_links"].([]any)
@@ -130,10 +127,8 @@ func injectLangSwitcherHrefs(html string, siteData map[string]any, pageName stri
 		var newHref string
 		if pageName == "index" {
 			newHref = base + "/"
-		} else if cleanURLs {
-			newHref = base + "/" + siblingSlug + "/"
 		} else {
-			newHref = base + "/" + siblingSlug + ".html"
+			newHref = base + "/" + siblingSlug + "/"
 		}
 		re := regexp.MustCompile(`class="lang-flag" href="` + regexp.QuoteMeta(oldHref) + `"`)
 		html = re.ReplaceAllString(html, `class="lang-flag" href="`+newHref+`"`)
@@ -141,14 +136,11 @@ func injectLangSwitcherHrefs(html string, siteData map[string]any, pageName stri
 	return html
 }
 
-func buildAlternateURL(baseURL, langPath, slug string, cleanURLs bool) string {
+func buildAlternateURL(baseURL, langPath, slug string) string {
 	if slug == "index" {
 		return baseURL + langPath + "/"
 	}
-	if cleanURLs {
-		return baseURL + langPath + "/" + slug + "/"
-	}
-	return baseURL + langPath + "/" + slug + ".html"
+	return baseURL + langPath + "/" + slug + "/"
 }
 
 // buildLangLinksSlugMap builds a lookup table hreflang → (pageName → slug)

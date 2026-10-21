@@ -69,7 +69,6 @@ type buildOptions struct {
 	mirroredAssetsDir     string
 	enableSanity          bool
 	strictContract        bool
-	cleanURLs             bool
 	runOutputTests        bool
 	outputTestManifest    string
 	// disabledSections lists content sections (see sectionTable in sections.go
@@ -147,7 +146,6 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
 	fs.BoolVar(&opts.strictContract, "strict-contract", true, "fail if any allowed contract path is not referenced by any template (disable for local dev with in-progress templates)")
-	fs.BoolVar(&opts.cleanURLs, "clean-urls", false, "output each page as <name>/index.html instead of <name>.html for extension-free URLs; updates sitemap accordingly")
 	fs.BoolVar(&opts.runOutputTests, "run-output-tests", false, "run the website-owned compiled-output manifest after a successful build")
 	fs.StringVar(&opts.outputTestManifest, "output-test-manifest", "", "website-owned output test manifest; defaults to tests/output.yaml under website-root when -run-output-tests is set")
 	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
@@ -165,8 +163,33 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.trackerCDNBase, "tracker-cdn-base", "", "override the CDN base URL for the SDK script (defaults to https://cdn.ffreis.com)")
 	fs.BoolVar(&opts.devData, "dev-data", false, "inject window.__devBuild JSON before </head> on every page; for dev.ffreis.com only — never pass on prod builds")
 
+	// -clean-urls is accepted and ignored, not deleted outright. Extension-free
+	// output is unconditional now, but ffreis-website-deployer passes this flag
+	// UNCONDITIONALLY (deploy.yml, hardcoded — not read from inventory), so simply
+	// removing it would fail every deploy with "flag provided but not defined" the
+	// moment any site pinned this version. Dropping it from the deployer instead
+	// is worse: an older pinned compiler defaults to FLAT output without it, so
+	// that change silently reshapes the URLs of every site still on v1.x.
+	//
+	// Accepting it costs nothing and removes the alternative anyway: there is no
+	// value of this flag that produces flat output. `-clean-urls=false` is a hard
+	// error rather than a silent no-op, because it is the one spelling that asks
+	// for the behaviour that no longer exists, and answering it with silence is
+	// how a caller ends up believing it got what it asked for.
+	//
+	// Remove this flag once the deployer stops passing it AND no inventory entry
+	// pins a compiler older than this release.
+	cleanURLsCompat := fs.Bool("clean-urls", true,
+		"deprecated and ignored: extension-free URLs are unconditional. Accepted so existing callers keep working; -clean-urls=false is rejected")
+
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
+	}
+
+	if !*cleanURLsCompat {
+		return buildOptions{}, fmt.Errorf("-clean-urls=false is no longer supported: " +
+			"every page but the index is emitted as <name>/index.html and served extension-free. " +
+			"Remove the flag; authored .html hrefs are rewritten automatically")
 	}
 
 	if err := validateMockContentPaths(opts); err != nil {
