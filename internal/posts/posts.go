@@ -6,9 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/yuin/goldmark"
 	meta "github.com/yuin/goldmark-meta"
@@ -32,10 +30,8 @@ type PostMeta struct {
 type Post struct {
 	Meta     PostMeta
 	BodyHTML string // goldmark-rendered HTML, safe to pass to safeHTML template function
-	Dir      string // absolute path to the post directory (for image copying)
+	Dir      string // absolute path to the post directory (for media copying)
 }
-
-var imgSrcRE = regexp.MustCompile(`(<img\b[^>]*?\bsrc=")(\./images/[^"]+)(")`)
 
 // LoadPostsDir walks postsDir (the posts/ subdirectory of ffreis-posts),
 // parses each posts/<slug>/index.md, renders body to HTML, and returns
@@ -45,11 +41,6 @@ func LoadPostsDir(postsDir string) ([]Post, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading posts directory %s: %w", postsDir, err)
 	}
-
-	md := goldmark.New(
-		goldmark.WithExtensions(meta.Meta),
-		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
-	)
 
 	var result []Post
 	for _, entry := range entries {
@@ -69,6 +60,14 @@ func LoadPostsDir(postsDir string) ([]Post, error) {
 			return nil, fmt.Errorf("reading %s: %w", indexPath, err)
 		}
 
+		// Built per post: the media renderer needs this post's slug (to make
+		// root-relative URLs) and its directory (to read image dimensions and
+		// find video posters on disk).
+		md := goldmark.New(
+			goldmark.WithExtensions(meta.Meta, mediaExtension{slug: slug, postDir: postDir}),
+			goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+		)
+
 		context := parser.NewContext()
 		var bodyBuf bytes.Buffer
 		if err := md.Convert(raw, &bodyBuf, parser.WithContext(context)); err != nil {
@@ -81,11 +80,9 @@ func LoadPostsDir(postsDir string) ([]Post, error) {
 			return nil, fmt.Errorf("parsing frontmatter for %s: %w", slug, err)
 		}
 
-		bodyHTML := rewriteImagePaths(bodyBuf.String(), slug)
-
 		result = append(result, Post{
 			Meta:     postMeta,
-			BodyHTML: bodyHTML,
+			BodyHTML: bodyBuf.String(),
 			Dir:      postDir,
 		})
 	}
@@ -132,11 +129,11 @@ func parsePostMeta(fm map[string]any, slug, postDir string) (PostMeta, error) {
 		return PostMeta{}, fmt.Errorf("frontmatter slug %q does not match directory name %q", slugField, slug)
 	}
 
-	// Resolve thumbnail to root-relative path
+	// Resolve thumbnail to root-relative path, by the same rules the body
+	// renderer applies — an off-site thumbnail URL must not be prefixed into
+	// a broken /blog/<slug>/https:/... path.
 	if thumbRel, ok := fm["thumbnail"].(string); ok && thumbRel != "" {
-		// Convert ./images/foo.webp → /blog/slug/images/foo.webp
-		clean := strings.TrimPrefix(thumbRel, "./")
-		m.Thumbnail = "/blog/" + slug + "/" + clean
+		m.Thumbnail = ResolvePostPath(thumbRel, slug)
 	}
 
 	m.Tags = parseFMStringSlice(fm, "tags")
@@ -161,31 +158,26 @@ func parseFMStringSlice(fm map[string]any, key string) []string {
 	return result
 }
 
-// rewriteImagePaths rewrites ./images/foo.webp src attributes in the rendered HTML
-// to root-relative paths /blog/<slug>/images/foo.webp.
-func rewriteImagePaths(html, slug string) string {
-	return imgSrcRE.ReplaceAllStringFunc(html, func(match string) string {
-		parts := imgSrcRE.FindStringSubmatch(match)
-		if len(parts) != 4 {
-			return match
-		}
-		rel := strings.TrimPrefix(parts[2], "./")
-		return parts[1] + "/blog/" + slug + "/" + rel + parts[3]
-	})
-}
+// mediaSubdirs are the per-post media directories copied into the build
+// output. A post's markdown can reference any path beneath its own directory,
+// but only these are published — keeping drafts and sources beside a post
+// without shipping them.
+var mediaSubdirs = []string{"images", "videos"}
 
-// CopyPostImages copies each post's images/ subdirectory into
-// outDir/blog/<slug>/images/ so they are served from the website.
-func CopyPostImages(postList []Post, outDir string) error {
+// CopyPostMedia copies each post's media subdirectories into
+// outDir/blog/<slug>/<subdir>/ so they are served from the website. A post
+// with no such directory is skipped rather than failing the build.
+func CopyPostMedia(postList []Post, outDir string) error {
 	for _, post := range postList {
-		imagesDir := filepath.Join(post.Dir, "images")
-		if _, err := os.Stat(imagesDir); err != nil {
-			continue // no images dir, skip
-		}
-
-		destDir := filepath.Join(outDir, "blog", post.Meta.Slug, "images")
-		if err := copyDir(imagesDir, destDir); err != nil {
-			return fmt.Errorf("copying images for post %s: %w", post.Meta.Slug, err)
+		for _, sub := range mediaSubdirs {
+			srcDir := filepath.Join(post.Dir, sub)
+			if _, err := os.Stat(srcDir); err != nil {
+				continue
+			}
+			destDir := filepath.Join(outDir, "blog", post.Meta.Slug, sub)
+			if err := copyDir(srcDir, destDir); err != nil {
+				return fmt.Errorf("copying %s for post %s: %w", sub, post.Meta.Slug, err)
+			}
 		}
 	}
 	return nil
