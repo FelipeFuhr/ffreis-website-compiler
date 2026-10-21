@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v2.0.0...v2.0.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **buildcmd:** inject &lt;base href&gt; so relative assets resolve ([#160](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/160)) ([39c69ea](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/39c69ea701629c3cde3c143acc172fbdd6d1a961))
+
 ## [2.0.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v1.2.1...v2.0.0) (2026-10-21)
 
 
