@@ -44,7 +44,7 @@ func TestRun_FragmentPageRendersWithoutLayoutOrContractEntry(t *testing.T) {
 		t.Fatalf(buildRunFailed, err)
 	}
 
-	widget := string(mustReadFile(t, filepath.Join(outDir, "widget", "index.html")))
+	widget := string(mustReadFile(t, filepath.Join(outDir, "widget.html")))
 	for _, unwanted := range []string{"<html>", "<head>"} {
 		if strings.Contains(widget, unwanted) {
 			t.Errorf("expected fragment page output to omit %q, got %s", unwanted, widget)
@@ -87,7 +87,7 @@ func TestRun_FragmentAndInternalCompose(t *testing.T) {
 		t.Fatalf(buildRunFailed, err)
 	}
 
-	if _, err := os.Stat(filepath.Join(outDir, "widget", "index.html")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(outDir, "widget.html")); !os.IsNotExist(err) {
 		t.Fatalf("expected fragment+internal page to be excluded from output, got err=%v", err)
 	}
 }

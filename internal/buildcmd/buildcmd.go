@@ -440,7 +440,7 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 
 	for _, page := range pages {
 		slug := resolvePageSlug(siteData, page.Name)
-		target, err := resolvePageTarget(opts.outDir, slug)
+		target, err := resolvePageTarget(opts.outDir, slug, sitegen.IsPageFragment(siteData, page.Name))
 		if err != nil {
 			return err
 		}
@@ -523,9 +523,19 @@ func writeHashedAssets(outDir, assetsDir string, assets map[string]string) error
 //
 // The index page stays at `<dir>/index.html` because that IS its extension-free
 // form — the directory is the URL.
-func resolvePageTarget(outDir, pageName string) (string, error) {
-	if pageName == "index" {
-		return filepath.Join(outDir, "index.html"), nil
+//
+// A FRAGMENT page also stays flat, and that exception is load-bearing rather
+// than cosmetic. A fragment (`pages.<name>.fragment: true`) is not a navigable
+// page: it is an HTML snippet fetched by the site's own JS at a literal URL —
+// ffreis-forma's account pages carry
+// `data-signed-in-fragment="fragment-account-billing.html"` and `fetch()` that
+// string. Moving it to `fragment-account-billing/index.html` 404s the fetch,
+// silently, with no link for linkcheck to catch because the URL lives in a JS
+// attribute. Nothing about a fragment benefits from an extension-free URL: it is
+// never in the address bar, never in a sitemap, and never crawled.
+func resolvePageTarget(outDir, pageName string, isFragment bool) (string, error) {
+	if pageName == "index" || isFragment {
+		return filepath.Join(outDir, pageName+".html"), nil
 	}
 	dir := filepath.Join(outDir, pageName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

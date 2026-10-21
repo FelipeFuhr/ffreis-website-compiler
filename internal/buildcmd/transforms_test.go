@@ -368,7 +368,7 @@ func TestResolveCSSAssetRef_RootCSSFile(t *testing.T) {
 // the compiler no longer produces is worse than no test.
 func TestResolvePageTarget_PageBecomesDirectoryIndex(t *testing.T) {
 	outDir := t.TempDir()
-	path, err := resolvePageTarget(outDir, "about")
+	path, err := resolvePageTarget(outDir, "about", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -377,11 +377,28 @@ func TestResolvePageTarget_PageBecomesDirectoryIndex(t *testing.T) {
 	}
 }
 
+// A fragment stays FLAT: it is fetched by the site's own JS at a literal URL
+// (forma's `data-signed-in-fragment="fragment-x.html"`), so a directory index
+// would 404 that fetch with no link for linkcheck to catch.
+func TestResolvePageTarget_FragmentStaysFlat(t *testing.T) {
+	outDir := t.TempDir()
+	path, err := resolvePageTarget(outDir, "fragment-account-billing", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasSuffix(path, "fragment-account-billing.html") {
+		t.Errorf("expected fragment-account-billing.html, got %q", path)
+	}
+	if strings.Contains(path, filepath.Join("fragment-account-billing", "index.html")) {
+		t.Errorf("a fragment must not become a directory index, got %q", path)
+	}
+}
+
 // The index page is the one exception, and not an exception to the convention:
 // `<dir>/index.html` IS its extension-free form, because the directory is the URL.
 func TestResolvePageTarget_IndexStaysAtRoot(t *testing.T) {
 	outDir := t.TempDir()
-	path, err := resolvePageTarget(outDir, "index")
+	path, err := resolvePageTarget(outDir, "index", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
