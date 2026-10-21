@@ -452,6 +452,13 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		if err != nil {
 			return fmt.Errorf("transforming %s: %w", target, err)
 		}
+		// A directory-index page sits one level deeper than the flat file it
+		// replaced, so relative asset URLs would resolve into the page's own
+		// directory. <base href> restores the old resolution; injected before the
+		// validator below, which it satisfies by construction. Fragments have no
+		// <head> and are skipped.
+		htmlOut = injectBaseHref(htmlOut, opts.basePath, slug)
+
 		if err := validatePageBaseHref(htmlOut, opts.basePath, slug, page.Name); err != nil {
 			return err
 		}
