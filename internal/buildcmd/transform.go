@@ -193,6 +193,19 @@ func transformPage(html string, opts buildOptions, assetsDir, pageName string, m
 	}
 	html = hoistedHTML
 
+	// Base-path-normalise root-absolute NAVIGATIONAL hrefs (<a>, <area>, <form
+	// action>). The compiler prefixes the links it generates and every asset
+	// reference, but an href typed into site data was passed through verbatim —
+	// so on a /en deployment a data-authored "/blog/" shipped a link that 302s
+	// to the language root, and the link checker skipped exactly those as
+	// "another deployment's concern", leaving the build green. See
+	// authoredhrefs.go for the measured production evidence.
+	//
+	// Runs before fingerprintLocalAssets, and deliberately touches no asset
+	// attribute: fingerprinting prepends basePath to those itself, and doing it
+	// twice yields "/en/en/...".
+	html = normaliseAuthoredHrefs(html, opts.basePath, opts.siblingBasePaths)
+
 	// Default lazy-loading: any <img> not already carrying a loading attribute
 	// gets loading="lazy" so the browser defers fetching/decoding it until it's
 	// near the viewport. Above-the-fold images opt out by setting
