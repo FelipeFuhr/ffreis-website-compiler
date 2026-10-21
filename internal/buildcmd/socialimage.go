@@ -1,16 +1,12 @@
 package buildcmd
 
 import (
-	"bytes"
 	"fmt"
-	"image"
-	_ "image/jpeg" // register JPEG decoder for image.DecodeConfig
-	_ "image/png"  // register PNG decoder for image.DecodeConfig
 	"path"
 	"regexp"
 	"strings"
 
-	_ "golang.org/x/image/webp" // register WebP decoder for image.DecodeConfig
+	"ffreis-website-compiler/internal/mediameta"
 )
 
 // socialImageExtensions lists the candidate filenames checked, in priority
@@ -95,7 +91,7 @@ func injectSocialImage(html string, siteData map[string]any, assetsDir, basePath
 	}
 	absoluteURL := baseURL + hashedRef
 
-	width, height, err := decodeImageDimensions(data)
+	width, height, err := mediameta.ImageDimensions(data)
 	if err != nil {
 		return "", nil, fmt.Errorf("reading social image dimensions (%s): %w", relPath, err)
 	}
@@ -209,12 +205,4 @@ func findSocialImage(assetsDir string) (relPath string, data []byte, ok bool) {
 		}
 	}
 	return "", nil, false
-}
-
-func decodeImageDimensions(data []byte) (width, height int, err error) {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return 0, 0, err
-	}
-	return cfg.Width, cfg.Height, nil
 }

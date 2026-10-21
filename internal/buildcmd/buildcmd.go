@@ -258,8 +258,8 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		if err != nil {
 			return nil, fmt.Errorf("loading blog posts: %w", err)
 		}
-		if err := posts.CopyPostImages(loaded, opts.outDir); err != nil {
-			return nil, fmt.Errorf("copying post images: %w", err)
+		if err := posts.CopyPostMedia(loaded, opts.outDir); err != nil {
+			return nil, fmt.Errorf("copying post media: %w", err)
 		}
 		content.posts = loaded
 		injectPostsBlogList(siteData, loaded, opts.itemsPerPage)
