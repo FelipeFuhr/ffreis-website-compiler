@@ -41,6 +41,11 @@ func (d Domain) String() string {
 // first, which the page itself only names.
 type Tree interface {
 	ReadFile(relToRoot string) (string, bool)
+	// Exists reports whether relToRoot names a regular file, resolved exactly
+	// as ReadFile would. It is separate because an asset reference may point at
+	// a multi-megabyte image, font or video, and a rule that only asks whether
+	// the referent is there should not read it to find out.
+	Exists(relToRoot string) bool
 }
 
 // Rule is one checkable convention.
@@ -89,6 +94,7 @@ var registry = map[string]Rule{
 	ruleNameNoSelfReferentialLinks: ruleNoSelfReferentialLinks,
 	ruleNameNoMixedAuthStates:      ruleNoMixedAuthStates,
 	ruleNameNoHTMLExtensionURLs:    ruleNoHTMLExtensionURLs,
+	ruleNameResolvableAssetRefs:    ruleResolvableAssetRefs,
 }
 
 // RuleNames returns every known rule name, sorted.
@@ -435,6 +441,25 @@ func (t rootTree) relativeTo(filePath string) rootTree {
 // root when rel is root-absolute ("/css/app.css", as emitted for a site
 // deployed at its domain root).
 func (t rootTree) ReadFile(rel string) (string, bool) {
+	target, ok := t.resolve(rel)
+	if !ok {
+		return "", false
+	}
+	b, err := fs.ReadFile(t.root.FS(), target)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// resolve turns a reference into a path inside the scan root, applying the
+// same rules a browser would: root-absolute against the root, anything else
+// against the scanned file's own directory.
+//
+// It reports false for a reference that escapes the root — a "../.." href, or
+// an absolute href carrying a deploy base path this tree is not holding. That
+// is not an error: the rule is told what could not be resolved and decides.
+func (t rootTree) resolve(rel string) (string, bool) {
 	rel = strings.SplitN(rel, "?", 2)[0]
 	rel = strings.SplitN(rel, "#", 2)[0]
 	if rel == "" {
@@ -448,14 +473,19 @@ func (t rootTree) ReadFile(rel string) (string, bool) {
 		target = path.Clean(path.Join(t.dir, rel))
 	}
 	if !fs.ValidPath(target) {
-		// Escapes the root (a "../.." href, or an absolute href under a deploy
-		// base path we are not holding). Not readable, not an error: the rule
-		// reports what it could not check.
 		return "", false
 	}
-	b, err := fs.ReadFile(t.root.FS(), target)
-	if err != nil {
-		return "", false
+	return target, true
+}
+
+// Exists reports whether rel names a regular file in the scan root. A
+// directory is not a file: a reference resolving to one is as broken as a
+// reference resolving to nothing, and saying so is the point.
+func (t rootTree) Exists(rel string) bool {
+	target, ok := t.resolve(rel)
+	if !ok {
+		return false
 	}
-	return string(b), true
+	info, err := fs.Stat(t.root.FS(), target)
+	return err == nil && info.Mode().IsRegular()
 }

@@ -90,6 +90,15 @@ question, i.e. the rendered tier, and must not be claimed here.
   `aria-hidden` *without* `tabindex="-1"` is reported as its own defect: ARIA
   forbids it, because the control stays in a tab order a screen reader cannot
   describe.
+- `resolvable-asset-refs` checks only subresources — `href`/`src`/`poster`/
+  `data`/`srcset` on the elements that fetch something, and `url()`. It does
+  **not** check `<a href>`: a page URL is legitimately a directory, and a rule
+  that reported every clean URL as a broken asset would be switched off within
+  the hour. It also tolerates a root-absolute reference whose leading segments
+  are absent from the scanned tree, because a site with a `base_path` emits
+  `/en/css/app.css` into a tree that holds `css/app.css` — the prefix is added
+  on sync. The same suffix tolerance is how `no-self-referential-links`
+  compares pages, and for the same reason.
 - `no-css-grid` and `social-preview-image` are opt-in rather than fleet
   defaults — the first because current guidance is Grid for 2D structure, the
   second because satisfying it needs a brand asset only the site's owner can
