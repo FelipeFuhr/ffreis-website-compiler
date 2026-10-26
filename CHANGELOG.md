@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v2.0.1...v2.1.0) (2026-10-26)
+
+
+### Features
+
+* **ci:** add incremental in-diff mutation gate on pull_request ([#164](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/164)) ([0be267d](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/0be267daed51aed83343e90cc6c87456b341f6eb))
+* **conventions:** add resolvable-asset-refs, catching assets that 404 ([#165](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/165)) ([9a7acb8](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/9a7acb8d2c220e5a6f354ea729c9838e41db065d))
+* **posts:** render markdown videos as &lt;video&gt; and give images intrinsic size ([#163](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/163)) ([0415b50](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/0415b5010eba399fbcd589a5334b6716184ddd77))
+
+
+### Bug Fixes
+
+* **buildcmd:** a bare url(#id) is a fragment, not a relative path ([#166](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/166)) ([f84438f](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/f84438ffd28ededf6fb48528b5d611a9242a9f4f))
+* **conventions:** correct the sitemap remediation advice ([#159](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/159)) ([6f2638b](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/6f2638b00c622e8540cfc5863c3d2a8bba36d9bc))
+
 ## [2.0.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v2.0.0...v2.0.1) (2026-10-21)
 
 
