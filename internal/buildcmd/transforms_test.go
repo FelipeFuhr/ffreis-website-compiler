@@ -695,6 +695,58 @@ func TestRun_HeadCSSURLRewrittenToRootRelative(t *testing.T) {
 	}
 }
 
+// A bare url(#id) names an SVG paint server defined in the same document. It
+// is not a path. Resolving it as one produced url("/css/#chainCore") and every
+// element using that fill silently lost it — knowalchemy-website had to move
+// three declarations into an inline <style> to escape this pass.
+func TestRun_FragmentOnlyCSSURLIsNotTreatedAsAPath(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           `.n circle{fill:url(#chainCore)}`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>ok</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	html := string(mustReadFile(t, filepath.Join(outDir, fileAgendaHTML)))
+	if strings.Contains(html, "/css/#chainCore") {
+		t.Errorf("fragment resolved against the stylesheet directory: %s", html)
+	}
+	if !strings.Contains(html, "url(#chainCore)") {
+		t.Errorf("expected the fragment left verbatim, got: %s", html)
+	}
+}
+
+// The fix must not stop a real relative url() from being rebased, or it would
+// trade one silent 404 for another.
+func TestRun_FragmentFixDoesNotStopRealRefsBeingRebased(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "img"))
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "img", "bg.png"):              "pngdata",
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           `.a{background:url("../img/bg.png")}.n{fill:url(#g)}`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>ok</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	html := string(mustReadFile(t, filepath.Join(outDir, fileAgendaHTML)))
+	if !strings.Contains(html, `url("/img/bg.`) {
+		t.Errorf("a real relative ref should still be rebased and fingerprinted: %s", html)
+	}
+	if !strings.Contains(html, "url(#g)") {
+		t.Errorf("the fragment alongside it should be untouched: %s", html)
+	}
+}
+
 // ── copy-assets=false ────────────────────────────────────────────────────────
 
 func TestRun_CopyAssetsFalseSkipsAllAssets(t *testing.T) {
