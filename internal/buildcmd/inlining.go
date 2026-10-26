@@ -244,7 +244,7 @@ func inlineSmallLocalScripts(doc, assetsDir string, threshold, sharedThreshold i
 
 func inlineCSSURLs(cssText, srcRoot, cssPath string) (string, error) {
 	return rewriteCSSURLs(cssText, func(assetRef string) (string, bool, error) {
-		if isExternalRef(assetRef) || strings.HasPrefix(strings.ToLower(strings.TrimSpace(assetRef)), "data:") {
+		if isExternalRef(assetRef) || isDataURI(assetRef) || isFragmentRef(assetRef) {
 			return assetRef, false, nil
 		}
 
@@ -324,6 +324,19 @@ func rewriteCSSImports(cssText string, replacer func(ref string) (replacement st
 	return out.String(), nil
 }
 
+// isFragmentRef reports whether ref is a bare same-document fragment, as in
+// `fill: url(#chainCore)` naming an SVG paint server defined in the page.
+//
+// It is not a path and must never be resolved as one. Treating it as relative
+// rewrote it against the stylesheet's own directory and emitted
+// url("/css/#chainCore") — a document that does not exist — so every node in
+// knowalchemy-website's chain graph silently lost its gradient fill. The site
+// had to move three declarations out of its stylesheet into an inline <style>
+// to escape this pass, with a comment asking for exactly this fix.
+func isFragmentRef(ref string) bool {
+	return strings.HasPrefix(strings.TrimSpace(ref), "#")
+}
+
 func resolveCSSAssetRef(cssPath, ref string) string {
 	if strings.HasPrefix(ref, "/") {
 		return strings.TrimPrefix(ref, "/")
@@ -385,7 +398,7 @@ func flattenCSSImports(cssText, cssPath, srcRoot string, seen map[string]bool, o
 // it returns the recursively flattened file content, or the original rule if the
 // file cannot be read.
 func expandCSSImport(originalRule, ref, cssPath, srcRoot string, seen map[string]bool, opts cssInlineOpts) (string, error) {
-	if isExternalRef(ref) || isDataURI(ref) {
+	if isExternalRef(ref) || isDataURI(ref) || isFragmentRef(ref) {
 		// External @import (CDN fonts, etc.) — leave verbatim; browsers resolve it.
 		return originalRule, nil
 	}
@@ -413,7 +426,7 @@ type cssInlineOpts struct {
 func rewriteCSSURLsForPath(cssText, cssPath, srcRoot string, opts cssInlineOpts) (string, error) {
 	if opts.preserveURLs {
 		return rewriteCSSURLs(cssText, func(ref string) (string, bool, error) {
-			if isExternalRef(ref) || isDataURI(ref) {
+			if isExternalRef(ref) || isDataURI(ref) || isFragmentRef(ref) {
 				return ref, false, nil
 			}
 			resolved := resolveCSSAssetRef(cssPath, ref)
