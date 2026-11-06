@@ -34,7 +34,7 @@ func TestValidate_PassesWhenAllLinksExist(t *testing.T) {
 	writeHTML(t, d, "index.html", "/about", "/contact")
 	writeHTML(t, d, "about.html")
 	writeHTML(t, d, "contact.html")
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected pass, got: %v", err)
 	}
 }
@@ -46,7 +46,7 @@ func TestValidate_DetectsBrokenNavLink(t *testing.T) {
 	writeHTML(t, d, "about.html")
 	// empresa.html intentionally missing
 
-	err := linkcheck.ValidateAndReport(d, "", nil)
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for broken link to /empresa, got nil")
 	}
@@ -60,7 +60,7 @@ func TestValidate_ReportsAllBrokenLinksAtOnce(t *testing.T) {
 	writeHTML(t, d, "index.html", "/missing-a", "/missing-b", "/present")
 	writeHTML(t, d, "present.html")
 
-	err := linkcheck.ValidateAndReport(d, "", nil)
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -71,7 +71,7 @@ func TestValidate_ReportsAllBrokenLinksAtOnce(t *testing.T) {
 
 func TestValidate_EmptyDistIsNotAnError(t *testing.T) {
 	d := t.TempDir()
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("empty dist should not error, got: %v", err)
 	}
 }
@@ -85,7 +85,7 @@ func TestValidate_SkipsExternalLinks(t *testing.T) {
 		"http://other.com",
 		"//cdn.example.com/lib.js",
 	)
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected external links to be skipped, got: %v", err)
 	}
 }
@@ -93,7 +93,7 @@ func TestValidate_SkipsExternalLinks(t *testing.T) {
 func TestValidate_SkipsAnchors(t *testing.T) {
 	d := t.TempDir()
 	writeHTML(t, d, "index.html", "#section", "#top")
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected anchor links to be skipped, got: %v", err)
 	}
 }
@@ -101,7 +101,7 @@ func TestValidate_SkipsAnchors(t *testing.T) {
 func TestValidate_SkipsMailtoAndTel(t *testing.T) {
 	d := t.TempDir()
 	writeHTML(t, d, "index.html", "mailto:hello@example.com", "tel:+1234567890")
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected mailto/tel to be skipped, got: %v", err)
 	}
 }
@@ -110,7 +110,7 @@ func TestValidate_SkipsAnchorFragmentOnExistingPage(t *testing.T) {
 	d := t.TempDir()
 	writeHTML(t, d, "index.html", "/about#section")
 	writeHTML(t, d, "about.html")
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected /about#section to pass (page exists), got: %v", err)
 	}
 }
@@ -119,7 +119,7 @@ func TestValidate_SkipsQueryStringOnExistingPage(t *testing.T) {
 	d := t.TempDir()
 	writeHTML(t, d, "index.html", "/about?lang=en")
 	writeHTML(t, d, "about.html")
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected /about?lang=en to pass (page exists), got: %v", err)
 	}
 }
@@ -134,7 +134,7 @@ func TestValidate_SkipsDeclaredSiblingLinks(t *testing.T) {
 	writeHTML(t, d, "agenda.html")
 
 	// Siblings: /en and /jp are separate deployments sharing the same bucket.
-	if err := linkcheck.ValidateAndReport(d, "", []string{"/en", "/jp"}); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", []string{"/en", "/jp"}, nil); err != nil {
 		t.Fatalf("expected sibling links to be skipped, got: %v", err)
 	}
 }
@@ -145,7 +145,7 @@ func TestValidate_CatchesBrokenLinkWhenNoSiblingsDeclared(t *testing.T) {
 	writeHTML(t, d, "index.html", "/agenda", "/en/agenda")
 	writeHTML(t, d, "agenda.html")
 
-	err := linkcheck.ValidateAndReport(d, "", nil) // no siblings declared
+	err := linkcheck.ValidateAndReport(d, "", nil, nil) // no siblings declared
 	if err == nil {
 		t.Fatal("expected error: /en/agenda not in dist and not declared as sibling")
 	}
@@ -160,7 +160,7 @@ func TestValidate_SiblingPrefixNormalisedWithoutLeadingSlash(t *testing.T) {
 	writeHTML(t, d, "index.html", "/agenda", "/en/agenda")
 	writeHTML(t, d, "agenda.html")
 
-	if err := linkcheck.ValidateAndReport(d, "", []string{"en"}); err != nil { // "en" not "/en"
+	if err := linkcheck.ValidateAndReport(d, "", []string{"en"}, nil); err != nil { // "en" not "/en"
 		t.Fatalf("expected sibling 'en' to match /en/agenda, got: %v", err)
 	}
 }
@@ -171,7 +171,7 @@ func TestValidate_CatchesBrokenSubpathOfOwnPage(t *testing.T) {
 	writeHTML(t, d, "index.html", "/agenda/sub-path")
 	writeHTML(t, d, "agenda.html")
 
-	err := linkcheck.ValidateAndReport(d, "", nil)
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for /agenda/sub-path (file not generated)")
 	}
@@ -187,7 +187,7 @@ func TestValidate_ENDeployment_ValidatesOwnLinks(t *testing.T) {
 	writeHTML(t, d, "agenda.html")
 	writeHTML(t, d, "contato.html")
 
-	if err := linkcheck.ValidateAndReport(d, "/en", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "/en", nil, nil); err != nil {
 		t.Fatalf("expected EN deployment links to pass, got: %v", err)
 	}
 }
@@ -198,7 +198,7 @@ func TestValidate_ENDeployment_CatchesBrokenLink(t *testing.T) {
 	writeHTML(t, d, "agenda.html")
 	// missing-page.html intentionally absent
 
-	err := linkcheck.ValidateAndReport(d, "/en", nil)
+	err := linkcheck.ValidateAndReport(d, "/en", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for broken /en/missing-page")
 	}
@@ -214,7 +214,7 @@ func TestValidate_ENDeployment_SkipsLinksToPTRoot(t *testing.T) {
 	writeHTML(t, d, "index.html", "/en/agenda", "/")
 	writeHTML(t, d, "agenda.html")
 
-	if err := linkcheck.ValidateAndReport(d, "/en", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "/en", nil, nil); err != nil {
 		t.Fatalf("expected / to be skipped as outside /en namespace, got: %v", err)
 	}
 }
@@ -225,7 +225,7 @@ func TestValidate_CleanURLs_IndexInSubdirReachable(t *testing.T) {
 	d := t.TempDir()
 	writeHTML(t, d, "index.html", "/about")
 	writeHTML(t, d, "about/index.html") // clean URL: /about → about/index.html
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected clean URL /about to resolve via about/index.html, got: %v", err)
 	}
 }
@@ -237,7 +237,7 @@ func TestValidate_RelativeHrefResolvedFromRoot(t *testing.T) {
 	d := t.TempDir()
 	writeHTML(t, d, "index.html", "about")
 	writeHTML(t, d, "about.html")
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected relative href to resolve, got: %v", err)
 	}
 }
@@ -246,7 +246,7 @@ func TestValidate_RelativeHrefBrokenIsDetected(t *testing.T) {
 	d := t.TempDir()
 	writeHTML(t, d, "index.html", "ghost-page")
 
-	err := linkcheck.ValidateAndReport(d, "", nil)
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for relative broken link ghost-page")
 	}
@@ -262,7 +262,7 @@ func TestValidate_LinksToInternalPageAreCaughtIfNotInDist(t *testing.T) {
 	writeHTML(t, d, "agenda.html")
 	// agenda-editor.html intentionally absent (internal page)
 
-	err := linkcheck.ValidateAndReport(d, "", nil)
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected broken link to internal page to be caught")
 	}
@@ -299,7 +299,7 @@ func TestValidate_BaseHref_RelativeLinkResolvedFromBase(t *testing.T) {
 	writeHTML(t, d, "index.html")
 	writeHTML(t, d, "other.html")
 
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected relative href under base href to resolve, got: %v", err)
 	}
 }
@@ -311,7 +311,7 @@ func TestValidate_BaseHref_CrossDeploymentLinkSkipped(t *testing.T) {
 	writeHTMLWithBase(t, d, "about/index.html", "/about", "pt/about.html")
 	writeHTML(t, d, "index.html")
 
-	if err := linkcheck.ValidateAndReport(d, "", []string{"/pt"}); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", []string{"/pt"}, nil); err != nil {
 		t.Fatalf("expected cross-deployment relative link to be skipped via sibling, got: %v", err)
 	}
 }
@@ -323,7 +323,7 @@ func TestValidate_BaseHref_TrailingSlashTreatedAsDirectory(t *testing.T) {
 	writeHTML(t, d, "index.html")
 	writeHTML(t, d, "about/sub.html")
 
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected base href with trailing slash to resolve, got: %v", err)
 	}
 }
@@ -335,7 +335,7 @@ func TestValidate_BaseHref_ExternalBaseHrefFallsBackToFileDir(t *testing.T) {
 	writeHTML(t, d, "index.html")
 	writeHTML(t, d, "other.html")
 
-	if err := linkcheck.ValidateAndReport(d, "", nil); err != nil {
+	if err := linkcheck.ValidateAndReport(d, "", nil, nil); err != nil {
 		t.Fatalf("expected external base href to be ignored, got: %v", err)
 	}
 }
@@ -347,7 +347,7 @@ func TestValidate_BaseHref_BrokenLinkStillDetected(t *testing.T) {
 	writeHTML(t, d, "index.html")
 	// ghost.html intentionally absent
 
-	err := linkcheck.ValidateAndReport(d, "", nil)
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for broken link resolved via base href, got nil")
 	}
@@ -363,7 +363,7 @@ func TestValidate_ErrorGroupedBySourceFile(t *testing.T) {
 	writeHTML(t, d, "index.html", "/missing-from-index")
 	writeHTML(t, d, "about.html", "/missing-from-about")
 
-	err := linkcheck.ValidateAndReport(d, "", nil)
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected errors")
 	}
@@ -372,5 +372,88 @@ func TestValidate_ErrorGroupedBySourceFile(t *testing.T) {
 	}
 	if strings.Count(err.Error(), "broken internal link") != 1 {
 		t.Errorf("expected single summary line, got: %v", err)
+	}
+}
+
+// ── Runtime prefixes: paths a non-static origin serves ───────────────────────
+
+func TestValidate_SkipsLinksUnderADeclaredRuntimePrefix(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/api/sessions/ses_1/playlist.m3u8", "/api/health")
+	if err := linkcheck.ValidateAndReport(d, "", nil, []string{"/api/"}); err != nil {
+		t.Fatalf("expected pass, got: %v", err)
+	}
+}
+
+func TestValidate_ReportsRuntimePathsWhenNoPrefixDeclared(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/api/sessions/ses_1/playlist.m3u8")
+	err := linkcheck.ValidateAndReport(d, "", nil, nil)
+	if err == nil {
+		t.Fatal("expected a broken link when no runtime prefix is declared")
+	}
+	if !strings.Contains(err.Error(), "/api/sessions/ses_1/playlist.m3u8") {
+		t.Fatalf("expected the API path in the report, got: %v", err)
+	}
+}
+
+func TestValidate_NormalisesPrefixWithoutLeadingOrTrailingSlash(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/api/health")
+	if err := linkcheck.ValidateAndReport(d, "", nil, []string{"api"}); err != nil {
+		t.Fatalf("expected %q to normalise to /api/, got: %v", "api", err)
+	}
+}
+
+// A prefix must not match a page whose name merely starts with it, which is
+// exactly what comparing against "/api" rather than "/api/" would do.
+func TestValidate_RuntimePrefixDoesNotMatchASimilarlyNamedPage(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/apiary")
+	err := linkcheck.ValidateAndReport(d, "", nil, []string{"/api/"})
+	if err == nil {
+		t.Fatal("expected /apiary to stay validated when only /api/ is exempt")
+	}
+	if !strings.Contains(err.Error(), "/apiary") {
+		t.Fatalf("expected /apiary in the report, got: %v", err)
+	}
+}
+
+func TestValidate_RuntimePrefixMatchesTheBarePrefixItself(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/api")
+	if err := linkcheck.ValidateAndReport(d, "", nil, []string{"/api/"}); err != nil {
+		t.Fatalf("expected a link to the API root to be skipped, got: %v", err)
+	}
+}
+
+// "/" is the correct value for the edge function's own passthrough list, so
+// copying it here is a plausible mistake. It must fail loudly rather than
+// silently exempt every link on the site.
+func TestValidate_RejectsARootRuntimePrefixInsteadOfCheckingNothing(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/missing-page")
+	_, err := linkcheck.Validate(d, "", nil, []string{"/"})
+	if err == nil {
+		t.Fatal("expected a root runtime prefix to be rejected")
+	}
+	if !strings.Contains(err.Error(), "disable link validation") {
+		t.Fatalf("expected the error to explain the vacuous-gate risk, got: %v", err)
+	}
+}
+
+func TestValidate_RuntimePrefixAppliesUnderALanguageBasePath(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/api/health")
+	if err := linkcheck.ValidateAndReport(d, "/en", nil, []string{"/api/"}); err != nil {
+		t.Fatalf("expected the API exemption to hold under a base path, got: %v", err)
+	}
+}
+
+func TestValidate_IgnoresBlankRuntimePrefixEntries(t *testing.T) {
+	d := t.TempDir()
+	writeHTML(t, d, "index.html", "/api/health")
+	if err := linkcheck.ValidateAndReport(d, "", nil, []string{"", "  ", "/api/"}); err != nil {
+		t.Fatalf("expected blank entries to be ignored, got: %v", err)
 	}
 }

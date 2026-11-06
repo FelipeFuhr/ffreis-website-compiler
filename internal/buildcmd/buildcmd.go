@@ -180,7 +180,12 @@ func Run(args []string, logger *slog.Logger) error {
 	// Merge explicitly declared siblings (from -sibling-base-paths flag) with
 	// any auto-detected ones from ui.nav.lang_links in the site data.
 	siblingBasePaths := append(opts.siblingBasePaths, resolveSiblingBasePaths(siteDataResult.Data)...)
-	if err := linkcheck.ValidateAndReport(opts.outDir, opts.basePath, siblingBasePaths); err != nil {
+	// runtimePrefixes names paths the deployment serves from a non-static
+	// origin (an API behind the same distribution), for which no file is ever
+	// compiled. Declared in site data so the site that owns the links owns the
+	// exemption, and mergeable from the flag for a caller that knows better.
+	runtimePrefixes := append(opts.runtimePrefixes, resolveRuntimePrefixes(siteDataResult.Data)...)
+	if err := linkcheck.ValidateAndReport(opts.outDir, opts.basePath, siblingBasePaths, runtimePrefixes); err != nil {
 		return fmt.Errorf("link validation: %w", err)
 	}
 	logger.Info("internal link check passed", "out_dir", opts.outDir)

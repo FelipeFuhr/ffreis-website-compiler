@@ -183,6 +183,29 @@ func resolveSiblingBasePaths(siteData map[string]any) []string {
 	return siblings
 }
 
+// resolveRuntimePrefixes reads the site's own declaration of URL prefixes that
+// a non-static origin serves from behind the same hostname, so the link checker
+// does not report a link to one as broken. The site declares them because the
+// site is what owns those links; the -runtime-prefixes flag exists for a caller
+// that knows the deployment's shape better than its committed data does.
+func resolveRuntimePrefixes(siteData map[string]any) []string {
+	raw, _ := siteData["runtime_prefixes"].([]any)
+	if len(raw) == 0 {
+		return nil
+	}
+	prefixes := make([]string, 0, len(raw))
+	for _, item := range raw {
+		value, ok := item.(string)
+		if !ok {
+			continue
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			prefixes = append(prefixes, value)
+		}
+	}
+	return prefixes
+}
+
 // resolvePageSlug returns the URL slug for a page. It reads pages.<name>.slug
 // from site data and falls back to pageName when absent.
 func resolvePageSlug(siteData map[string]any, pageName string) string {
