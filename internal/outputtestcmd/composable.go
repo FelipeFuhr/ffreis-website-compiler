@@ -167,7 +167,15 @@ func registry(outRoot string) *outputcheck.Registry {
 				}
 			}
 		}
-		return linkIntegrity{outRoot: outRoot, basePath: basePath, siblings: siblings}, nil
+		var runtimePrefixes []string
+		if raw, ok := config["runtime_prefixes"].([]any); ok {
+			for _, item := range raw {
+				if value, ok := item.(string); ok {
+					runtimePrefixes = append(runtimePrefixes, value)
+				}
+			}
+		}
+		return linkIntegrity{outRoot: outRoot, basePath: basePath, siblings: siblings, runtimePrefixes: runtimePrefixes}, nil
 	})
 	return reg
 }
@@ -177,15 +185,16 @@ func registry(outRoot string) *outputcheck.Registry {
 // handles clean URLs, non-navigational schemes and cross-deployment sibling
 // prefixes, and a second implementation would drift from it.
 type linkIntegrity struct {
-	outRoot  string
-	basePath string
-	siblings []string
+	outRoot         string
+	basePath        string
+	siblings        []string
+	runtimePrefixes []string
 }
 
 func (linkIntegrity) Name() string { return "link_integrity" }
 
 func (l linkIntegrity) CheckAll(_ []outputcheck.Target) []outputcheck.Finding {
-	result, err := linkcheck.Validate(l.outRoot, l.basePath, l.siblings)
+	result, err := linkcheck.Validate(l.outRoot, l.basePath, l.siblings, l.runtimePrefixes)
 	if err != nil {
 		return []outputcheck.Finding{{
 			Rule: "link_integrity", Check: "link_integrity",

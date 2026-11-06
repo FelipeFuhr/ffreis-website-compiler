@@ -65,6 +65,7 @@ type buildOptions struct {
 	passthroughFiles      []string
 	rasterInlineThreshold int
 	siblingBasePaths      []string
+	runtimePrefixes       []string
 	mirrorExternalAssets  bool
 	mirroredAssetsDir     string
 	enableSanity          bool
@@ -136,6 +137,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")
 	var siblingBasePathsFlag string
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
+	var runtimePrefixesFlag string
+	fs.StringVar(&runtimePrefixesFlag, "runtime-prefixes", "", "comma-separated URL prefixes served by a non-static origin behind the same hostname (e.g. '/api/'); links under these prefixes are skipped by the internal link checker because no file is ever compiled for them. Merged with any declared in site data under runtime_prefixes. A bare '/' is rejected")
 	var disableSectionsFlag string
 	fs.StringVar(&disableSectionsFlag, "disable-sections", "", disableSectionsHelpText())
 	var assetsIgnoreFlag string
@@ -204,6 +207,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	opts.cssSafelistPath = cssSafelistFlag
 
 	opts.siblingBasePaths = splitCommaList(siblingBasePathsFlag)
+	opts.runtimePrefixes = splitCommaList(runtimePrefixesFlag)
 	opts.disabledSections = splitCommaList(disableSectionsFlag)
 	opts.assetsIgnore = splitCommaList(assetsIgnoreFlag)
 	opts.passthroughFiles = splitCommaList(passthroughFilesFlag)

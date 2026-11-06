@@ -15,6 +15,10 @@
 //   - Cross-deployment links: e.g. a PT site linking to /en/page — these are
 //     validated when the EN deployment runs its own link check. Sibling prefixes
 //     must be declared via the siblingBasePaths parameter to avoid false positives.
+//   - Links into a path a non-static origin serves from behind the same
+//     hostname, such as an HTTP API fronted by the same distribution. Nothing is
+//     ever compiled for those paths, so they can only ever look broken here.
+//     Declare them via the runtimePrefixes parameter.
 package linkcheck
 
 import (
@@ -66,9 +70,19 @@ type BrokenLink struct {
 // three-language site). Links whose paths fall under a sibling prefix are
 // skipped because they are validated by that sibling's own build. Pass nil or
 // empty for single-language sites.
-func Validate(outDir, basePath string, siblingBasePaths []string) (Result, error) {
+//
+// runtimePrefixes lists URL prefixes served by a different origin behind the
+// same hostname — an HTTP API fronted by the same distribution, say. No file
+// will ever exist in this build's output for such a path, so a link to one is
+// not broken and must not be reported. Pass nil or empty when the deployment
+// serves nothing but its own static output.
+func Validate(outDir, basePath string, siblingBasePaths, runtimePrefixes []string) (Result, error) {
 	basePath = strings.TrimRight(basePath, "/")
-	siblings := normaliseSiblings(siblingBasePaths)
+	runtime, err := normaliseRuntimePrefixes(runtimePrefixes)
+	if err != nil {
+		return Result{}, err
+	}
+	skip := skipRules{siblings: normaliseSiblings(siblingBasePaths), runtimePrefixes: runtime}
 
 	reachable, err := collectReachable(outDir)
 	if err != nil {
@@ -80,7 +94,7 @@ func Validate(outDir, basePath string, siblingBasePaths []string) (Result, error
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".html") {
 			return err
 		}
-		broken, fileErr := checkFileLinks(path, outDir, basePath, siblings, reachable)
+		broken, fileErr := checkFileLinks(path, outDir, basePath, skip, reachable)
 		if fileErr != nil {
 			return fileErr
 		}
@@ -103,8 +117,8 @@ func Validate(outDir, basePath string, siblingBasePaths []string) (Result, error
 // ValidateAndReport calls Validate and formats the results as a human-readable
 // error string listing every broken link by source file. Returns nil if all
 // internal links are valid.
-func ValidateAndReport(outDir, basePath string, siblingBasePaths []string) error {
-	result, err := Validate(outDir, basePath, siblingBasePaths)
+func ValidateAndReport(outDir, basePath string, siblingBasePaths, runtimePrefixes []string) error {
+	result, err := Validate(outDir, basePath, siblingBasePaths, runtimePrefixes)
 	if err != nil {
 		return err
 	}
@@ -118,7 +132,7 @@ func ValidateAndReport(outDir, basePath string, siblingBasePaths []string) error
 
 // checkFileLinks reads an HTML file and returns BrokenLink entries for every
 // internal anchor href that does not resolve to an existing dist file.
-func checkFileLinks(path, outDir, basePath string, siblings []string, reachable map[string]bool) ([]BrokenLink, error) {
+func checkFileLinks(path, outDir, basePath string, skip skipRules, reachable map[string]bool) ([]BrokenLink, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -144,7 +158,7 @@ func checkFileLinks(path, outDir, basePath string, siblings []string, reachable 
 
 	var broken []BrokenLink
 	for _, href := range extractAnchorHrefs(string(content)) {
-		target := resolveLink(href, resolutionBase, basePath, siblings)
+		target := resolveLink(href, resolutionBase, basePath, skip)
 		if target != "" && !reachable[target] {
 			broken = append(broken, BrokenLink{SourceFile: rel, Href: href, Target: target})
 		}
@@ -205,6 +219,51 @@ func normaliseSiblings(raw []string) []string {
 	return out
 }
 
+// normaliseRuntimePrefixes cleans runtime-prefix strings: each gets a leading
+// and a trailing "/", so that "/api" is stored as "/api/" and cannot match an
+// unrelated sibling page like "/apiary".
+//
+// A bare "/" is rejected rather than accepted or silently dropped. It would
+// match every link on the site and turn this whole check into a no-op, and it
+// is a plausible mistake rather than a hypothetical one: the edge-layer
+// viewer-request function takes a list with the same meaning and the same
+// name-shape, where "/" IS the correct value for disabling language routing
+// wholesale. Copying that value here must fail loudly instead of quietly
+// disabling link validation for the deployment that copied it.
+func normaliseRuntimePrefixes(raw []string) ([]string, error) {
+	out := make([]string, 0, len(raw))
+	for _, s := range raw {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if s == "/" {
+			return nil, fmt.Errorf("runtime prefix %q matches every link and would disable link validation entirely; "+
+				"list the API's own prefixes instead (e.g. \"/api/\")", s)
+		}
+		if !strings.HasPrefix(s, "/") {
+			s = "/" + s
+		}
+		if !strings.HasSuffix(s, "/") {
+			s += "/"
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// hasRuntimePrefix reports whether href is served by a non-static origin.
+// The prefix without its trailing slash also matches, so a link to the API
+// root ("/api") is skipped as well as one to a path beneath it ("/api/x").
+func hasRuntimePrefix(href string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(href, p) || href == strings.TrimSuffix(p, "/") {
+			return true
+		}
+	}
+	return false
+}
+
 // collectReachable walks outDir and builds the set of URL paths that correspond
 // to generated HTML files. Both the bare-path form (/page) and the .html form
 // (/page.html) are included so that links with or without .html extension are
@@ -263,21 +322,37 @@ func extractAnchorHrefs(doc string) []string {
 
 // resolveLink converts a raw href into the URL path to look up in reachable.
 // Returns "" when the link should be skipped (external, anchor, or sibling-deployment).
-func resolveLink(href, fileDir, basePath string, siblings []string) string {
+func resolveLink(href, fileDir, basePath string, skip skipRules) string {
 	href = stripFragmentAndQuery(href)
 	if href == "" || isSkippedScheme(href) {
 		return ""
 	}
 	href = makeAbsolute(href, fileDir)
+	// Matched on the origin-relative path, before base-path stripping and
+	// before clean-URL rewriting, because that is the form the edge itself
+	// routes on: a distribution sends /api/* to the API origin regardless of
+	// which language prefix the static deployment is mounted under, and
+	// cleanURLPath would otherwise rewrite extensions the API owns.
+	if hasRuntimePrefix(href, skip.runtimePrefixes) {
+		return ""
+	}
 	href = cleanURLPath(href)
 	href = stripBasePath(href, basePath)
 	if href == skipSignal {
 		return ""
 	}
-	if isSiblingLink(href, siblings) {
+	if isSiblingLink(href, skip.siblings) {
 		return ""
 	}
 	return href
+}
+
+// skipRules collects the path families the checker must not treat as this
+// build's own pages. Grouped rather than passed separately so adding a family
+// does not widen every helper signature it threads through.
+type skipRules struct {
+	siblings        []string // other deployments sharing this distribution
+	runtimePrefixes []string // served by a non-static origin, never compiled
 }
 
 // skipSignal is returned by stripBasePath when the link belongs to a different
