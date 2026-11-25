@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v2.1.0...v2.1.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **buildcmd:** don't clean-URL-rewrite or base-href a flat fragment page ([#170](https://github.com/FelipeFuhr/ffreis-website-compiler/issues/170)) ([b401acd](https://github.com/FelipeFuhr/ffreis-website-compiler/commit/b401acdc5848f3fa0a5c0774ec403352be92149b))
+
 ## [2.1.0](https://github.com/FelipeFuhr/ffreis-website-compiler/compare/v2.0.1...v2.1.0) (2026-11-06)
 
 
