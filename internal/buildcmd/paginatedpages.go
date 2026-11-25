@@ -58,7 +58,7 @@ func writePaginatedPages(p paginatedPagesParams) ([]sitemap.URLItem, error) {
 			return nil, fmt.Errorf("rendering %s page %d: %w", sectionName, pg.Number, err)
 		}
 
-		htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, sectionName, mirrorer)
+		htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, sectionName, nil, mirrorer)
 		if err != nil {
 			return nil, fmt.Errorf("transforming %s page %d: %w", sectionName, pg.Number, err)
 		}
