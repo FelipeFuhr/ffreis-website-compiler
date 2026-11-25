@@ -71,7 +71,14 @@ var hrefSchemeRE = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.\-]*:`)
 // compiler and is therefore equally extension-free, so `/pt/about.html` →
 // `/pt/about` is correct. Skipping them would leave every language-switcher
 // link pointing at a file that does not exist.
-func normaliseCleanURLHrefs(html, basePath string) string {
+//
+// flatPageSlugs names the pages this build keeps at their flat `<slug>.html`
+// instead of promoting to `<slug>/index.html` (`fragment: true` pages — see
+// writePages). An href resolving to one of these is the one case stripping
+// the extension would be WRONG rather than merely redundant: the target is
+// genuinely still served with it. nil is a valid, common value (most callers
+// can never target such a page) and behaves as the empty set.
+func normaliseCleanURLHrefs(html, basePath string, flatPageSlugs map[string]bool) string {
 	base := "/" + strings.Trim(basePath, "/")
 
 	return navHrefTagRE.ReplaceAllStringFunc(html, func(tag string) string {
@@ -81,7 +88,7 @@ func normaliseCleanURLHrefs(html, basePath string) string {
 				return attrMatch
 			}
 			attr, href := groups[1], groups[2]
-			rewritten := cleanURLHref(href, base)
+			rewritten := cleanURLHref(href, base, flatPageSlugs)
 			if rewritten == href {
 				return attrMatch
 			}
@@ -94,7 +101,7 @@ func normaliseCleanURLHrefs(html, basePath string) string {
 // the value is not a local navigational .html target, which is what makes the
 // whole transform idempotent: its own output never ends in .html, so a second
 // application cannot change anything.
-func cleanURLHref(href, base string) string {
+func cleanURLHref(href, base string, flatPageSlugs map[string]bool) string {
 	if href == "" || strings.HasPrefix(href, "#") {
 		return href
 	}
@@ -129,6 +136,17 @@ func cleanURLHref(href, base string) string {
 			return "/" + suffix
 		}
 		return dir + "/" + suffix
+	}
+
+	// A `fragment: true` page is ALSO kept at its flat `<slug>.html` — same
+	// reason as index.html above, different mechanism (writePages' own
+	// condition, not this function's). Unlike index.html this is not
+	// reliably the LAST path segment's own basename in every caller's
+	// input (a nested href like `admin/reports.html` is not a shape this
+	// repo's own pages produce, but the slug lookup here is by basename
+	// regardless of depth, matching how flatPageSlugs itself is keyed).
+	if slug := strings.TrimSuffix(path.Base(abs), ".html"); flatPageSlugs[slug] {
+		return href
 	}
 
 	return strings.TrimSuffix(abs, path.Ext(abs)) + suffix

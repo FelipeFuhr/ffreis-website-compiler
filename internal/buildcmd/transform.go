@@ -150,7 +150,7 @@ func linksStylesheet(html, relPath string) bool {
 // anyLinkTagRE matches any <link> start tag; the rel value decides what it is.
 var anyLinkTagRE = regexp.MustCompile(`(?is)<link\s+[^>]*>`)
 
-func transformPage(html string, opts buildOptions, assetsDir, pageName string, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
+func transformPage(html string, opts buildOptions, assetsDir, pageName string, flatPageSlugs map[string]bool, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
 	html = injectPerPageStylesheet(html, assetsDir, pageName)
 	html = injectNavigationEnhancements(html)
 	html = injectTracker(html, opts)
@@ -162,8 +162,11 @@ func transformPage(html string, opts buildOptions, assetsDir, pageName string, m
 	// exactly as the template and site data wrote them, and it must not see
 	// fingerprinted asset URLs (it only matches <a>/<area>/<form>, so it would
 	// skip them anyway — ordering makes that structural rather than incidental).
-	// See cleanurlhrefs.go.
-	html = normaliseCleanURLHrefs(html, opts.basePath)
+	// `flatPageSlugs` is nil for callers (listing/course/post/paginated pages)
+	// that can never target a `fragment: true` page — a nil map's lookups are
+	// simply always false, so this is the right default, not a shortcut around
+	// one. See cleanurlhrefs.go.
+	html = normaliseCleanURLHrefs(html, opts.basePath, flatPageSlugs)
 
 	if opts.inlineAssets {
 		// Full asset inlining (CSS + JS + images). Converts url() to data URIs so the

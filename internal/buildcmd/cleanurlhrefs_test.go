@@ -60,7 +60,7 @@ func TestCleanURLHref(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := cleanURLHref(tc.href, "/"+trimSlashesForTest(tc.base))
+			got := cleanURLHref(tc.href, "/"+trimSlashesForTest(tc.base), nil)
 			if got != tc.want {
 				t.Fatalf("cleanURLHref(%q, %q) = %q, want %q", tc.href, tc.base, got, tc.want)
 			}
@@ -89,7 +89,7 @@ func TestNormaliseCleanURLHrefsRewritesOnlyNavTags(t *testing.T) {
 		`<form action="subscribe.html" method="post"></form>` +
 		`<img src="a.html">`
 
-	got := normaliseCleanURLHrefs(html, "/en")
+	got := normaliseCleanURLHrefs(html, "/en", nil)
 
 	for _, want := range []string{
 		`<link rel="stylesheet" href="/css/app.html">`, // untouched asset
@@ -106,7 +106,7 @@ func TestNormaliseCleanURLHrefsRewritesOnlyNavTags(t *testing.T) {
 
 func TestNormaliseCleanURLHrefsPreservesOtherAttributes(t *testing.T) {
 	html := `<a class="nav" href="products.html" aria-current="page" data-x="1">P</a>`
-	got := normaliseCleanURLHrefs(html, "/en")
+	got := normaliseCleanURLHrefs(html, "/en", nil)
 	want := `<a class="nav" href="/en/products" aria-current="page" data-x="1">P</a>`
 	if got != want {
 		t.Fatalf("attributes must survive:\n got %s\nwant %s", got, want)
@@ -117,8 +117,8 @@ func TestNormaliseCleanURLHrefsIsIdempotent(t *testing.T) {
 	html := `<a href="login.html">a</a><a href="/pt/about.html#x">b</a>` +
 		`<a href="index.html">c</a><a href="search.html?q=1">d</a>`
 
-	once := normaliseCleanURLHrefs(html, "/en")
-	twice := normaliseCleanURLHrefs(once, "/en")
+	once := normaliseCleanURLHrefs(html, "/en", nil)
+	twice := normaliseCleanURLHrefs(once, "/en", nil)
 	if once != twice {
 		t.Fatalf("transform must be idempotent:\n once: %s\ntwice: %s", once, twice)
 	}
@@ -131,12 +131,74 @@ func TestNormaliseCleanURLHrefsHandlesSingleQuotedAndUppercaseTags(t *testing.T)
 	// emit double quotes. Documented here so the limit is a decision, not a
 	// surprise.
 	html := `<A   HREF="login.html">x</A><a href='login.html'>y</a>`
-	got := normaliseCleanURLHrefs(html, "/en")
+	got := normaliseCleanURLHrefs(html, "/en", nil)
 	if !contains(got, `HREF="/en/login"`) {
 		t.Fatalf("uppercase tag/attr must be rewritten, got: %s", got)
 	}
 	if !contains(got, `href='login.html'`) {
 		t.Fatalf("single-quoted value is out of scope and must be untouched, got: %s", got)
+	}
+}
+
+// A fragment: true page (e.g. Forma's admin console) is kept at its flat
+// <slug>.html by resolvePageTarget/writePages — never promoted to
+// <slug>/index.html. An href pointing at one must NOT have its extension
+// stripped: the target really is still served with it, so stripping would
+// point the link at a URL nothing serves. This is the one case where the
+// clean-URL transform's own default (strip, assume directory-index) is
+// wrong, not merely redundant.
+func TestCleanURLHrefLeavesFlatFragmentPagesAlone(t *testing.T) {
+	flat := map[string]bool{"admin-orders": true}
+
+	cases := []struct {
+		name string
+		href string
+		want string
+	}{
+		{"relative sibling reference, untouched", "admin-orders.html", "admin-orders.html"},
+		{"root-absolute reference, untouched", "/admin-orders.html", "/admin-orders.html"},
+		{"suffix survives on an untouched flat reference", "admin-orders.html?status=open", "admin-orders.html?status=open"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cleanURLHref(tc.href, "/", flat)
+			if got != tc.want {
+				t.Fatalf("cleanURLHref(%q) = %q, want %q (unchanged)", tc.href, got, tc.want)
+			}
+		})
+	}
+
+	// A page NOT in flatPageSlugs is unaffected by the set's mere existence —
+	// the exemption is per-slug, not a global switch.
+	t.Run("a non-fragment href in the same document is still rewritten", func(t *testing.T) {
+		got := cleanURLHref("admin-products.html", "/", flat)
+		want := "/admin-products"
+		if got != want {
+			t.Fatalf("cleanURLHref(%q) = %q, want %q", "admin-products.html", got, want)
+		}
+	})
+
+	// nil is the common case (most pages can never link to a fragment) and
+	// must behave as the empty set, not panic.
+	t.Run("nil flatPageSlugs behaves as the empty set", func(t *testing.T) {
+		got := cleanURLHref("admin-orders.html", "/", nil)
+		want := "/admin-orders"
+		if got != want {
+			t.Fatalf("cleanURLHref(%q, nil) = %q, want %q", "admin-orders.html", got, want)
+		}
+	})
+}
+
+func TestNormaliseCleanURLHrefsLeavesFlatFragmentPagesAlone(t *testing.T) {
+	html := `<nav><a href="admin-products.html">Products</a>` +
+		`<a href="admin-orders.html" aria-current="page">Orders</a></nav>`
+	got := normaliseCleanURLHrefs(html, "", map[string]bool{"admin-orders": true})
+
+	if !contains(got, `href="admin-orders.html"`) {
+		t.Fatalf("a flat fragment page's own href must survive untouched, got: %s", got)
+	}
+	if !contains(got, `href="/admin-products"`) {
+		t.Fatalf("a directory-index page's href must still be rewritten, got: %s", got)
 	}
 }
 

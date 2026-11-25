@@ -443,9 +443,24 @@ func maybeWriteCourseListings(logger *slog.Logger, opts buildOptions, pages []si
 func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, assetsDir string, siteData map[string]any, renderedPages map[string]string, mirrorer *externalAssetMirrorer) error {
 	allToCopy := make(map[string]string) // hashedRelPath → originalRelPath
 
+	// Slugs of every page resolvePageTarget keeps at its flat `<slug>.html`
+	// rather than promoting to `<slug>/index.html` -- a `fragment: true`
+	// page, by that function's own condition. normaliseCleanURLHrefs needs
+	// this to know an href pointing at one of THESE slugs is not stale: the
+	// target really is still served with its .html extension, so stripping
+	// it (correct for every directory-index page) would point the link at
+	// a URL nothing serves. See cleanurlhrefs.go.
+	flatPageSlugs := make(map[string]bool, len(pages))
+	for _, p := range pages {
+		if sitegen.IsPageFragment(siteData, p.Name) {
+			flatPageSlugs[resolvePageSlug(siteData, p.Name)] = true
+		}
+	}
+
 	for _, page := range pages {
 		slug := resolvePageSlug(siteData, page.Name)
-		target, err := resolvePageTarget(opts.outDir, slug, sitegen.IsPageFragment(siteData, page.Name))
+		isFragment := sitegen.IsPageFragment(siteData, page.Name)
+		target, err := resolvePageTarget(opts.outDir, slug, isFragment)
 		if err != nil {
 			return err
 		}
@@ -453,16 +468,25 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		// applyPositionBasedTransforms is about to inline into <svg> (icons
 		// under svgInlineSizeLimit lose their <img> tag entirely).
 		validateImageAltText(logger, page.Name, renderedPages[page.Name])
-		htmlOut, pageCopy, err := transformPage(renderedPages[page.Name], opts, assetsDir, page.Name, mirrorer)
+		htmlOut, pageCopy, err := transformPage(renderedPages[page.Name], opts, assetsDir, page.Name, flatPageSlugs, mirrorer)
 		if err != nil {
 			return fmt.Errorf("transforming %s: %w", target, err)
 		}
 		// A directory-index page sits one level deeper than the flat file it
 		// replaced, so relative asset URLs would resolve into the page's own
 		// directory. <base href> restores the old resolution; injected before the
-		// validator below, which it satisfies by construction. Fragments have no
-		// <head> and are skipped.
-		htmlOut = injectBaseHref(htmlOut, opts.basePath, slug)
+		// validator below, which it satisfies by construction.
+		//
+		// A `fragment: true` page is skipped instead: most have no <head> at
+		// all (injectBaseHref's own guard already handles those), but an
+		// admin-console page has a REAL <head> while still being kept flat by
+		// resolvePageTarget above — injectBaseHref's guard cannot see that,
+		// so it would inject a base href for a directory this page is never
+		// served at. A flat file needs none: its relative references already
+		// resolve correctly, exactly as they did before clean URLs existed.
+		if !isFragment {
+			htmlOut = injectBaseHref(htmlOut, opts.basePath, slug)
+		}
 
 		if err := validatePageBaseHref(htmlOut, opts.basePath, slug, page.Name); err != nil {
 			return err
