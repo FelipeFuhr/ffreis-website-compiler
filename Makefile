@@ -62,7 +62,7 @@ EXAMPLE_DIST := $(EXAMPLE_ROOT)/dist
 	example-build clean clean-example container-build docker-build ci-list \
 	fmt fmt-check lint lint-instructions check-toolchain test test-race coverage-gate integration-coverage-gate smoke-check quality-gates \
 	validate plan \
-	secrets-scan-staged hook-generated-drift \
+	secrets-scan-staged hook-generated-drift seo-core-pin \
 	lefthook-bootstrap lefthook-install lefthook-run lefthook
 
 ## mutation: run mutation testing with gremlins (slow — intended for CI/weekly)
@@ -97,7 +97,7 @@ info: ## Print effective variables
 # fallback keeps `make install` working outside a tagged checkout (or outside git
 # entirely, e.g. a container build) instead of failing the target.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)
-VERSION_LDFLAGS := -X ffreis-website-compiler/internal/versioncmd.Version=$(VERSION)
+VERSION_LDFLAGS := -X ffreis-website-compiler/internal/versioncmd.Version=$(SEO_CORE_VERSION)
 
 install: ## Install website-compiler in GOPATH/bin (version-stamped from git describe)
 	go install -ldflags "$(VERSION_LDFLAGS)" ./cmd/website-compiler
@@ -200,6 +200,22 @@ coverage-gate: ## Run tests with coverage and fail if below COVERAGE_MIN
 
 integration-coverage-gate: ## Run //go:build integration tests with coverage and fail if below INTEGRATION_COVERAGE_MIN (no-op if no integration-tagged files exist)
 	@COVERAGE_MIN="$(INTEGRATION_COVERAGE_MIN)" ./scripts/hooks/check_integration_coverage_gate.sh
+
+## seo-core-pin: swap the temporary local `replace` for a real tagged version.
+## Usage: make seo-core-pin SEO_CORE_VERSION=v1.2.3
+## (not VERSION -- that one already stamps the binary's own `version` output)
+## This is the LAST step of the ffreis-seo-core adoption and the one that makes
+## the branch mergeable at all -- the local replace is an absolute path on one
+## machine, so CI cannot resolve it. Needs ffreis-seo-core to be public AND
+## tagged first; see docs/SEO-CORE-ADOPTION.md.
+seo-core-pin:
+	@test -n "$(SEO_CORE_VERSION)" || (echo "SEO_CORE_VERSION is required, e.g. make seo-core-pin SEO_CORE_VERSION=v1.2.3 (do not invent one -- use a tag that exists)" && exit 1)
+	@grep -q '^replace github.com/ffreis-org/ffreis-seo-core' go.mod || (echo "no local replace in go.mod -- already pinned?" && exit 1)
+	GOPRIVATE="github.com/ffreis-org/*" go mod edit -dropreplace=github.com/ffreis-org/ffreis-seo-core
+	GOPRIVATE="github.com/ffreis-org/*" go mod edit -require=github.com/ffreis-org/ffreis-seo-core@$(SEO_CORE_VERSION)
+	GOPRIVATE="github.com/ffreis-org/*" go mod tidy
+	@grep -E 'ffreis-seo-core v0\.0\.0-[0-9]{14}-' go.mod && (echo "go.mod resolved to a PSEUDO-VERSION, not the tag you asked for -- that is the empty-GOPRIVATE bug, not a valid pin. Revert and fix auth." && exit 1) || true
+	@grep -n 'ffreis-seo-core' go.mod
 
 smoke-check: ## Build hello-world example and validate output
 	@set -euo pipefail; \
