@@ -7,10 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ffreis-org/ffreis-seo-core/pkg/sitemap"
+
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/rss"
 	"ffreis-website-compiler/internal/sitegen"
-	"ffreis-website-compiler/internal/sitemap"
 )
 
 // postToMap converts a Post to the map[string]any shape expected by templates.
