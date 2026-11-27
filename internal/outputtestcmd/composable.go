@@ -7,8 +7,9 @@ import (
 	gopath "path"
 	"strings"
 
+	"github.com/ffreis-org/ffreis-seo-core/pkg/outputcheck"
+
 	"ffreis-website-compiler/internal/linkcheck"
-	"ffreis-website-compiler/internal/outputcheck"
 )
 
 // ruleSpec is the composable form of a manifest entry: a selector plus the
