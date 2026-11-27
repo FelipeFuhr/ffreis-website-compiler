@@ -37,6 +37,12 @@ heading → file → byte-count mapping, and `scripts/check-instructions.sh`
 | `validate-conventions` — the fleet's shared rules | `.claude/rules/conventions-gates.md` | `internal/conventions/**`, `internal/validateconventionscmd/**` |
 | Site sanity invariants (and why the gate was once vacuous) | `.claude/rules/site-sanity-invariants.md` | `internal/sitegen/sanity*.go`, `internal/validatesanitycmd/**` |
 
+**Shared library** (`github.com/ffreis-org/ffreis-seo-core`): `outputcheck` and
+`sitemap` are no longer in this repo — they are consumed from that module.
+`conventions` and `linkcheck` are deliberately still local; `docs/SEO-CORE-ADOPTION.md`
+records which library packages diverge, how that was measured, and the two
+blockers (no release tag, library still private) that gate the rest.
+
 **On-demand reference** (read by name when the task needs it):
 
 | Heading | Reference file |

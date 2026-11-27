@@ -7,9 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ffreis-org/ffreis-seo-core/pkg/sitemap"
+
 	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/sitegen"
-	"ffreis-website-compiler/internal/sitemap"
 )
 
 // maybeWriteCourseLandingPages renders one landing page per course at

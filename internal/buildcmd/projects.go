@@ -3,10 +3,11 @@ package buildcmd
 import (
 	"log/slog"
 
+	"github.com/ffreis-org/ffreis-seo-core/pkg/sitemap"
+
 	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/projects"
 	"ffreis-website-compiler/internal/sitegen"
-	"ffreis-website-compiler/internal/sitemap"
 )
 
 // injectProjectsHomeCarousel puts the first n projects into siteData["projects"]

@@ -7,9 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ffreis-org/ffreis-seo-core/pkg/sitemap"
+
 	"ffreis-website-compiler/internal/listings"
 	"ffreis-website-compiler/internal/sitegen"
-	"ffreis-website-compiler/internal/sitemap"
 )
 
 // injectListingsData replaces siteData["listings"] with the computed listing

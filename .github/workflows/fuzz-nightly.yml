@@ -17,7 +17,11 @@ jobs:
     with:
       go-version: "1.25.8"
       working-directory: "."
-      packages: "./internal/sitemap ./internal/sitegen"
+      # internal/sitemap moved to ffreis-seo-core/pkg/sitemap (its fuzz target
+      # moved with it and runs in that repo's own nightly). Only sitegen still
+      # carries a Fuzz* target here; listing a package with none makes this
+      # job fail rather than no-op.
+      packages: "./internal/sitegen"
       fuzz-targets: "Fuzz"
       fuzz-time: "20s"
 

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ffreis-org/ffreis-seo-core/pkg/sitemap"
+
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/linkcheck"
@@ -19,7 +21,6 @@ import (
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/projects"
 	"ffreis-website-compiler/internal/sitegen"
-	"ffreis-website-compiler/internal/sitemap"
 )
 
 const (

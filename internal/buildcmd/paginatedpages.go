@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/ffreis-org/ffreis-seo-core/pkg/sitemap"
+
 	"ffreis-website-compiler/internal/pagination"
 	"ffreis-website-compiler/internal/sitegen"
-	"ffreis-website-compiler/internal/sitemap"
 )
 
 // paginatedPagesParams bundles the arguments for writePaginatedPages to keep
